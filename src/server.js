@@ -45,6 +45,7 @@ const express = require('express');
 const { WebSocketServer } = require('ws');
 
 const auth = require('./auth');
+const appearance = require('./appearance');
 const { Game, localDay } = require('./game');
 const { MAPS, clientMap } = require('./maps');
 const { q } = require('./db');
@@ -124,6 +125,26 @@ app.post('/api/me', (req, res) => {
   return res.json({ ok: true, avatar: auth.publicAvatar(s.avatar) });
 });
 
+// Phase 6: the shared appearance options — the creation screen and
+// the look editor both build their pickers from this payload, which
+// is generated from src/appearance.js, the same module the server
+// validates against. One list, three consumers, zero drift.
+app.get('/api/appearance', (req, res) => {
+  res.json({ ok: true, ...appearance.clientOptions() });
+});
+
+// Phase 6: character creation (after login). One-shot per account —
+// only a placeholder avatar (created = 0) can be created; afterwards
+// the look editor (POST /api/avatar) owns changes.
+app.post('/api/create-character', (req, res) => {
+  const body = (req.body && typeof req.body === 'object' && !Array.isArray(req.body)) ? req.body : {};
+  const s = auth.resolveSession(body.token);
+  if (!s) return res.status(401).json({ ok: false, error: 'Invalid or expired session.' });
+  const r = auth.createCharacter(s.user.id, body);
+  if (!r.ok) return res.status(r.code || 400).json({ ok: false, error: r.error });
+  return res.json({ ok: true, avatar: r.avatar });
+});
+
 // Phase 4: edit your look after creation. Validation lives in
 // auth.updateAvatar — the same sets registration uses. If the player
 // is online, their live publicPlayer updates in place too.
@@ -142,11 +163,7 @@ function applyAvatarUpdate(userId, fields) {
   if (!r.ok) return r;
   const p = game.getPlayer(userId);
   if (p) {
-    p.hair_style = r.avatar.hair_style;
-    p.hair_color = r.avatar.hair_color;
-    p.body_color = r.avatar.body_color;
-    p.accent_color = r.avatar.accent_color;
-    p.skin_tone = r.avatar.skin_tone;
+    for (const axis of appearance.AXIS_NAMES) p[axis] = r.avatar[axis];
     // Push fresh snapshots now so the room sees the new look without
     // anyone relogging (the regular 10 Hz broadcast would catch up
     // within ~100 ms anyway; this makes it instant and testable).
@@ -176,7 +193,7 @@ app.get('/health', (req, res) => {
   res.json({
     ok: true,
     game: 'solarion',
-    phase: 5,
+    phase: 6,
     version: require('../package.json').version,
     uptime_s: Math.floor((Date.now() - startedAt) / 1000),
     players_online: total,
@@ -199,6 +216,13 @@ wss.on('connection', (ws, req) => {
   const session = auth.resolveSession(token);
   if (!session) {
     ws.close(4401, 'unauthorized');
+    return;
+  }
+  // Phase 6: the world requires a created character. Accounts that
+  // registered but never finished the creation screen get a distinct
+  // close code (4403) so the client can route them back to it.
+  if (!session.avatar.created) {
+    ws.close(4403, 'character required');
     return;
   }
 

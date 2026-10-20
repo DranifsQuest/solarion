@@ -25,13 +25,17 @@
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const { q } = require('./db');
+const appearance = require('./appearance');
 
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 const BCRYPT_ROUNDS = 10;
 const USER_RE = /^[A-Za-z0-9_]{3,20}$/;
-const COLOR_RE = /^#[0-9a-fA-F]{6}$/;
+const COLOR_RE = appearance.COLOR_RE;
 const PASS_MIN = 6;
 const PASS_MAX = 128; // bcrypt truncates at 72 bytes; cap well above it
+// Display names (chosen on the creation screen): username charset plus
+// spaces, 3–20 chars once trimmed, never blank, never a reserved name.
+const NAME_RE = /^[A-Za-z0-9_ ]{3,20}$/;
 
 // Names nobody may register — impersonating a system account.
 const RESERVED_USERNAMES = new Set([
@@ -119,11 +123,22 @@ function publicAvatar(a) {
     id: a.id,
     user_id: a.user_id,
     name: a.name,
+    created: Boolean(a.created),
+    gender: a.gender || 'M',
+    face: a.face || 'classic',
+    eyes: a.eyes || 'round',
+    eye_color: a.eye_color || '#20242c',
+    nose: a.nose || 'button',
+    lips: a.lips || 'natural',
     body_color: a.body_color,
     accent_color: a.accent_color,
     skin_tone: a.skin_tone,
     hair_style: a.hair_style,
     hair_color: a.hair_color,
+    top_style: a.top_style || 'tee',
+    bottom_style: a.bottom_style || 'pants',
+    shoe_color: a.shoe_color || '#23262b',
+    accessory: a.accessory || 'none',
     map_id: a.map_id,
     x: a.x,
     y: a.y,
@@ -131,8 +146,18 @@ function publicAvatar(a) {
   };
 }
 
-const SKIN_TONES = ['#ffe0bd', '#f1c27d', '#e0ac69', '#8d5524'];
-const HAIR_STYLES = ['short', 'spiky', 'long'];
+/** The look axes of an avatar row as a plain look object. */
+function lookOf(a) {
+  const p = publicAvatar(a);
+  const look = {};
+  for (const axis of appearance.AXIS_NAMES) look[axis] = p[axis];
+  return look;
+}
+
+// Back-compat exports (Phase 4/5 shape): SKIN_TONES is now the 8-tone
+// list and HAIR_STYLES the per-gender map — both live in appearance.js.
+const SKIN_TONES = appearance.SKIN_TONES;
+const HAIR_STYLES = appearance.HAIR_STYLES;
 
 const auth = {
   SESSION_TTL_MS,
@@ -160,16 +185,16 @@ const auth = {
     if (q.userByName.get(username)) {
       return { ok: false, error: 'That username is already taken.' };
     }
-    const shirt = typeof opts.shirt === 'string' && COLOR_RE.test(opts.shirt) ? opts.shirt : '#3aa7e0';
-    const pants = typeof opts.pants === 'string' && COLOR_RE.test(opts.pants) ? opts.pants : '#2b3a55';
-    const skin = SKIN_TONES.includes(opts.skin_tone) ? opts.skin_tone : '#f1c27d';
-    const hair = HAIR_STYLES.includes(opts.hair_style) ? opts.hair_style : 'short';
-    const hairColor = typeof opts.hair_color === 'string' && COLOR_RE.test(opts.hair_color) ? opts.hair_color : '#3a2a1c';
+    // Phase 6: registration creates the ACCOUNT only. The avatar row
+    // is a placeholder (username as name, default look, created = 0);
+    // the look is chosen on the character creation screen after login
+    // (see createCharacter). Any look fields in `opts` are ignored.
+    const d = appearance.defaultsFor('M');
     const now = Date.now();
     const hash = bcrypt.hashSync(password, BCRYPT_ROUNDS);
     const r = q.insertUser.run(username, hash, now);
-    q.insertAvatar.run(r.lastInsertRowid, username, shirt, pants, skin, hair, hairColor,
-      DEFAULT_SPAWN.map_id, DEFAULT_SPAWN.x, DEFAULT_SPAWN.y, now);
+    q.insertAvatar.run(r.lastInsertRowid, username, d.body_color, d.accent_color, d.skin_tone,
+      d.hair_style, d.hair_color, DEFAULT_SPAWN.map_id, DEFAULT_SPAWN.x, DEFAULT_SPAWN.y, now);
     noteRegistration(ipKey);
     const token = newToken();
     q.insertSession.run(token, r.lastInsertRowid, now, now + SESSION_TTL_MS, ipKey);
@@ -238,54 +263,81 @@ const auth = {
   },
 
   /**
-   * Phase 4 — avatar editing. Validates against the SAME sets used at
-   * registration (SKIN_TONES / HAIR_STYLES / COLOR_RE above) so there is
-   * exactly one source of truth for what a legal look is. Accepts the
-   * canonical column names (body_color / accent_color) plus the
-   * registration aliases (shirt / pants). Partial updates merge with the
-   * current look; every provided field must be valid or nothing changes.
+   * Phase 6 — character creation. One-shot: only an account whose
+   * avatar is still a placeholder (created = 0) may create. Validates
+   * the display name and EVERY look axis against appearance.js (the
+   * shared options module), fills unprovided axes with the gender's
+   * defaults, writes name + look + created = 1 atomically.
+   */
+  createCharacter(userId, input) {
+    if (!Number.isInteger(userId)) return { ok: false, error: 'No such avatar.' };
+    input = (input && typeof input === 'object' && !Array.isArray(input)) ? input : {};
+    const cur = q.avatarByUser.get(userId);
+    if (!cur) return { ok: false, error: 'No such avatar.' };
+    if (cur.created) return { ok: false, error: 'Character already created — use the look editor to change it.', code: 409 };
+    const name = typeof input.name === 'string' ? input.name.trim() : '';
+    if (!NAME_RE.test(name)) {
+      return { ok: false, error: 'Name must be 3–20 letters, numbers, spaces or _.' };
+    }
+    if (RESERVED_USERNAMES.has(name.toLowerCase())) {
+      return { ok: false, error: 'That name is reserved — pick another.' };
+    }
+    const gender = input.gender !== undefined ? input.gender : 'M';
+    if (typeof gender !== 'string' || !appearance.GENDERS.includes(gender)) {
+      return { ok: false, error: 'Invalid gender. Choose: M, F.' };
+    }
+    const base = appearance.defaultsFor(gender);
+    const merged = appearance.mergeLook(base, { ...input, gender });
+    if (merged.error) return { ok: false, error: merged.error };
+    const L = merged.look;
+    q.createCharacter.run(name, L.gender, L.face, L.eyes, L.eye_color, L.nose, L.lips,
+      L.skin_tone, L.hair_style, L.hair_color, L.top_style, L.body_color,
+      L.bottom_style, L.accent_color, L.shoe_color, L.accessory, userId);
+    return { ok: true, avatar: publicAvatar(q.avatarByUser.get(userId)) };
+  },
+
+  /**
+   * Avatar editing (Phase 4, expanded in Phase 6 to every axis).
+   * Validation lives in appearance.js — the SAME module the creation
+   * screen uses, so create and edit can never disagree about a legal
+   * look. Partial updates merge with the current look; every provided
+   * field must be valid or nothing changes. Switching gender resets
+   * any per-gender axis that doesn't exist for the new gender to its
+   * default (appearance.mergeLook).
    *
-   * Phase 5: the field set is a WHITELIST — any other key in the client
-   * message (zcoins, name, user_id, map_id, ...) is silently ignored, so
-   * there is no way to escalate via avatar-update.
+   * The field set is a WHITELIST (the appearance axes) — any other key
+   * in the client message (zcoins, name, user_id, map_id, created...)
+   * is silently ignored, so there is no way to escalate via
+   * avatar-update. Legacy aliases shirt/pants map to body/accent color.
    */
   updateAvatar(userId, opts) {
     if (!Number.isInteger(userId)) return { ok: false, error: 'No such avatar.' };
     opts = (opts && typeof opts === 'object' && !Array.isArray(opts)) ? opts : {};
     const cur = q.avatarByUser.get(userId);
     if (!cur) return { ok: false, error: 'No such avatar.' };
-    const next = {
-      hair_style: cur.hair_style,
-      hair_color: cur.hair_color,
-      body_color: cur.body_color,
-      accent_color: cur.accent_color,
-      skin_tone: cur.skin_tone,
-    };
-    let touched = false;
-    if (opts.hair_style !== undefined) {
-      if (!HAIR_STYLES.includes(opts.hair_style)) return { ok: false, error: `Invalid hair style. Choose: ${HAIR_STYLES.join(', ')}.` };
-      next.hair_style = opts.hair_style; touched = true;
+    const input = {};
+    for (const axis of appearance.AXIS_NAMES) {
+      if (opts[axis] !== undefined) input[axis] = opts[axis];
     }
-    if (opts.hair_color !== undefined) {
-      if (typeof opts.hair_color !== 'string' || !COLOR_RE.test(opts.hair_color)) return { ok: false, error: 'Invalid hair color (use #rrggbb).' };
-      next.hair_color = opts.hair_color; touched = true;
+    if (input.body_color === undefined && opts.shirt !== undefined) input.body_color = opts.shirt;
+    if (input.accent_color === undefined && opts.pants !== undefined) input.accent_color = opts.pants;
+    if (!Object.keys(input).length) return { ok: false, error: 'Nothing to update.' };
+    const merged = appearance.mergeLook(lookOf(cur), input);
+    if (merged.error) {
+      // Keep the Phase 4 error wording for the classic axes.
+      if (/hair style/.test(merged.error)) {
+        const g = typeof input.gender === 'string' && appearance.GENDERS.includes(input.gender) ? input.gender : cur.gender;
+        return { ok: false, error: `Invalid hair style. Choose: ${appearance.HAIR_STYLES[g].join(', ')}.` };
+      }
+      if (/hair color|top color|bottom color/.test(merged.error)) {
+        return { ok: false, error: merged.error.replace(' color.', ' color (use #rrggbb).') };
+      }
+      return { ok: false, error: merged.error };
     }
-    const shirt = opts.body_color !== undefined ? opts.body_color : opts.shirt;
-    if (shirt !== undefined) {
-      if (typeof shirt !== 'string' || !COLOR_RE.test(shirt)) return { ok: false, error: 'Invalid shirt color (use #rrggbb).' };
-      next.body_color = shirt; touched = true;
-    }
-    const pants = opts.accent_color !== undefined ? opts.accent_color : opts.pants;
-    if (pants !== undefined) {
-      if (typeof pants !== 'string' || !COLOR_RE.test(pants)) return { ok: false, error: 'Invalid pants color (use #rrggbb).' };
-      next.accent_color = pants; touched = true;
-    }
-    if (opts.skin_tone !== undefined) {
-      if (!SKIN_TONES.includes(opts.skin_tone)) return { ok: false, error: 'Invalid skin tone.' };
-      next.skin_tone = opts.skin_tone; touched = true;
-    }
-    if (!touched) return { ok: false, error: 'Nothing to update.' };
-    q.updateAvatarLook.run(next.hair_style, next.hair_color, next.body_color, next.accent_color, next.skin_tone, userId);
+    const L = merged.look;
+    q.updateAvatarLook.run(L.gender, L.face, L.eyes, L.eye_color, L.nose, L.lips,
+      L.skin_tone, L.hair_style, L.hair_color, L.top_style, L.body_color,
+      L.bottom_style, L.accent_color, L.shoe_color, L.accessory, userId);
     return { ok: true, avatar: publicAvatar(q.avatarByUser.get(userId)) };
   },
 
