@@ -24,6 +24,13 @@
  * Phase 3 (casino) messages:
  *   { type: 'poker', action: 'state'|'sit'|'stand'|'rebuy'|'act', table, chair, act, amount }
  *   { type: 'slots', action: 'info'|'spin', bet }
+ * Phase 4 (cities / studios / avatar editing):
+ *   POST /api/avatar  { token, hair_style, hair_color, body_color, accent_color }
+ *   { type: 'avatar-update', hair_style, hair_color, body_color, accent_color }
+ *   { type: 'enter-studio', owner }  { type: 'leave-studio' }
+ *   { type: 'studio-buy', itemId }  { type: 'studio-place', instanceItemId, x, y, rot }
+ *   { type: 'studio-pickup', instanceItemId }  { type: 'studio-kick', userId }
+ *   { type: 'studio-state' }
  *
  * Game messages (server -> client):
  *   hello / map / snapshot / chat / notice / bonus / zcoins
@@ -45,9 +52,12 @@ const music = require('./music');
 const { StageManager } = require('./stage');
 const casinoModule = require('./casino');
 const { CasinoSystem } = casinoModule;
+const studioModule = require('./studio');
+const { StudioSystem } = studioModule;
 
 music.init();
 casinoModule.initLedger();
+studioModule.init();
 
 const PORT = parseInt(process.env.SOLARION_PORT || process.env.PORT || '3000', 10);
 const TEST_MODE = process.env.SOLARION_TEST === '1';
@@ -68,6 +78,10 @@ for (const [mapId, map] of Object.entries(MAPS)) {
 // defs, so future cities with a lounge get tables for free.
 const casino = new CasinoSystem(game);
 casino.initFromMaps(MAPS);
+// Phase 4: private studios — instanced scenes (see studio.js). No
+// per-studio registration anywhere: game.js resolves `studio:<id>`
+// scene ids on demand, and this system only handles studio messages.
+const studios = new StudioSystem(game);
 game.onPlayerGone = (userId) => { stages.handlePlayerGone(userId); casino.handlePlayerGone(userId); };
 game.onMapEntered = (p) => { stages.syncPlayer(p); casino.syncPlayer(p); };
 
@@ -100,6 +114,38 @@ app.post('/api/me', (req, res) => {
   return res.json({ ok: true, avatar: auth.publicAvatar(s.avatar) });
 });
 
+// Phase 4: edit your look after creation. Validation lives in
+// auth.updateAvatar — the same sets registration uses. If the player
+// is online, their live publicPlayer updates in place too.
+app.post('/api/avatar', (req, res) => {
+  const body = req.body || {};
+  const s = auth.resolveSession(body.token);
+  if (!s) return res.status(401).json({ ok: false, error: 'Invalid or expired session.' });
+  const r = applyAvatarUpdate(s.user.id, body);
+  if (!r.ok) return res.status(400).json({ ok: false, error: r.error });
+  return res.json({ ok: true, avatar: r.avatar });
+});
+
+/** Persist a look change and mirror it onto the live player, if any. */
+function applyAvatarUpdate(userId, fields) {
+  const r = auth.updateAvatar(userId, fields);
+  if (!r.ok) return r;
+  const p = game.getPlayer(userId);
+  if (p) {
+    p.hair_style = r.avatar.hair_style;
+    p.hair_color = r.avatar.hair_color;
+    p.body_color = r.avatar.body_color;
+    p.accent_color = r.avatar.accent_color;
+    p.skin_tone = r.avatar.skin_tone;
+    // Push fresh snapshots now so the room sees the new look without
+    // anyone relogging (the regular 10 Hz broadcast would catch up
+    // within ~100 ms anyway; this makes it instant and testable).
+    game.broadcastSnapshots();
+    game.send(p, { type: 'avatar-updated', avatar: r.avatar, you: game.publicPlayer(p) });
+  }
+  return r;
+}
+
 // Public loop catalog for the mixer UI (pattern data the client
 // synthesizes with Web Audio — no audio files exist anywhere).
 app.get('/api/music/loops', (req, res) => {
@@ -120,7 +166,7 @@ app.get('/health', (req, res) => {
   res.json({
     ok: true,
     game: 'solarion',
-    phase: 3,
+    phase: 4,
     version: require('../package.json').version,
     uptime_s: Math.floor((Date.now() - startedAt) / 1000),
     players_online: total,
@@ -189,6 +235,21 @@ wss.on('connection', (ws, req) => {
       case 'chat':
         game.handleChat(p, msg.text);
         break;
+      case 'enter-studio':
+      case 'leave-studio':
+      case 'studio-buy':
+      case 'studio-place':
+      case 'studio-pickup':
+      case 'studio-kick':
+      case 'studio-state':
+        studios.handle(p, msg);
+        break;
+      case 'avatar-update': {
+        const r = applyAvatarUpdate(p.userId, msg);
+        if (!r.ok) game.send(p, { type: 'notice', text: r.error });
+        else game.send(p, { type: 'notice', text: '✨ New look saved!' });
+        break;
+      }
       case 'mix-list':
         game.send(p, { type: 'mixes', mixes: music.listMixes(p.userId) });
         break;

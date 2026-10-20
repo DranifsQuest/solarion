@@ -199,7 +199,7 @@ test('server-authoritative movement and wall collision', { timeout: 30000 }, asy
   assert.ok(Math.abs(pos2.x - xBefore) < 6, `x unchanged while moving up (${pos2.x} vs ${xBefore})`);
 });
 
-test('gateway travel: Gateway -> Solstice Bay -> Gateway; sealed stays sealed', { timeout: 60000 }, async () => {
+test('gateway travel: Gateway -> Solstice Bay -> Gateway; Phase 4 cities open', { timeout: 60000 }, async () => {
   const a = users.alice_p1.client;
   const b = users.bob_p1.client;
   const aId = users.alice_p1.id, bId = users.bob_p1.id;
@@ -225,12 +225,17 @@ test('gateway travel: Gateway -> Solstice Bay -> Gateway; sealed stays sealed', 
   a.send({ type: 'debug-teleport', x: 512, y: 560 });
   const toHub = await waitFor(() => a.msgs.filter(m => m.type === 'map' && m.map.id === 'the-gateway').pop(), 5000, 'map switch back to the-gateway');
   assert.equal(toHub.map.name, 'The Gateway');
-  // sealed gateway: neon-district arch at x=4*32=128, y=32 -> center (160,48)
+  // the neon arch on the gateway is now OPEN (Phase 4)
   await sleep(1600);
   a.send({ type: 'debug-teleport', x: 160, y: 48 });
-  const notice = await waitFor(() => a.msgs.filter(m => m.type === 'notice' && /isn't open yet/.test(m.text)).pop(), 5000, 'sealed notice');
-  assert.ok(notice);
-  assert.equal(a.msgs.filter(m => m.type === 'map' && m.map.id === 'neon-district').length, 0, 'no travel to sealed city');
+  const toNeon = await waitFor(() => a.msgs.filter(m => m.type === 'map' && m.map.id === 'neon-district').pop(), 5000, 'map switch to neon-district');
+  assert.equal(toNeon.map.name, 'Neon District');
+  assert.ok(toNeon.map.stage, 'Neon District has a stage');
+  assert.ok(toNeon.map.gateways.some(g => g.label === 'The Gateway' && g.active), 'Neon return gateway listed');
+  // back to the hub through the neon return gateway: x=15*32=480, y=18*32=576 -> center (512,592)
+  await sleep(1600);
+  a.send({ type: 'debug-teleport', x: 512, y: 592 });
+  await waitFor(() => a.msgs.filter(m => m.type === 'map' && m.map.id === 'the-gateway').pop(), 5000, 'map switch back from neon');
 });
 
 test('daily +100z bonus credited exactly once per day', { timeout: 30000 }, async () => {
@@ -265,11 +270,12 @@ test('/health reports status and counts', { timeout: 30000 }, async () => {
   const r = await fetch(`http://localhost:${serverPort}/health`).then(r => r.json());
   assert.equal(r.ok, true);
   assert.equal(r.game, 'solarion');
-  assert.equal(r.phase, 3);
+  assert.equal(r.phase, 4);
   assert.ok(r.uptime_s >= 0);
-  assert.equal(typeof r.maps['the-gateway'], 'number');
-  assert.equal(typeof r.maps['solstice-bay'], 'number');
-  assert.equal(r.players_online, r.maps['the-gateway'] + r.maps['solstice-bay']);
+  for (const id of ['the-gateway', 'solstice-bay', 'neon-district', 'cinder-mesa', 'frosthaven', 'verdant-hollow']) {
+    assert.equal(typeof r.maps[id], 'number', `map ${id} counted`);
+  }
+  assert.equal(r.players_online, Object.values(r.maps).reduce((sum, n) => sum + n, 0));
   assert.ok(r.players_online >= 2, `expected >=2 online, got ${r.players_online}`);
 });
 

@@ -1,4 +1,4 @@
-# Solarion — Phase 3 (Casino: poker + slots)
+# Solarion — Phase 4 (Cities, Private Studios, Avatar Editing)
 
 A multiplayer browser-based social game by **Re-Launch Studios** — an
 original-IP take on the classic Coke Music / Coke Studios loop:
@@ -18,8 +18,12 @@ votes.
 **Phase 3 adds the Casino Lounge** in Solstice Bay: server-authoritative
 Texas Hold'em poker (2 tables × 4 chairs, side pots) and slot machines,
 ported from the validated Kingdom of Goleon tavern engine and
-re-denominated in z coins. Private rooms and the remaining cities land
-in later phases.
+re-denominated in z coins.
+
+**Phase 4 opens the world up:** all four remaining cities (Neon
+District, Cinder Mesa, Frosthaven, Verdant Hollow — each with its own
+palette, layout and a working stage), private decorated **studios**
+with a furniture catalog, and **avatar editing** after creation.
 
 ## Run it locally
 
@@ -63,8 +67,11 @@ src/casino.js   Phase 3: server-authoritative Texas Hold'em (card
                 + slot machine, ported from the validated Goleon
                 engine and re-denominated in z coins, on its own
                 500 ms timer; atomic z-coin debit/credit guards
+src/studio.js   Phase 4: private studios — the furniture catalog +
+                studio_items table, the studio template scene, and
+                the buy/place/pickup/kick/enter/leave handlers
 src/server.js   Express static + /api/register, /api/login, /api/me,
-                /api/music/loops, /health, WebSocket wiring
+                /api/avatar, /api/music/loops, /health, WebSocket wiring
 public/         client: index.html, style.css, sprites.js, client.js,
                 mixer.js (Phase 2: Web Audio synth engine, mixer UI,
                 stage/queue/vote UI), casino.js (Phase 3: lounge
@@ -78,6 +85,10 @@ test/casino.test.js Phase 3 suite (poker hands, side-pot exactness,
                 invalid-action rejections, slots math/cooldown/
                 proximity, disconnect/map-change cleanup,
                 restart persistence + stranded-chip refund)
+test/studios.test.js Phase 4 suite (4-city travel + isolation, stage
+                in a new city, studio buy/place/persist + restart
+                persistence, visitor limits + kick/block, avatar
+                editing live + persisted + validation)
 ```
 
 ## Phase 2 — music, mixer, stage
@@ -215,9 +226,71 @@ measured **0.9679** and a separate 1,000,000-spin run measured
 `src/maps.js` defines each scene as plain data: a tile grid string
 (`#` / `%` / `|` solid, `.` walkable), colors, a spawn point, and
 gateway rectangles. Adding a city = adding one definition plus one
-gateway entry on the Gateway plaza. The Gateway already renders all
-five planned cities as arches — Neon District, Cinder Mesa, Frosthaven
-and Verdant Hollow are sealed until their maps exist.
+gateway entry on the Gateway plaza. The Gateway renders all five
+cities as arches — since Phase 4, all five are open.
+
+## Phase 4 — cities, private studios, avatar editing
+
+### Four new cities
+
+| city | one strong read (soul doc §9.21) | stage | return arch |
+|---|---|---|---|
+| Neon District | night-market glow — dark violet floor, hot-pink neon walls | north | south |
+| Cinder Mesa | ember/desert forge — baked orange sand, forge-rock walls | east | south-west |
+| Frosthaven | aurora ice — pale blue ice, glacier walls, frozen pond | south | north |
+| Verdant Hollow | firefly grove — deep greens, tree clusters, pond | centre | south-east |
+
+Each city def carries the same `stage` data shape Solstice Bay
+introduced in Phase 2, and the StageManager registers a stage for
+*every* map that defines one — no city is special-cased, so queues,
+performances, voting and payouts work identically in all five cities.
+
+### Private studios
+
+Every account owns **one studio**: an instanced scene keyed
+`studio:<ownerUserId>`, built from a single cozy template (20×14
+tiles, warm wood, door on the south wall). Studios are not in the
+static MAPS registry — `Game.sceneFor()` resolves a studio id to the
+template on demand, and presence/snapshots/chat key off the scene id,
+so a studio behaves exactly like a map for its occupants and is
+invisible to everyone else. Studio positions are never persisted as a
+respawn point.
+
+| client → server | meaning |
+|---|---|
+| `{type:'enter-studio', owner}` | enter a studio (owner = username or userId; anyone's studio — public in v1) |
+| `{type:'leave-studio'}` | back to the map/position you came from (Gateway if unavailable) |
+| `{type:'studio-buy', itemId}` | buy catalog furniture — **own studio only**, atomic debit |
+| `{type:'studio-place', instanceItemId, x, y, rot}` | place/move an owned item (tile coords) |
+| `{type:'studio-pickup', instanceItemId}` | return a placed item to your inventory |
+| `{type:'studio-kick', userId}` | owner only: visitor → Gateway + 10-min re-entry block |
+
+The catalog (`src/studio.js`) holds 14 original items — seating,
+tables, a rug, a plant, a lamp, a (decorative in v1) jukebox, a stage
+speaker, wall decor including the **gold record** trophy, a neon sign
+and a drink dispenser — priced 25–300z. Purchases debit atomically
+(`UPDATE … WHERE zcoins >= price`) in the same transaction as the
+inventory insert. Placement rules, all server-side: inside the room,
+never on the door tile, rotations 0–3, **max 100 placed items**.
+Furniture persists in the `studio_items` table across relogs and
+server restarts, ships in the entry payload, and placement changes
+broadcast live (`studio-furniture`) to everyone in the studio.
+Non-owners can never buy, place, pick up or kick — enforced
+server-side on every message.
+
+### Avatar editing
+
+`POST /api/avatar` (token-authed) or the in-game
+`{type:'avatar-update', …}` changes `hair_style`, `hair_color`,
+`body_color` (shirt) and `accent_color` (pants) after creation.
+Validation reuses the exact registration sets in `src/auth.js`
+(exported as `auth.HAIR_STYLES` / `auth.SKIN_TONES` / `auth.COLOR_RE`)
+— one source of truth. The change persists to the avatars row and is
+mirrored onto the live player, so the room sees the new look in the
+next snapshot with no relog. The client gets a 🎨 Look panel with
+style cycling and color swatches, plus a 🏠 Studio panel (catalog,
+inventory, tile-click placement, right-click pickup, visit-by-name,
+kick list).
 
 ### Currency: z coins
 
@@ -251,8 +324,11 @@ wants true iso pathing/occlusion, it's a client concern only.
 
 ## Stubbed / deferred to later phases
 
-- Private decorated rooms + furniture catalog
-- Remaining cities: Neon District, Cinder Mesa, Frosthaven, Verdant Hollow
-  (each can reuse `makeCasinoLounge()` for its own Casino Lounge)
-- Avatar editing after creation (appearance is set at registration)
+- More Casino Lounges: `makeCasinoLounge()` can build one for any
+  city, but the Phase 3 CasinoSystem tracks a single lounge map —
+  generalizing it to several lounges is its own task, so Phase 4
+  ships without a second lounge rather than destabilizing poker.
+- Studio upgrades: multiple rooms per player, room naming/themes,
+  sitting on furniture, and the jukebox actually playing visitors'
+  mixes (it's decorative in v1)
 - Deployment (Fly.io, cheap always-on — per Zan, later)

@@ -210,9 +210,127 @@ const bay = {
   casino: BAY_CASINO,
 };
 
+// ------------------------------------------------------------------
+// PHASE 4 CITIES — one strong read each (soul doc §9.21). Grids are
+// built programmatically (border walls + obstacle rects on open floor)
+// so every row is exactly 32 wide by construction; layouts, palettes,
+// stage positions and return-gateway corners all differ per city.
+// Every city carries ONE stage zone in the exact Phase 2 shape, so the
+// StageManager picks it up with zero special-casing.
+// ------------------------------------------------------------------
+function buildCityTiles(obstacles) {
+  const W = 32, H = 20;
+  const rows = [];
+  for (let y = 0; y < H; y++) {
+    const row = [];
+    for (let x = 0; x < W; x++) row.push(x === 0 || y === 0 || x === W - 1 || y === H - 1 ? '#' : '.');
+    rows.push(row);
+  }
+  for (const o of obstacles) {
+    for (let dy = 0; dy < o.h; dy++) {
+      for (let dx = 0; dx < o.w; dx++) {
+        const gx = o.x + dx, gy = o.y + dy;
+        if (gx > 0 && gy > 0 && gx < W - 1 && gy < H - 1) rows[gy][gx] = o.ch;
+      }
+    }
+  }
+  return grid(rows.map(r => r.join('')));
+}
+
+const stageDef = (tx, ty) => ({
+  x: tx * TILE, y: ty * TILE, w: 6 * TILE, h: 2 * TILE,
+  speakers: [
+    { x: (tx - 1) * TILE + TILE / 2, y: ty * TILE + TILE / 2 },
+    { x: (tx + 6) * TILE + TILE / 2, y: ty * TILE + TILE / 2 },
+  ],
+});
+const retGw = (tx, ty, label = 'The Gateway') => ({
+  x: tx * TILE, y: ty * TILE, w: TILE * 2, h: TILE, target: 'the-gateway', label,
+});
+
+// NEON DISTRICT — night-market glow: near-black violet floor, hot-pink
+// walls, market stalls ('|') and neon pillars around a north stage.
+const neon = {
+  id: 'neon-district',
+  name: 'Neon District',
+  tiles: buildCityTiles([
+    { x: 3, y: 4, w: 2, h: 2, ch: '|' }, { x: 27, y: 4, w: 2, h: 2, ch: '|' },
+    { x: 6, y: 15, w: 2, h: 1, ch: '|' }, { x: 24, y: 15, w: 2, h: 1, ch: '|' },
+    { x: 8, y: 7, w: 1, h: 3, ch: '#' }, { x: 23, y: 7, w: 1, h: 3, ch: '#' },
+    { x: 8, y: 12, w: 1, h: 2, ch: '#' }, { x: 23, y: 12, w: 1, h: 2, ch: '#' },
+    { x: 4, y: 10, w: 3, h: 1, ch: '|' }, { x: 25, y: 10, w: 3, h: 1, ch: '|' },
+  ]),
+  tileSize: TILE,
+  floor: '#17102b', floorAlt: '#1e1438', wall: '#ff2e88',
+  spawn: { x: 512, y: 530 },
+  gateways: [retGw(15, 18)],
+  stage: stageDef(13, 3),
+};
+
+// CINDER MESA — ember/desert forge: baked-orange sand, dark forge-rock
+// walls, rock clusters and forge stalls; stage on the east side.
+const cinder = {
+  id: 'cinder-mesa',
+  name: 'Cinder Mesa',
+  tiles: buildCityTiles([
+    { x: 4, y: 4, w: 3, h: 2, ch: '#' }, { x: 10, y: 3, w: 2, h: 1, ch: '#' },
+    { x: 5, y: 14, w: 2, h: 2, ch: '#' }, { x: 14, y: 5, w: 4, h: 1, ch: '#' },
+    { x: 14, y: 15, w: 4, h: 1, ch: '#' }, { x: 8, y: 9, w: 2, h: 2, ch: '|' },
+    { x: 24, y: 14, w: 2, h: 1, ch: '|' }, { x: 3, y: 9, w: 1, h: 3, ch: '#' },
+  ]),
+  tileSize: TILE,
+  floor: '#c47b3a', floorAlt: '#bb7031', wall: '#6e2418',
+  spawn: { x: 96, y: 530 },
+  gateways: [retGw(2, 18)],
+  stage: stageDef(20, 8),
+};
+
+// FROSTHAVEN — aurora ice: pale blue-white ice floor, deep glacier
+// walls, a frozen pond ('%') north-west; stage on the south side,
+// return arch on the north edge (you arrive facing the stage).
+const frost = {
+  id: 'frosthaven',
+  name: 'Frosthaven',
+  tiles: buildCityTiles([
+    { x: 2, y: 2, w: 6, h: 3, ch: '%' },
+    { x: 24, y: 3, w: 3, h: 2, ch: '#' }, { x: 5, y: 15, w: 2, h: 2, ch: '#' },
+    { x: 25, y: 14, w: 2, h: 2, ch: '#' }, { x: 10, y: 6, w: 1, h: 1, ch: '|' },
+    { x: 21, y: 6, w: 1, h: 1, ch: '|' }, { x: 15, y: 10, w: 2, h: 1, ch: '#' },
+  ]),
+  tileSize: TILE,
+  floor: '#d7edf7', floorAlt: '#c6e3f2', wall: '#2f5d8a',
+  spawn: { x: 512, y: 90 },
+  gateways: [retGw(15, 1)],
+  stage: stageDef(13, 15),
+};
+
+// VERDANT HOLLOW — firefly grove: deep green floor, grove-brown walls,
+// tree clusters ('|') everywhere and a pond; stage at the grove heart.
+const verdant = {
+  id: 'verdant-hollow',
+  name: 'Verdant Hollow',
+  tiles: buildCityTiles([
+    { x: 3, y: 3, w: 2, h: 2, ch: '|' }, { x: 27, y: 3, w: 2, h: 2, ch: '|' },
+    { x: 3, y: 16, w: 2, h: 2, ch: '|' }, { x: 27, y: 16, w: 2, h: 2, ch: '|' },
+    { x: 8, y: 6, w: 1, h: 2, ch: '|' }, { x: 23, y: 6, w: 1, h: 2, ch: '|' },
+    { x: 8, y: 13, w: 1, h: 1, ch: '|' }, { x: 23, y: 13, w: 1, h: 1, ch: '|' },
+    { x: 14, y: 16, w: 4, h: 2, ch: '%' }, { x: 5, y: 10, w: 2, h: 1, ch: '#' },
+    { x: 25, y: 10, w: 2, h: 1, ch: '#' },
+  ]),
+  tileSize: TILE,
+  floor: '#2e5d33', floorAlt: '#26502b', wall: '#4a3520',
+  spawn: { x: 928, y: 470 },
+  gateways: [retGw(28, 18)],
+  stage: stageDef(13, 9),
+};
+
 const MAPS = {
   [gateway.id]: gateway,
   [bay.id]: bay,
+  [neon.id]: neon,
+  [cinder.id]: cinder,
+  [frost.id]: frost,
+  [verdant.id]: verdant,
 };
 
 // ------------------------------------------------------------------
@@ -275,6 +393,10 @@ function clientMap(map) {
     stage: map.stage ? {
       x: map.stage.x, y: map.stage.y, w: map.stage.w, h: map.stage.h,
       speakers: map.stage.speakers.map(s => ({ x: s.x, y: s.y })),
+    } : null,
+    studio: map.studio ? {
+      ownerId: map.studio.ownerId, ownerName: map.studio.ownerName,
+      door: { ...map.studio.door },
     } : null,
     casino: map.casino ? {
       id: map.casino.id, label: map.casino.label,

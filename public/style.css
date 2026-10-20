@@ -139,6 +139,29 @@ html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; ba
 .genreBtn { padding: 6px 14px; border-radius: 999px; border: 1px solid #33415c;
   background: #232f4d; color: #cdd9f5; cursor: pointer; font-weight: 600; }
 .genreBtn.active { background: #ffd23f; color: #1a2238; border-color: #ffd23f; }
+/* ------------------------------------------------ Phase 4: studio + look */
+#studioBtn, #lookBtn { pointer-events: auto; background: rgba(10,14,26,.75); border: 1px solid #33415c;
+  color: #eef; padding: 6px 14px; border-radius: 999px; font-weight: 700; cursor: pointer; }
+#studioBtn:hover, #lookBtn:hover { border-color: #ffd23f; color: #ffd23f; }
+#studioPanel { position: absolute; left: 10px; bottom: 160px; width: 290px; max-height: 62vh; overflow-y: auto;
+  background: rgba(20,16,30,.9); border: 1px solid #ff8bd1; border-radius: 10px; padding: 10px; z-index: 5;
+  box-shadow: 0 8px 30px rgba(0,0,0,.6); }
+#studioPanel .spRow { margin-bottom: 6px; }
+#studioPanel .spRow input { flex: 1; min-width: 0; padding: 6px; border-radius: 6px;
+  border: 1px solid #33415c; background: #121827; color: #eef; font-size: 13px; }
+#studioFurnList { font-size: 12px; margin: 6px 0; }
+#catalogList .pkSit, #inventoryList button { margin: 2px 0; }
+#inventoryList button { padding: 3px 8px; border-radius: 6px; border: 1px solid #33415c;
+  background: #232f4d; color: #eef; cursor: pointer; font-size: 12px; }
+#studioPanel .qItem button { margin-left: 4px; }
+#lookPanel { position: absolute; right: 10px; top: 320px; width: 250px;
+  background: rgba(20,28,48,.94); border: 1px solid #ffd23f; border-radius: 10px; padding: 12px; z-index: 20;
+  box-shadow: 0 8px 30px rgba(0,0,0,.6); }
+#lookPanel .frow { display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+  color: #9fb2d8; font-size: 13px; }
+#lookPanel select { flex: 1; padding: 6px; border-radius: 6px; border: 1px solid #33415c;
+  background: #121827; color: #eef; }
+#lookPanel input[type=color] { width: 40px; height: 28px; border: none; background: none; }
 /* ------------------------------------------------ Phase 3: casino */
 #casinoPanel { position: absolute; top: 56px; left: 10px; width: 300px; max-height: 78vh; overflow-y: auto;
   background: rgba(16,10,30,.92); border: 2px solid #ffd23f; border-radius: 10px; padding: 10px; z-index: 5;

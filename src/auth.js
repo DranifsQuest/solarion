@@ -126,7 +126,59 @@ const auth = {
     q.deleteSession.run(token);
   },
 
+  /**
+   * Phase 4 — avatar editing. Validates against the SAME sets used at
+   * registration (SKIN_TONES / HAIR_STYLES / COLOR_RE above) so there is
+   * exactly one source of truth for what a legal look is. Accepts the
+   * canonical column names (body_color / accent_color) plus the
+   * registration aliases (shirt / pants). Partial updates merge with the
+   * current look; every provided field must be valid or nothing changes.
+   */
+  updateAvatar(userId, opts) {
+    opts = opts || {};
+    const cur = q.avatarByUser.get(userId);
+    if (!cur) return { ok: false, error: 'No such avatar.' };
+    const next = {
+      hair_style: cur.hair_style,
+      hair_color: cur.hair_color,
+      body_color: cur.body_color,
+      accent_color: cur.accent_color,
+      skin_tone: cur.skin_tone,
+    };
+    let touched = false;
+    if (opts.hair_style !== undefined) {
+      if (!HAIR_STYLES.includes(opts.hair_style)) return { ok: false, error: `Invalid hair style. Choose: ${HAIR_STYLES.join(', ')}.` };
+      next.hair_style = opts.hair_style; touched = true;
+    }
+    if (opts.hair_color !== undefined) {
+      if (typeof opts.hair_color !== 'string' || !COLOR_RE.test(opts.hair_color)) return { ok: false, error: 'Invalid hair color (use #rrggbb).' };
+      next.hair_color = opts.hair_color; touched = true;
+    }
+    const shirt = opts.body_color !== undefined ? opts.body_color : opts.shirt;
+    if (shirt !== undefined) {
+      if (typeof shirt !== 'string' || !COLOR_RE.test(shirt)) return { ok: false, error: 'Invalid shirt color (use #rrggbb).' };
+      next.body_color = shirt; touched = true;
+    }
+    const pants = opts.accent_color !== undefined ? opts.accent_color : opts.pants;
+    if (pants !== undefined) {
+      if (typeof pants !== 'string' || !COLOR_RE.test(pants)) return { ok: false, error: 'Invalid pants color (use #rrggbb).' };
+      next.accent_color = pants; touched = true;
+    }
+    if (opts.skin_tone !== undefined) {
+      if (!SKIN_TONES.includes(opts.skin_tone)) return { ok: false, error: 'Invalid skin tone.' };
+      next.skin_tone = opts.skin_tone; touched = true;
+    }
+    if (!touched) return { ok: false, error: 'Nothing to update.' };
+    q.updateAvatarLook.run(next.hair_style, next.hair_color, next.body_color, next.accent_color, next.skin_tone, userId);
+    return { ok: true, avatar: publicAvatar(q.avatarByUser.get(userId)) };
+  },
+
   publicAvatar,
 };
+
+// The single source of truth for legal looks (registration + editing).
+auth.SKIN_TONES = SKIN_TONES;
+auth.HAIR_STYLES = HAIR_STYLES;
+auth.COLOR_RE = COLOR_RE;
 
 module.exports = auth;

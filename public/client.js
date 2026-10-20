@@ -20,6 +20,7 @@ let token = localStorage.getItem('solarion_token') || null;
 let me = null;
 let mapDef = null;
 let players = [];
+let sceneFurniture = []; // Phase 4: placed studio furniture in this scene
 const renderPos = new Map(); // id -> { x, y, moving }
 const bubbles = new Map();   // id -> { text, until }
 let keys = { up: false, down: false, left: false, right: false };
@@ -134,6 +135,7 @@ function setMap(m, you, chat) {
   $('mapName').textContent = m.name;
   if (window.SolarionMixer) window.SolarionMixer.onMapChanged(m);
   if (window.SolarionCasino) window.SolarionCasino.onMapChanged(m);
+  if (window.SolarionStudio) window.SolarionStudio.onMapChanged(m);
   renderPos.clear();
   for (const c of chat || []) chatLine(`<span class="who">${esc(c.from)}:</span> ${esc(c.text)}`);
   if (you) {
@@ -145,12 +147,14 @@ function setMap(m, you, chat) {
 function handle(m) {
   if (window.SolarionMixer) window.SolarionMixer.handle(m);
   if (window.SolarionCasino) window.SolarionCasino.handle(m);
+  if (window.SolarionStudio) window.SolarionStudio.handle(m);
   switch (m.type) {
     case 'hello': {
       me = { ...m.you };
       coins = m.zcoins;
       $('coins').textContent = coins;
       players = m.players;
+      sceneFurniture = m.furniture || [];
       showGame();
       setMap(m.map, m.you, m.chat);
       chatLine(`<span class="sys">Welcome to ${esc(m.map.name)}.</span>`);
@@ -169,12 +173,21 @@ function handle(m) {
     case 'map': {
       $('loadText').textContent = `Traveling to ${m.map.name}…`;
       $('loadScreen').classList.remove('hidden');
+      sceneFurniture = m.furniture || (m.studio && m.studio.furniture) || [];
       setTimeout(() => {
         setMap(m.map, m.you, m.chat || []);
         players = m.players;
         chatLine(`<span class="sys">You arrived in ${esc(m.map.name)}.</span>`);
         $('loadScreen').classList.add('hidden');
       }, 650);
+      break;
+    }
+    case 'studio-furniture': {
+      sceneFurniture = m.furniture || [];
+      break;
+    }
+    case 'avatar-updated': {
+      if (m.you) me = { ...me, ...m.you };
       break;
     }
     case 'chat': {
@@ -425,6 +438,21 @@ function draw() {
     ctx.fillText('🎰 ' + cz.label, dx2, dy2 - 26);
     // tell the casino panel whether we're inside the lounge
     if (window.SolarionCasino && myRp) window.SolarionCasino.updatePresence(myRp.x, myRp.y, mapDef);
+  }
+
+  // studio furniture (Phase 4): simple colored iso blocks with the
+  // item's icon glyph — drawn from the server's placed-furniture list
+  // for THIS scene (studio instance) only.
+  for (const f of sceneFurniture) {
+    const TS3 = mapDef.tileSize;
+    const [fx, fy] = proj((f.x + 0.5) * TS3, (f.y + 0.5) * TS3);
+    ctx.save();
+    if (f.rot) { /* rotation is data in v1; glyph orientation is fixed */ }
+    diamond(fx, fy - 3, TS3 * ZOOM * 0.92, TS3 * ZOOM * 0.46, f.color || '#888');
+    ctx.font = '15px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillText(f.icon || '📦', fx, fy - 2);
+    ctx.restore();
   }
 
   // gateway pads

@@ -14,6 +14,12 @@
 
 const { MAPS, collides, gatewayAt } = require('./maps');
 const { q } = require('./db');
+// NOTE: studio is required lazily inside methods (not at the top) to
+// keep the require graph acyclic: studio.js requires maps.js only,
+// and studio-system handlers call back into Game via the instance.
+function studioOf(sceneId) {
+  return require('./studio').studioMapForId(sceneId);
+}
 
 const PLAYER_RADIUS = 12;
 const SPEED = 175;              // px per second
@@ -59,6 +65,24 @@ class Game {
     this.saveAllPositions();
   }
 
+  // ---------------------------------------------------------- scenes
+  /**
+   * Resolve ANY scene id — a static public map id, or an instanced
+   * studio scene id (`studio:<ownerUserId>`, Phase 4) — to the
+   * map-shaped object the sim collides/moves against. Studios are
+   * built from the one template in studio.js; everything downstream
+   * (movement, snapshots, chat keyed by scene id) treats them exactly
+   * like maps, which is what makes instance isolation automatic.
+   */
+  sceneFor(sceneId) {
+    if (MAPS[sceneId]) return MAPS[sceneId];
+    return studioOf(sceneId);
+  }
+
+  isStudioScene(sceneId) {
+    return require('./studio').isStudioId(sceneId);
+  }
+
   // ---------------------------------------------------------- connections
 
   addPlayer(ws, { user, avatar }) {
@@ -67,6 +91,9 @@ class Game {
     if (existing && existing.ws !== ws) {
       try { existing.ws.close(4000, 'replaced'); } catch (e) { /* already gone */ }
     }
+    // Studios are session-only scenes and are never a respawn point:
+    // savePosition() skips them, so a saved map_id is always a public
+    // map (anything unrecognized falls back to the Gateway, as before).
     let mapId = MAPS[avatar.map_id] ? avatar.map_id : 'the-gateway';
     const map = MAPS[mapId];
     let { x, y } = avatar;
@@ -87,6 +114,7 @@ class Game {
       chatTimes: [],
       lastGatewayAt: 0,
       performing: false,
+      returnTo: null,   // Phase 4: public map/pos to return to from a studio
     };
     this.players.set(user.id, p);
     return p;
@@ -106,6 +134,10 @@ class Game {
   }
 
   savePosition(p) {
+    // Never persist a studio scene as a respawn point — a player who
+    // disconnects mid-visit re-enters at their last public position
+    // (the row still holds it, untouched, from before they entered).
+    if (this.isStudioScene(p.mapId)) return;
     q.saveAvatarPos.run(p.mapId, Math.round(p.x), Math.round(p.y), p.userId);
   }
 
@@ -128,9 +160,10 @@ class Game {
     try { p.ws.send(JSON.stringify(msg)); } catch (e) { /* socket dying */ }
   }
 
-  broadcastToMap(mapId, msg, exceptUserId = null) {
+  /** Broadcast to everyone in a scene (public map OR studio instance). */
+  broadcastToMap(sceneId, msg, exceptUserId = null) {
     for (const p of this.players.values()) {
-      if (p.mapId === mapId && p.userId !== exceptUserId) this.send(p, msg);
+      if (p.mapId === sceneId && p.userId !== exceptUserId) this.send(p, msg);
     }
   }
 
@@ -157,18 +190,24 @@ class Game {
     };
   }
 
-  playersInMap(mapId) {
+  /** Players in a scene (public map OR studio instance). */
+  playersInMap(sceneId) {
     const out = [];
-    for (const p of this.players.values()) if (p.mapId === mapId) out.push(this.publicPlayer(p));
+    for (const p of this.players.values()) if (p.mapId === sceneId) out.push(this.publicPlayer(p));
     return out;
   }
 
   broadcastSnapshots() {
-    for (const mapId of Object.keys(MAPS)) {
-      const inMap = [...this.players.values()].filter(p => p.mapId === mapId);
-      if (!inMap.length) continue;
-      const players = inMap.map(p => this.publicPlayer(p));
-      for (const p of inMap) this.send(p, { type: 'snapshot', players });
+    // Group by scene id — public maps and studio instances alike — so
+    // players only ever see the occupants of their own scene.
+    const byScene = new Map();
+    for (const p of this.players.values()) {
+      if (!byScene.has(p.mapId)) byScene.set(p.mapId, []);
+      byScene.get(p.mapId).push(p);
+    }
+    for (const inScene of byScene.values()) {
+      const players = inScene.map(p => this.publicPlayer(p));
+      for (const p of inScene) this.send(p, { type: 'snapshot', players });
     }
   }
 
@@ -218,7 +257,8 @@ class Game {
   tick() {
     const dt = 1 / TICK_HZ;
     for (const p of this.players.values()) {
-      const map = MAPS[p.mapId];
+      const map = this.sceneFor(p.mapId);
+      if (!map) continue;
       let dx = 0, dy = 0;
       if (p.keys.left) dx -= 1;
       if (p.keys.right) dx += 1;
@@ -243,7 +283,8 @@ class Game {
   }
 
   checkGateway(p) {
-    const map = MAPS[p.mapId];
+    const map = this.sceneFor(p.mapId);
+    if (!map) return;
     const gw = gatewayAt(map, p.x, p.y);
     if (!gw) return;
     // Debounce so a player standing on a spot can't bounce between maps.
@@ -258,21 +299,33 @@ class Game {
   }
 
   switchMap(p, target) {
+    this.switchScene(p, target);
+  }
+
+  /**
+   * Move a player to ANY scene (public map def or studio scene object).
+   * opts.spawn overrides the scene spawn; opts.extra is merged into
+   * the `map` message (studio entry carries its furniture payload).
+   */
+  switchScene(p, scene, opts = {}) {
     p.lastGatewayAt = Date.now();
-    p.performing = false; // never carry a performance across maps
+    p.performing = false; // never carry a performance across scenes
     if (this.onPlayerGone) this.onPlayerGone(p.userId);
-    p.mapId = target.id;
-    p.x = target.spawn.x;
-    p.y = target.spawn.y;
+    p.mapId = scene.id;
+    const spawn = opts.spawn || scene.spawn;
+    p.x = spawn.x;
+    p.y = spawn.y;
+    if (collides(scene, p.x, p.y, PLAYER_RADIUS)) { p.x = scene.spawn.x; p.y = scene.spawn.y; }
     p.keys = {};
     this.savePosition(p);
     const { clientMap } = require('./maps');
     this.send(p, {
       type: 'map',
-      map: clientMap(target),
-      players: this.playersInMap(target.id),
-      chat: this.historyFor(target.id),
+      map: clientMap(scene),
+      players: this.playersInMap(scene.id),
+      chat: this.historyFor(scene.id),
       you: this.publicPlayer(p),
+      ...(opts.extra || {}),
     });
     if (this.onMapEntered) this.onMapEntered(p);
   }

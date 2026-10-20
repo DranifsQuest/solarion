@@ -82,6 +82,7 @@ const q = {
   ),
   avatarByUser: db.prepare('SELECT * FROM avatars WHERE user_id = ?'),
   saveAvatarPos: db.prepare('UPDATE avatars SET map_id = ?, x = ?, y = ? WHERE user_id = ?'),
+  updateAvatarLook: db.prepare('UPDATE avatars SET hair_style = ?, hair_color = ?, body_color = ?, accent_color = ?, skin_tone = ? WHERE user_id = ?'),
   setZCoins: db.prepare('UPDATE avatars SET zcoins = ? WHERE user_id = ?'),
 
   insertSession: db.prepare('INSERT INTO sessions (token, user_id, created_at, expires_at, last_ip) VALUES (?, ?, ?, ?, ?)'),
