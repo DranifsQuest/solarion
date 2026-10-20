@@ -1,8 +1,8 @@
 # Solarion v1 Playtest Checklist
 
-Everything below is protocol-proven (27/27 automated live checks pass end
-to end from a clean external network, incl. the Phase 6 creation flow
-and the whole Phase B world expansion) but never touched by a human.
+Everything below is protocol-proven (30/30 automated live checks pass end
+to end from a clean external network, incl. the Phase 6 creation flow,
+the Phase B world expansion, and the Phase C homes) but never touched by a human.
 Work through it in any order; jot what hits wrong and v1.1 starts there.
 Live at https://solarion.onrender.com
 
@@ -12,7 +12,9 @@ Live at https://solarion.onrender.com
   Same tradeoff as Goleon; the Fly.io move fixes it later.
 
 ## Don't bother testing (deferred by design)
-- Burn-to-CD ritual, Gold/Platinum trophies, Top-40 chart, jukebox playback.
+- Burn-to-CD ritual, Gold/Platinum trophies, Top-40 chart. (Radios
+  playing mixes shipped in Phase 8 — the old decorative jukebox is
+  still just furniture; radios are the players.)
 
 ## 1. First load
 - [ ] Register a fresh account; log out and back in.
