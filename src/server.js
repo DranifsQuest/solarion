@@ -21,11 +21,15 @@
  *   { type: 'stage-join', mixId }   (player must be in the stage's map)
  *   { type: 'stage-leave' }
  *   { type: 'vote', value: 1 | -1 } (during a performance or the 10s grace)
+ * Phase 3 (casino) messages:
+ *   { type: 'poker', action: 'state'|'sit'|'stand'|'rebuy'|'act', table, chair, act, amount }
+ *   { type: 'slots', action: 'info'|'spin', bet }
  *
  * Game messages (server -> client):
  *   hello / map / snapshot / chat / notice / bonus / zcoins
  *   mixes / mix-saved / mix-error
  *   stage-queue / performance-start / performance-end / vote-ack
+ *   poker-state / poker-cards / slot-result / slot-info
  */
 
 const http = require('http');
@@ -39,8 +43,11 @@ const { MAPS, clientMap } = require('./maps');
 const { q } = require('./db');
 const music = require('./music');
 const { StageManager } = require('./stage');
+const casinoModule = require('./casino');
+const { CasinoSystem } = casinoModule;
 
 music.init();
+casinoModule.initLedger();
 
 const PORT = parseInt(process.env.SOLARION_PORT || process.env.PORT || '3000', 10);
 const TEST_MODE = process.env.SOLARION_TEST === '1';
@@ -57,8 +64,12 @@ const stages = new StageManager(game);
 for (const [mapId, map] of Object.entries(MAPS)) {
   if (map.stage) stages.registerMap(mapId, map.stage);
 }
-game.onPlayerGone = (userId) => stages.handlePlayerGone(userId);
-game.onMapEntered = (p) => stages.syncPlayer(p);
+// Phase 3: casino (poker + slots) — tables/slots come from map casino
+// defs, so future cities with a lounge get tables for free.
+const casino = new CasinoSystem(game);
+casino.initFromMaps(MAPS);
+game.onPlayerGone = (userId) => { stages.handlePlayerGone(userId); casino.handlePlayerGone(userId); };
+game.onMapEntered = (p) => { stages.syncPlayer(p); casino.syncPlayer(p); };
 
 function sendAvatar(res, result) {
   res.json({
@@ -109,7 +120,7 @@ app.get('/health', (req, res) => {
   res.json({
     ok: true,
     game: 'solarion',
-    phase: 2,
+    phase: 3,
     version: require('../package.json').version,
     uptime_s: Math.floor((Date.now() - startedAt) / 1000),
     players_online: total,
@@ -131,6 +142,13 @@ wss.on('connection', (ws, req) => {
 
   const p = game.addPlayer(ws, session);
 
+  // Casino crash recovery: refund any table chips stranded by a crash
+  // (mirrored in avatars.casino_chips) exactly once, before the bonus.
+  if (casino.recoverStrandedChips(session.user.id)) {
+    const fresh = q.avatarByUser.get(session.user.id);
+    if (fresh) session.avatar.zcoins = fresh.zcoins;
+  }
+
   // Daily login bonus: atomic one-claim-per-day in the DB.
   const bonusGranted = game.claimDailyBonus(session.user.id);
   if (bonusGranted) {
@@ -149,6 +167,7 @@ wss.on('connection', (ws, req) => {
     bonusGranted,
   });
   stages.syncPlayer(p);
+  casino.syncPlayer(p);
   game.send(p, { type: 'mixes', mixes: music.listMixes(session.user.id) });
 
   ws.on('message', (raw) => {
@@ -157,7 +176,15 @@ wss.on('connection', (ws, req) => {
     if (!msg || typeof msg !== 'object') return;
     switch (msg.type) {
       case 'input':
-        game.handleInput(p, msg.keys);
+        // Seated at a poker table? Movement is locked until you stand.
+        if (!casino.isSeated(p.userId)) game.handleInput(p, msg.keys);
+        else p.keys = {};
+        break;
+      case 'poker':
+        casino.handlePoker(p, msg);
+        break;
+      case 'slots':
+        casino.handleSlots(p, msg);
         break;
       case 'chat':
         game.handleChat(p, msg.text);
@@ -203,6 +230,24 @@ wss.on('connection', (ws, req) => {
           music.setPerfEarned(p.userId, localDay(), msg.earned);
         }
         break;
+      case 'debug-casino':
+        // Test-only (SOLARION_TEST=1): set the caller's z-coin balance
+        // or seated stack so side-pot / insufficient-funds branches
+        // can be exercised deterministically.
+        if (TEST_MODE) {
+          if (msg.op === 'set-balance' && Number.isFinite(msg.zcoins)) {
+            q.setZCoins.run(Math.max(0, Math.floor(msg.zcoins)), p.userId);
+            game.send(p, { type: 'zcoins', zcoins: casino.zcoinsOf(p.userId) });
+          } else if (msg.op === 'set-chips' && Number.isFinite(msg.chips)) {
+            const found = casino.findSeatByUser(p.userId);
+            if (found) {
+              found.seat.chips = Math.max(0, Math.floor(msg.chips));
+              found.table.persistSeat(found.seat);
+              found.table.broadcast();
+            }
+          }
+        }
+        break;
       default:
         break;
     }
@@ -216,9 +261,11 @@ server.listen(PORT, () => {
   console.log(`[solarion] listening on http://localhost:${PORT} (test-mode: ${TEST_MODE})`);
   game.start();
   stages.start();
+  casino.start();
 });
 
 function shutdown() {
+  try { casino.stop(); } catch (e) { /* ignore */ }
   try { stages.stop(); } catch (e) { /* ignore */ }
   try { game.stop(); } catch (e) { /* ignore */ }
   try { server.close(); } catch (e) { /* ignore */ }

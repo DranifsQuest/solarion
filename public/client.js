@@ -133,6 +133,7 @@ function setMap(m, you, chat) {
   mapDef = m;
   $('mapName').textContent = m.name;
   if (window.SolarionMixer) window.SolarionMixer.onMapChanged(m);
+  if (window.SolarionCasino) window.SolarionCasino.onMapChanged(m);
   renderPos.clear();
   for (const c of chat || []) chatLine(`<span class="who">${esc(c.from)}:</span> ${esc(c.text)}`);
   if (you) {
@@ -143,6 +144,7 @@ function setMap(m, you, chat) {
 
 function handle(m) {
   if (window.SolarionMixer) window.SolarionMixer.handle(m);
+  if (window.SolarionCasino) window.SolarionCasino.handle(m);
   switch (m.type) {
     case 'hello': {
       me = { ...m.you };
@@ -276,6 +278,28 @@ function drawTile(ch, tx, ty) {
     diamond(cx, cy, hw, hh, (tx + ty) % 2 ? mapDef.floor : mapDef.floorAlt);
     return;
   }
+  if (ch === 'C') { // Casino Lounge indoor floor — dark club checkerboard
+    const cz = mapDef.casino || { floor: '#3a2350', floorAlt: '#432a5c' };
+    diamond(cx, cy, hw, hh, (tx + ty) % 2 ? cz.floor : cz.floorAlt);
+    return;
+  }
+  if (ch === 'W') { // Casino Lounge wall — deep purple frame with gold trim
+    ctx.beginPath();
+    ctx.moveTo(cx - hw, cy - WALL_H); ctx.lineTo(cx, cy + hh - WALL_H);
+    ctx.lineTo(cx, cy + hh); ctx.lineTo(cx - hw, cy);
+    ctx.closePath(); ctx.fillStyle = '#1d102e'; ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(cx, cy + hh - WALL_H); ctx.lineTo(cx + hw, cy - WALL_H);
+    ctx.lineTo(cx + hw, cy); ctx.lineTo(cx, cy + hh);
+    ctx.closePath(); ctx.fillStyle = '#241533'; ctx.fill();
+    diamond(cx, cy - WALL_H, hw, hh, '#4a2f6e');
+    ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - WALL_H - hh); ctx.lineTo(cx + hw, cy - WALL_H);
+    ctx.lineTo(cx, cy - WALL_H + hh); ctx.lineTo(cx - hw, cy - WALL_H);
+    ctx.closePath(); ctx.stroke();
+    return;
+  }
   if (ch === '%') { // water
     diamond(cx, cy, hw, hh, (tx + ty) % 2 ? '#2f8fb8' : '#2b84ad');
     return;
@@ -361,6 +385,46 @@ function draw() {
       ctx.beginPath(); ctx.arc(0, 8, 4.5, 0, Math.PI * 2); ctx.fill();
       ctx.restore();
     }
+  }
+
+  // casino lounge furniture: poker tables, chairs, slot machines,
+  // plus the doorway label (same treatment as gateway labels)
+  if (mapDef.casino) {
+    const cz = mapDef.casino;
+    for (const s of cz.slots) {
+      const [sx2, sy2] = proj(s.x, s.y);
+      ctx.fillStyle = '#171126';
+      ctx.fillRect(sx2 - 13, sy2 - 30, 26, 34);
+      ctx.fillStyle = '#ffd23f';
+      ctx.fillRect(sx2 - 10, sy2 - 27, 20, 13);
+      ctx.font = '11px system-ui'; ctx.textAlign = 'center';
+      ctx.fillStyle = '#171126';
+      ctx.fillText('7·7·7', sx2, sy2 - 16);
+      ctx.fillStyle = '#ff5d8f';
+      ctx.beginPath(); ctx.arc(sx2, sy2 - 32, 3.5, 0, Math.PI * 2); ctx.fill();
+    }
+    for (const t of cz.tables) {
+      for (const ch2 of t.chairs) {
+        const [chx, chy] = proj(ch2.x, ch2.y);
+        ctx.beginPath(); ctx.ellipse(chx, chy, 10, 5.5, 0, 0, Math.PI * 2);
+        ctx.fillStyle = '#6e1f2a'; ctx.fill();
+        ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = 1; ctx.stroke();
+      }
+      const [tx2, ty2] = proj(t.x, t.y);
+      ctx.beginPath(); ctx.ellipse(tx2, ty2, 44, 23, 0, 0, Math.PI * 2);
+      ctx.fillStyle = '#7a5a2b'; ctx.fill();
+      ctx.beginPath(); ctx.ellipse(tx2, ty2 - 2, 38, 19, 0, 0, Math.PI * 2);
+      ctx.fillStyle = '#14663c'; ctx.fill();
+      ctx.font = '13px system-ui'; ctx.textAlign = 'center';
+      ctx.fillText('♠ ♥ ♦ ♣', tx2, ty2 + 3);
+    }
+    const [dx2, dy2] = proj(cz.doorway.x + cz.doorway.w / 2, cz.doorway.y + cz.doorway.h / 2);
+    ctx.font = 'bold 13px system-ui'; ctx.textAlign = 'center';
+    ctx.fillStyle = '#ffd23f'; ctx.strokeStyle = 'rgba(0,0,0,.8)'; ctx.lineWidth = 3;
+    ctx.strokeText('🎰 ' + cz.label, dx2, dy2 - 26);
+    ctx.fillText('🎰 ' + cz.label, dx2, dy2 - 26);
+    // tell the casino panel whether we're inside the lounge
+    if (window.SolarionCasino && myRp) window.SolarionCasino.updatePresence(myRp.x, myRp.y, mapDef);
   }
 
   // gateway pads

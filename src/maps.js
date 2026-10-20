@@ -6,7 +6,8 @@
  * Maps are DATA, not code. Each map definition is:
  *   { id, name, theme colors, tile layout, spawn, gateways[] }
  *
- * `tiles` is a string grid: '#'=solid (wall/water), '.'=walkable.
+ * `tiles` is a string grid: '#'=solid, '%'=water, '.'=walkable,
+ * 'W'=casino-lounge wall (solid), 'C'=casual lounge floor (walkable).
  * Gateways are pixel-space rectangles; stepping into one triggers a
  * server-side scene switch. A gateway whose `target` is a map id that
  * exists in MAPS is active; others are rendered sealed ("soon").
@@ -25,6 +26,7 @@ function grid(rows) {
   }
   return { rows, w, h };
 }
+
 
 // ------------------------------------------------------------------
 // THE GATEWAY — entrance plaza / hub. Five gateway arches along the
@@ -78,6 +80,74 @@ const gateway = {
 };
 
 // ------------------------------------------------------------------
+// CASINO LOUNGE (Phase 3) — a data-driven indoor room that can be
+// dropped into ANY city map with zero code changes: pick a free
+// corner (tx, ty in tiles) and the builder returns the lounge def +
+// rewrites those tiles as 'W' walls with a doorway gap on the east
+// wall and 'C' indoor floor. Layout inside is expressed in tile
+// offsets from the lounge origin, so a same-size lounge in another
+// city is identical. Soul doc §2: the room is a machine, not a
+// diorama — tables and machines are interactable furniture.
+// ------------------------------------------------------------------
+const CASINO_FLOOR = '#3a2350';      // deep club purple — reads "indoor"
+const CASINO_FLOOR_ALT = '#432a5c';
+const CASINO_WALL = '#241533';
+
+function makeCasinoLounge(mapId, tx, ty) {
+  const tw = 10, th = 7;                       // tiles, incl. walls
+  const x = tx * TILE, y = ty * TILE, w = tw * TILE, h = th * TILE;
+  const cx = (dx) => x + dx * TILE + TILE / 2; // px centre of tile offset
+  const cy = (dy) => y + dy * TILE + TILE / 2;
+  const chairSet = (txPx, tyPx) => [
+    { dir: 'N', x: txPx, y: tyPx - 44 },
+    { dir: 'E', x: txPx + 44, y: tyPx },
+    { dir: 'S', x: txPx, y: tyPx + 44 },
+    { dir: 'W', x: txPx - 44, y: tyPx },
+  ];
+  // Two poker tables on the upper floor of the lounge.
+  const t1 = { x: cx(3), y: cy(2) };   // tile offset (3,2) centre
+  const t2 = { x: cx(7), y: cy(2) };
+  // Four slot machines along the south interior wall; (ix, iy) is the
+  // standing spot in front of each machine.
+  const slotXs = [2, 4, 6, 8].map((dx) => cx(dx));
+  return {
+    id: `${mapId}-casino`,
+    mapId,
+    label: 'Casino Lounge',
+    x, y, w, h,
+    floor: CASINO_FLOOR, floorAlt: CASINO_FLOOR_ALT, wall: CASINO_WALL,
+    doorway: { x: (tx + tw - 1) * TILE, y: (ty + 3) * TILE, w: TILE, h: TILE },
+    tables: [
+      { id: `${mapId}-poker-1`, x: t1.x, y: t1.y, chairs: chairSet(t1.x, t1.y) },
+      { id: `${mapId}-poker-2`, x: t2.x, y: t2.y, chairs: chairSet(t2.x, t2.y) },
+    ],
+    slots: slotXs.map((sx, i) => ({
+      id: `${mapId}-slot-${i + 1}`,
+      x: sx, y: cy(6) - 10,
+      ix: sx, iy: cy(5),
+    })),
+  };
+}
+
+/** Rewrite a tile-grid (array of strings) with the lounge footprint. */
+function applyCasinoToRows(rows, lounge) {
+  const tx = Math.round(lounge.x / TILE), ty = Math.round(lounge.y / TILE);
+  const tw = Math.round(lounge.w / TILE), th = Math.round(lounge.h / TILE);
+  const doorTy = Math.round(lounge.doorway.y / TILE);
+  const out = rows.map((r) => r.split(''));
+  for (let dy = 0; dy < th; dy++) {
+    for (let dx = 0; dx < tw; dx++) {
+      const gx = tx + dx, gy = ty + dy;
+      if (gy < 0 || gy >= out.length || gx < 0 || gx >= out[gy].length) continue;
+      const isDoor = dx === tw - 1 && gy === doorTy;
+      const isWall = dx === 0 || dy === 0 || dx === tw - 1 || dy === th - 1;
+      out[gy][gx] = isDoor ? 'C' : isWall ? 'W' : 'C';
+    }
+  }
+  return out.map((r) => r.join(''));
+}
+
+// ------------------------------------------------------------------
 // SOLSTICE BAY — first city lobby. Breezy boardwalk: water across the
 // top, stalls along the promenade, return gateway at the south edge.
 // ------------------------------------------------------------------
@@ -110,10 +180,18 @@ const BAY_TILES = grid([
 // audience floor to the south) flanked by two speakers that animate
 // while someone performs. The stage tiles stay walkable — the server
 // walks the performer to centre stage when their set starts.
+// Casino Lounge (Phase 3): enclosed indoor room in the south-west
+// corner (tiles x2–11, y12–18), reached through a doorway in its east
+// wall at tile (11,15). Built additively from the same data builder
+// every future city will use — the stage rect, gateways and spawn
+// above are untouched.
+const BAY_CASINO = makeCasinoLounge('solstice-bay', 2, 12);
+const BAY_TILES_CASINO = grid(applyCasinoToRows(BAY_TILES.rows, BAY_CASINO));
+
 const bay = {
   id: 'solstice-bay',
   name: 'Solstice Bay',
-  tiles: BAY_TILES,
+  tiles: BAY_TILES_CASINO,
   tileSize: TILE,
   floor: '#e8cf9a',
   floorAlt: '#e2c588',
@@ -129,6 +207,7 @@ const bay = {
       { x: 19 * TILE + TILE / 2, y: 4 * TILE + TILE / 2 },
     ],
   },
+  casino: BAY_CASINO,
 };
 
 const MAPS = {
@@ -140,9 +219,11 @@ const MAPS = {
 // helpers
 // ------------------------------------------------------------------
 
+const WALKABLE = new Set(['.', 'C']); // '.' open ground, 'C' casino-lounge floor
+
 function isSolidTile(map, tx, ty) {
   if (tx < 0 || ty < 0 || tx >= map.tiles.w || ty >= map.tiles.h) return true;
-  return map.tiles.rows[ty][tx] !== '.';
+  return !WALKABLE.has(map.tiles.rows[ty][tx]);
 }
 
 function pointInRect(x, y, r) {
@@ -195,7 +276,18 @@ function clientMap(map) {
       x: map.stage.x, y: map.stage.y, w: map.stage.w, h: map.stage.h,
       speakers: map.stage.speakers.map(s => ({ x: s.x, y: s.y })),
     } : null,
+    casino: map.casino ? {
+      id: map.casino.id, label: map.casino.label,
+      x: map.casino.x, y: map.casino.y, w: map.casino.w, h: map.casino.h,
+      floor: map.casino.floor, floorAlt: map.casino.floorAlt, wall: map.casino.wall,
+      doorway: { ...map.casino.doorway },
+      tables: map.casino.tables.map(t => ({
+        id: t.id, x: t.x, y: t.y,
+        chairs: t.chairs.map(c => ({ dir: c.dir, x: c.x, y: c.y })),
+      })),
+      slots: map.casino.slots.map(s => ({ id: s.id, x: s.x, y: s.y, ix: s.ix, iy: s.iy })),
+    } : null,
   };
 }
 
-module.exports = { TILE, MAPS, collides, gatewayAt, clientMap };
+module.exports = { TILE, MAPS, collides, gatewayAt, clientMap, makeCasinoLounge, applyCasinoToRows };

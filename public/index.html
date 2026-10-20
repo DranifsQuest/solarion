@@ -60,6 +60,33 @@
         <button id="stageLeaveBtn" class="hidden">Leave queue</button>
       </div>
     </div>
+    <!-- casino panel (shown only inside the Casino Lounge) -->
+    <div id="casinoPanel" class="hidden">
+      <div class="spTitle">🎰 CASINO LOUNGE</div>
+      <div id="casinoTables"></div>
+      <div id="myCards"></div>
+      <div id="pokerActions" class="hidden">
+        <button id="actFold">Fold</button>
+        <button id="actCheck">Check</button>
+        <button id="actCall">Call</button>
+        <input id="raiseAmt" type="number" min="0" step="1" placeholder="Raise to…">
+        <button id="actRaise">Raise</button>
+        <button id="actAllin">All-in</button>
+        <button id="pokerRebuy">Rebuy</button>
+        <button id="pokerStand">Stand / Cash out</button>
+      </div>
+      <div class="slotBox">
+        <div class="spTitle">🎰 SLOTS</div>
+        <div id="slotReels"><span class="reel">☀️</span><span class="reel">🪙</span><span class="reel">🌴</span></div>
+        <div class="spRow">
+          <button class="slotBetBtn" data-bet="5">5z</button>
+          <button class="slotBetBtn active" data-bet="10">10z</button>
+          <button class="slotBetBtn" data-bet="25">25z</button>
+          <button id="slotSpin">SPIN</button>
+        </div>
+        <div id="slotMsg" class="pkDim">Pair pays 2× · three of a kind up to 50×</div>
+      </div>
+    </div>
     <!-- now playing / voting -->
     <div id="nowPlaying" class="hidden">
       <span id="npText"></span>
@@ -115,5 +142,6 @@
 <script src="sprites.js"></script>
 <script src="client.js"></script>
 <script src="mixer.js"></script>
+<script src="casino.js"></script>
 </body>
 </html>

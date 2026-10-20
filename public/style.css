@@ -139,6 +139,48 @@ html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; ba
 .genreBtn { padding: 6px 14px; border-radius: 999px; border: 1px solid #33415c;
   background: #232f4d; color: #cdd9f5; cursor: pointer; font-weight: 600; }
 .genreBtn.active { background: #ffd23f; color: #1a2238; border-color: #ffd23f; }
+/* ------------------------------------------------ Phase 3: casino */
+#casinoPanel { position: absolute; top: 56px; left: 10px; width: 300px; max-height: 78vh; overflow-y: auto;
+  background: rgba(16,10,30,.92); border: 2px solid #ffd23f; border-radius: 10px; padding: 10px; z-index: 5;
+  box-shadow: 0 8px 30px rgba(0,0,0,.6); }
+.pkTable { border: 1px solid #4a2f6e; border-radius: 8px; padding: 7px; margin-bottom: 8px; background: rgba(10,6,20,.65); }
+.pkHead { color: #ffd23f; font-weight: 800; font-size: 12px; letter-spacing: 1px; }
+.pkComm { margin: 5px 0; min-height: 24px; }
+.card { display: inline-block; background: #f5f0e6; color: #171126; border-radius: 4px;
+  padding: 2px 6px; font-weight: 800; font-size: 13px; margin-right: 2px;
+  box-shadow: 0 2px 0 rgba(0,0,0,.4); }
+.card.mine { background: #ffd23f; }
+.pkChairs { font-size: 12px; line-height: 1.6; }
+.pkChair.acting { color: #ffd23f; font-weight: 700; }
+.pkChair.mine { color: #8ef0b3; }
+.pkDim { color: #8ea3c9; font-size: 12px; font-style: italic; }
+.pkSit { display: block; width: 100%; text-align: left; margin: 2px 0; padding: 5px 8px;
+  border-radius: 6px; border: 1px solid #4a2f6e; background: #241533; color: #e9ddff;
+  cursor: pointer; font-size: 12px; font-weight: 700; }
+.pkSit:hover { border-color: #ffd23f; color: #ffd23f; }
+.pkWin { color: #ffd23f; font-size: 12px; margin-top: 4px; }
+#myCards { font-size: 13px; color: #eef; margin: 4px 0; }
+#pokerActions { display: flex; flex-wrap: wrap; gap: 5px; margin: 6px 0; }
+#pokerActions button { padding: 6px 10px; border-radius: 6px; border: 2px solid #171126;
+  background: #ffd23f; color: #1a2238; font-weight: 800; cursor: pointer; font-size: 12px;
+  box-shadow: 0 3px 0 #171126; }
+#pokerActions button:disabled { opacity: .35; cursor: default; box-shadow: none; }
+#pokerActions button:active:not(:disabled) { transform: translateY(2px); box-shadow: 0 1px 0 #171126; }
+#pokerStand { background: #ff5d8f !important; color: #fff !important; }
+#raiseAmt { width: 84px; padding: 6px; border-radius: 6px; border: 1px solid #4a2f6e;
+  background: #121827; color: #eef; font-size: 12px; }
+.slotBox { border: 1px solid #4a2f6e; border-radius: 8px; padding: 8px; background: rgba(10,6,20,.65); }
+#slotReels { display: flex; gap: 6px; justify-content: center; margin: 6px 0; }
+#slotReels .reel { font-size: 26px; background: #f5f0e6; border-radius: 8px; padding: 4px 8px;
+  box-shadow: inset 0 -4px 0 rgba(0,0,0,.2); }
+.slotBetBtn { padding: 6px 10px; border-radius: 6px; border: 1px solid #4a2f6e;
+  background: #241533; color: #e9ddff; font-weight: 700; cursor: pointer; }
+.slotBetBtn.active { background: #ffd23f; color: #1a2238; border-color: #ffd23f; }
+#slotSpin { padding: 6px 14px; border-radius: 6px; border: 2px solid #171126; background: #ff5d8f;
+  color: #fff; font-weight: 800; cursor: pointer; box-shadow: 0 3px 0 #171126; }
+#slotSpin:active { transform: translateY(2px); box-shadow: 0 1px 0 #171126; }
+#slotMsg { margin-top: 5px; text-align: center; }
+
 #loopBrowser { display: flex; gap: 6px; flex-wrap: wrap; }
 .loopBtn { padding: 7px 11px; border-radius: 8px; border: 1px solid #33415c;
   background: #1c2745; color: #eef; cursor: pointer; font-size: 13px; }

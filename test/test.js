@@ -265,7 +265,7 @@ test('/health reports status and counts', { timeout: 30000 }, async () => {
   const r = await fetch(`http://localhost:${serverPort}/health`).then(r => r.json());
   assert.equal(r.ok, true);
   assert.equal(r.game, 'solarion');
-  assert.equal(r.phase, 2);
+  assert.equal(r.phase, 3);
   assert.ok(r.uptime_s >= 0);
   assert.equal(typeof r.maps['the-gateway'], 'number');
   assert.equal(typeof r.maps['solstice-bay'], 'number');

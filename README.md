@@ -1,4 +1,4 @@
-# Solarion — Phase 2 (Music: mixer + stage performances)
+# Solarion — Phase 3 (Casino: poker + slots)
 
 A multiplayer browser-based social game by **Re-Launch Studios** — an
 original-IP take on the classic Coke Music / Coke Studios loop:
@@ -13,8 +13,13 @@ and z coins with the daily login bonus.
 procedurally-synthesized loops in a 5-slot mixer, save mixes
 server-side, queue up at the Solstice Bay stage, perform for the room
 with synchronized playback, and earn z coins from audience thumbs-up
-votes. Poker, slots, private rooms and the remaining cities land in
-later phases.
+votes.
+
+**Phase 3 adds the Casino Lounge** in Solstice Bay: server-authoritative
+Texas Hold'em poker (2 tables × 4 chairs, side pots) and slot machines,
+ported from the validated Kingdom of Goleon tavern engine and
+re-denominated in z coins. Private rooms and the remaining cities land
+in later phases.
 
 ## Run it locally
 
@@ -53,16 +58,26 @@ src/music.js    Phase 2: the loop manifest (48 original loops) + mix
                 ledger (perf_earnings table)
 src/stage.js    Phase 2: stage queue + performance engine + voting +
                 payouts, on its own 250 ms timer
+src/casino.js   Phase 3: server-authoritative Texas Hold'em (card
+                evaluator, betting rounds, server-computed side pots)
+                + slot machine, ported from the validated Goleon
+                engine and re-denominated in z coins, on its own
+                500 ms timer; atomic z-coin debit/credit guards
 src/server.js   Express static + /api/register, /api/login, /api/me,
                 /api/music/loops, /health, WebSocket wiring
 public/         client: index.html, style.css, sprites.js, client.js,
                 mixer.js (Phase 2: Web Audio synth engine, mixer UI,
-                stage/queue/vote UI)
+                stage/queue/vote UI), casino.js (Phase 3: lounge
+                panel, poker UI, slots UI with reel animation)
 test/test.js    node:test suite (auth, presence, movement, travel,
                 bonus, chat, health, restart-survival)
 test/music.test.js  Phase 2 suite (catalog, mix CRUD + validation,
                 stage flow, voting pay, anti-farm rules, daily cap,
                 performer sing-chat)
+test/casino.test.js Phase 3 suite (poker hands, side-pot exactness,
+                invalid-action rejections, slots math/cooldown/
+                proximity, disconnect/map-change cleanup,
+                restart persistence + stranded-chip refund)
 ```
 
 ## Phase 2 — music, mixer, stage
@@ -136,6 +151,65 @@ Rules, all enforced server-side (`src/stage.js`):
   and rendered as a room-wide shout — the performer is the room's
   voice (the Phase 1 per-map chat rate limit stays as the abuse guard).
 
+## Phase 3 — the Casino Lounge (poker + slots)
+
+Solstice Bay's south-west corner is now an enclosed indoor **Casino
+Lounge** (dark club-purple floor and wall frame, gold-trim door in the
+east wall labelled 🎰 Casino Lounge), built by `makeCasinoLounge()` in
+`src/maps.js` — a data builder, not bespoke code, so Phase 4 can drop
+an identical lounge into any other city by adding one map field.
+Inside: **2 poker tables × 4 chairs** and **4 slot machines** along the
+south wall. Their positions ship in `clientMap().casino`.
+
+### Poker (server-authoritative; engine ported from Goleon)
+
+| client → server | meaning |
+|---|---|
+| `{type:'poker', action:'state'}` | request all table states |
+| `{type:'poker', action:'sit', table, chair}` | buy in (50–200z) and sit — you must be in the lounge, near the table |
+| `{type:'poker', action:'act', act:'fold\|check\|call\|raise\|allin', amount}` | act on your turn |
+| `{type:'poker', action:'stand'}` | fold + cash out |
+| `{type:'poker', action:'rebuy'}` | top back up to 200z between hands |
+
+| server → client | meaning |
+|---|---|
+| `{type:'poker-state', …}` | public table state (chairs, pot, community cards), broadcast on every change |
+| `{type:'poker-cards', cards}` | YOUR hole cards only — never broadcast |
+
+Blinds 2z/5z, 25 s turn timer (auto check/fold), 6 s start countdown.
+Betting rounds, hand evaluation and **side pots are computed
+server-side**; movement is locked while seated. Disconnecting or
+leaving the map folds your hand and cashes out your uncommitted chips
+immediately — no stuck chips, no phantom seats.
+
+**Currency safety.** Buy-ins, rebuys and slot bets debit with an atomic
+`UPDATE … WHERE zcoins >= amount` guard, so a balance can never go
+negative, even across racing requests. Live table equity is mirrored
+to `avatars.casino_chips` on every mutation; if the server dies
+mid-hand, the stranded chips are refunded exactly once at next login.
+
+**Port audit — one real bug found and fixed.** The Goleon `buildPots`
+lacked a `Math.max(0, …)` clamp: for a seat committed *below* a pot
+level, its contribution went negative once a middle stack level
+existed, silently shrinking the top pot (reproduced at 100/50/20
+stacks: 140 of 170z paid out). With ≤2 distinct stack levels it never
+bites, which is how it survived Goleon's validation. The clamp is in
+`src/casino.js`, with a deterministic regression test (exact side-pot
+distribution: main 60 / side 60 / side 50) in `test/casino.test.js`.
+
+### Slots
+
+`{type:'slots', action:'spin', bet}` with bets of **5 / 10 / 25z**;
+server rolls 3 reels and pays instantly. Any pair pays 2×; three of a
+kind pays 3–50× by symbol. 1.2 s spin cooldown stops spam-betting, and
+you must be standing at a machine. The paytable (weights + multipliers)
+is byte-identical to the Goleon machine — only names/emoji changed —
+so the theoretical RTP is unchanged at **0.969**. Fresh simulation
+against the ported code (Phase 3): 300,000 spins at each of 5z/10z/25z
+measured **0.9710 / 0.9699 / 0.9696**; 900,000 combined spins at 10z
+measured **0.9679** and a separate 1,000,000-spin run measured
+**0.9661** — all within sampling noise of the Goleon machine's ~0.967.
+
 ### Maps are data
 
 `src/maps.js` defines each scene as plain data: a tile grid string
@@ -178,8 +252,7 @@ wants true iso pathing/occlusion, it's a client concern only.
 ## Stubbed / deferred to later phases
 
 - Private decorated rooms + furniture catalog
-- Poker tables + slot machines (port the triple-validated Goleon tavern
-  systems; re-denominate in z coins)
 - Remaining cities: Neon District, Cinder Mesa, Frosthaven, Verdant Hollow
+  (each can reuse `makeCasinoLounge()` for its own Casino Lounge)
 - Avatar editing after creation (appearance is set at registration)
 - Deployment (Fly.io, cheap always-on — per Zan, later)
