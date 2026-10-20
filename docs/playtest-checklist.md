@@ -1,6 +1,6 @@
 # Solarion v1 Playtest Checklist
 
-Everything below is protocol-proven (automated live checks pass end
+Everything below is protocol-proven (27/27 automated live checks pass end
 to end from a clean external network, incl. the Phase 6 creation flow
 and the whole Phase B world expansion) but never touched by a human.
 Work through it in any order; jot what hits wrong and v1.1 starts there.
