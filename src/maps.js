@@ -181,7 +181,7 @@ function buildSolsticeBay() {
     spawn: { x: cx(36), y: cy(41) },
     gateways: [arch(35, 43, 'the-gateway', 'The Gateway')],
     doors: [
-      door(15, 37, 'casino-lounge', { x: 400, y: 368 }, 'Casino Lounge'),
+      door(15, 37, 'casino-lounge', { x: cx(15), y: cy(16) }, 'Casino Lounge'),
     ],
     stage: stageDef(33, 6),
     seats: [
@@ -198,20 +198,30 @@ function buildSolsticeBay() {
 }
 
 // ------------------------------------------------------------------
-// CASINO LOUNGE — its own interior scene (Phase B; it used to be a
-// 10x7 room embedded in Solstice Bay). Six Hold'em tables in two
-// rows of three, ten slot machines along the north wall, sofas in
-// the south corners, and a door on the south wall back to the bay.
+// CASINOS (Phase B amendment) — poker lives in exactly TWO grand
+// casino interiors: the Casino Lounge off Solstice Bay and the Neon
+// Casino off Neon District. One shared floor plan at 30x20 tiles:
+//   - WEST: six Hold'em tables in two columns of three
+//   - NORTH-EAST + EAST: the slots section — ten machines spaced
+//     well away from the tables, every machine with its own stool
+//     (you sit to spin)
+//   - SOUTH-WEST: the bar — counter, bartender NPC behind it, bar
+//     stools; drinks are 5z from the bartender
+//   - SOUTH-CENTRE: the entryway — a 2-tile door back to the host
+//     city, sofas flanking the foyer
 // ------------------------------------------------------------------
 const CASINO_FLOOR = '#3a2350';      // deep club purple — reads "indoor"
 const CASINO_FLOOR_ALT = '#432a5c';
 const CASINO_WALL = '#241533';
+const NEON_CASINO_FLOOR = '#2b1030';
+const NEON_CASINO_FLOOR_ALT = '#33153a';
+const NEON_CASINO_WALL = '#180a20';
 
-function buildCasinoLounge() {
-  const W = 24, H = 15;
+function buildCasino({ id, name, hostId, hostLabel, hostSpawn, floor, floorAlt, wall, bartender }) {
+  const W = 30, H = 20;
   const g = makeGrid(W, H, 'C');
   setBorder(g, W, H, 'W');
-  const id = 'casino-lounge';
+  setRect(g, 2, 17, 7, 1, 'W'); // bar counter (bartender stands behind it)
   const chairSet = (x, y) => [
     { dir: 'N', x, y: y - 44 },
     { dir: 'E', x: x + 44, y },
@@ -222,35 +232,120 @@ function buildCasinoLounge() {
     id: `${id}-poker-${n}`, x: cx(tx), y: cy(ty), chairs: chairSet(cx(tx), cy(ty)),
   });
   const tables = [
-    tableAt(1, 4, 5), tableAt(2, 11, 5), tableAt(3, 18, 5),
-    tableAt(4, 4, 10), tableAt(5, 11, 10), tableAt(6, 18, 10),
+    tableAt(1, 5, 4), tableAt(2, 12, 4),
+    tableAt(3, 5, 9), tableAt(4, 12, 9),
+    tableAt(5, 5, 14), tableAt(6, 12, 14),
   ];
+  // Slots section: 5 machines along the north wall + 5 down the east
+  // wall. (ix, iy) is the stool spot you sit on to play.
   const slots = [];
-  for (let i = 0; i < 10; i++) {
-    const tx = 2 + i * 2;
-    slots.push({ id: `${id}-slot-${i + 1}`, x: cx(tx), y: cy(2) - 10, ix: cx(tx), iy: cy(3) });
+  for (let i = 0; i < 5; i++) {
+    const tx = 16 + i * 2;
+    slots.push({
+      id: `${id}-slot-${i + 1}`, seatId: `${id}-slotseat-${i + 1}`,
+      x: cx(tx), y: cy(2) - 10, ix: cx(tx), iy: cy(3),
+    });
   }
+  for (let i = 0; i < 5; i++) {
+    const ty = 4 + i * 2;
+    slots.push({
+      id: `${id}-slot-${i + 6}`, seatId: `${id}-slotseat-${i + 6}`,
+      x: cx(28), y: cy(ty), ix: cx(27), iy: cy(ty),
+    });
+  }
+  const seats = [
+    // slot stools (sit to spin): north row faces up, east row faces right
+    ...slots.slice(0, 5).map((s, i) => ({ id: s.seatId, x: s.ix, y: s.iy, dir: 'up', kind: 'stool' })),
+    ...slots.slice(5).map((s) => ({ id: s.seatId, x: s.ix, y: s.iy, dir: 'right', kind: 'stool' })),
+    // bar stools face the counter (south)
+    { id: `${id}-seat-1`, x: cx(3), y: cy(16), dir: 'down', kind: 'stool' },
+    { id: `${id}-seat-2`, x: cx(7), y: cy(16), dir: 'down', kind: 'stool' },
+    // foyer sofas
+    { id: `${id}-seat-3`, x: cx(22), y: cy(17), dir: 'up', kind: 'sofa' },
+    { id: `${id}-seat-4`, x: cx(26), y: cy(17), dir: 'up', kind: 'sofa' },
+  ];
   return {
-    id, name: 'Casino Lounge', tiles: gridOf(g), tileSize: TILE,
-    floor: CASINO_FLOOR, floorAlt: CASINO_FLOOR_ALT, wall: CASINO_WALL,
-    spawn: { x: 400, y: 368 },
+    id, name, tiles: gridOf(g), tileSize: TILE,
+    floor, floorAlt, wall,
+    spawn: { x: cx(15), y: cy(16) },
     gateways: [],
     doors: [
-      door(11, 13, 'solstice-bay', { x: cx(15), y: cy(37) }, 'Solstice Bay', 2),
+      door(14, 18, hostId, hostSpawn, hostLabel, 2),
     ],
-    seats: [
-      seat(id, 1, 2, 12, 'up', 'sofa'),
-      seat(id, 2, 21, 12, 'up', 'sofa'),
-    ],
+    seats,
     casino: {
       id: `${id}-casino`,
       mapId: id,
-      label: 'Casino Lounge',
+      label: name,
       x: 0, y: 0, w: W * TILE, h: H * TILE,
-      floor: CASINO_FLOOR, floorAlt: CASINO_FLOOR_ALT, wall: CASINO_WALL,
+      floor, floorAlt, wall,
       tables,
       slots,
+      bar: { x: cx(5), y: cy(16) }, // patron spot in front of the counter
+      bartender: { x: cx(5), y: cy(18), name: bartender.name, look: bartender.look },
     },
+  };
+}
+
+function buildCasinoLounge() {
+  return buildCasino({
+    id: 'casino-lounge', name: 'Casino Lounge',
+    hostId: 'solstice-bay', hostLabel: 'Solstice Bay', hostSpawn: { x: cx(15), y: cy(37) },
+    floor: CASINO_FLOOR, floorAlt: CASINO_FLOOR_ALT, wall: CASINO_WALL,
+    bartender: {
+      name: 'Salty Sam',
+      look: {
+        gender: 'M', face: 'classic', eyes: 'round', eye_color: '#20242c', nose: 'button', lips: 'smirk',
+        skin_tone: '#8d5524', hair_style: 'short', hair_color: '#111111', top_style: 'button-up',
+        body_color: '#22242c', bottom_style: 'pants', accent_color: '#2b3a55', shoe_color: '#23262b', accessory: 'none',
+      },
+    },
+  });
+}
+
+function buildNeonCasino() {
+  return buildCasino({
+    id: 'neon-casino', name: 'Neon Casino',
+    hostId: 'neon-district', hostLabel: 'Neon District', hostSpawn: { x: cx(61), y: cy(28) },
+    floor: NEON_CASINO_FLOOR, floorAlt: NEON_CASINO_FLOOR_ALT, wall: NEON_CASINO_WALL,
+    bartender: {
+      name: 'Vex',
+      look: {
+        gender: 'F', face: 'sharp', eyes: 'lash', eye_color: '#1e4d8f', nose: 'tiny', lips: 'bold',
+        skin_tone: '#f1c27d', hair_style: 'ponytail', hair_color: '#ff2e88', top_style: 'tank',
+        body_color: '#17102b', bottom_style: 'leggings', accent_color: '#23232e', shoe_color: '#ffd23f', accessory: 'sunglasses',
+      },
+    },
+  });
+}
+
+// ------------------------------------------------------------------
+// HOOKAH LOUNGE — a small interior off Cinder Mesa (Phase B
+// amendment). Four hookah stations, two seats each: sit down, then
+// interact to take a puff (5z). The door back is on the south wall.
+// ------------------------------------------------------------------
+function buildHookahLounge() {
+  const W = 20, H = 14;
+  const g = makeGrid(W, H, '.');
+  setBorder(g, W, H, '#');
+  g[2][2] = '|'; g[2][17] = '|'; g[11][2] = '|'; g[11][17] = '|'; // plants
+  const id = 'hookah-lounge';
+  const stations = [[5, 4], [14, 4], [5, 9], [14, 9]];
+  const seats = [];
+  stations.forEach(([tx, ty], i) => {
+    seats.push(seat(id, i * 2 + 1, tx - 1, ty, 'right', 'hookah'));
+    seats.push(seat(id, i * 2 + 2, tx + 1, ty, 'left', 'hookah'));
+  });
+  return {
+    id, name: 'Hookah Lounge', tiles: gridOf(g), tileSize: TILE,
+    floor: '#3d2b1f', floorAlt: '#37271c', wall: '#241610',
+    spawn: { x: cx(10), y: cy(11) },
+    gateways: [],
+    doors: [
+      door(9, 12, 'cinder-mesa', { x: cx(30), y: cy(30) }, 'Cinder Mesa', 2),
+    ],
+    seats,
+    hookahs: stations.map(([tx, ty]) => ({ x: cx(tx), y: cy(ty) })),
   };
 }
 
@@ -283,7 +378,11 @@ function buildNeonDistrict() {
     floor: '#17102b', floorAlt: '#1e1438', wall: '#ff2e88',
     spawn: { x: cx(36), y: cy(41) },
     gateways: [arch(35, 43, 'the-gateway', 'The Gateway')],
-    doors: [],
+    doors: [
+      // The SE block (tiles 56..67, 30..37) is the Neon Casino —
+      // its door sits on the block's north face.
+      door(61, 29, 'neon-casino', { x: cx(15), y: cy(16) }, 'Neon Casino'),
+    ],
     stage: stageDef(33, 3),
     seats: [
       seat(id, 1, 20, 13, 'down', 'bench'),
@@ -307,13 +406,16 @@ function buildCinderMesa() {
   ]) setRect(g, x, y, w, h, '#');
   g[21][62] = '|'; g[21][69] = '|'; // stage speakers
   g[18][28] = '|'; g[24][28] = '|'; // forge posts
+  setRect(g, 26, 32, 9, 6, '#');    // the Hookah Lounge building (S-centre)
   const id = 'cinder-mesa';
   return {
     id, name: 'Cinder Mesa', tiles: gridOf(g), tileSize: TILE,
     floor: '#c47b3a', floorAlt: '#bb7031', wall: '#6e2418',
     spawn: { x: cx(4), y: cy(41) },
     gateways: [arch(3, 43, 'the-gateway', 'The Gateway')],
-    doors: [],
+    doors: [
+      door(30, 31, 'hookah-lounge', { x: cx(10), y: cy(11) }, 'Hookah Lounge'),
+    ],
     stage: stageDef(63, 21),
     seats: [
       seat(id, 1, 58, 20, 'right', 'bench'),
@@ -388,7 +490,8 @@ function buildVerdantHollow() {
 const MAPS = {};
 for (const def of [
   buildGateway(), buildCafe(), buildSolsticeBay(), buildCasinoLounge(),
-  buildNeonDistrict(), buildCinderMesa(), buildFrosthaven(), buildVerdantHollow(),
+  buildNeonDistrict(), buildNeonCasino(), buildCinderMesa(), buildHookahLounge(),
+  buildFrosthaven(), buildVerdantHollow(),
 ]) {
   MAPS[def.id] = def;
 }
@@ -461,6 +564,7 @@ function clientMap(map) {
       x: d.x, y: d.y, w: d.w, h: d.h, label: d.label,
     })),
     seats: (map.seats || []).map(s => ({ id: s.id, x: s.x, y: s.y, dir: s.dir, kind: s.kind })),
+    hookahs: (map.hookahs || []).map(h => ({ x: h.x, y: h.y })),
     stage: map.stage ? {
       x: map.stage.x, y: map.stage.y, w: map.stage.w, h: map.stage.h,
       speakers: map.stage.speakers.map(s => ({ x: s.x, y: s.y })),
@@ -478,6 +582,8 @@ function clientMap(map) {
         chairs: t.chairs.map(c => ({ dir: c.dir, x: c.x, y: c.y })),
       })),
       slots: map.casino.slots.map(s => ({ id: s.id, x: s.x, y: s.y, ix: s.ix, iy: s.iy })),
+      bar: map.casino.bar || null,
+      bartender: map.casino.bartender || null,
     } : null,
   };
 }
