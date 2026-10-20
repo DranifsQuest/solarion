@@ -18,28 +18,28 @@
     </div>
     <input id="username" maxlength="20" placeholder="Username (3–20 letters/numbers/_)" autocomplete="username">
     <input id="password" type="password" maxlength="64" placeholder="Password (min 6 characters)" autocomplete="current-password">
-    <div id="avatarForm">
-      <div class="frow"><span>Skin</span>
-        <span class="swatches">
-          <label><input type="radio" name="skin" value="#ffe0bd"><i style="background:#ffe0bd"></i></label>
-          <label><input type="radio" name="skin" value="#f1c27d" checked><i style="background:#f1c27d"></i></label>
-          <label><input type="radio" name="skin" value="#e0ac69"><i style="background:#e0ac69"></i></label>
-          <label><input type="radio" name="skin" value="#8d5524"><i style="background:#8d5524"></i></label>
-        </span>
-      </div>
-      <div class="frow"><span>Hair</span>
-        <select id="hairStyle">
-          <option value="short">Short</option>
-          <option value="spiky">Spiky</option>
-          <option value="long">Long</option>
-        </select>
-        <input id="hairColor" type="color" value="#3a2a1c">
-      </div>
-      <div class="frow"><span>Shirt</span><input id="shirtColor" type="color" value="#3aa7e0">
-        <span>Pants</span><input id="pantsColor" type="color" value="#2b3a55"></div>
-    </div>
     <button id="authGo">Log in</button>
     <p id="authErr"></p>
+    <p class="tag">New here? Create an account — you'll design your character right after.</p>
+  </div>
+
+  <!-- character creation screen (Phase 6) -->
+  <div id="create" class="overlay-card hidden">
+    <h1>✨ BECOME SOMEONE</h1>
+    <p class="tag">This is you in Solarion. Take your time — every detail is yours to change later, too.</p>
+    <input id="createName" maxlength="20" placeholder="Your name in Solarion…" autocomplete="off">
+    <div id="createStage">
+      <canvas id="createPreview" width="220" height="230"></canvas>
+      <div class="createBtns">
+        <button id="createTurnL" type="button" title="Turn left">◀</button>
+        <button id="createWalk" type="button">🚶 Walk</button>
+        <button id="createTurnR" type="button" title="Turn right">▶</button>
+        <button id="createRandom" type="button">🎲 Randomize</button>
+      </div>
+    </div>
+    <div id="createEditor"></div>
+    <button id="createGo">Enter Solarion ☀️</button>
+    <p id="createErr"></p>
   </div>
 
   <!-- game screen -->
@@ -113,23 +113,17 @@
         </div>
       </div>
     </div>
-    <!-- look panel (Phase 4: avatar editing) -->
+    <!-- look panel (Phase 4 editor, rebuilt in Phase 6 on the shared
+         looks.js editor — same axes as the creation screen) -->
     <div id="lookPanel" class="hidden">
       <div class="spTitle">🎨 YOUR LOOK</div>
-      <div class="frow"><span>Hair style</span>
-        <select id="lookHairStyle">
-          <option value="short">Short</option>
-          <option value="spiky">Spiky</option>
-          <option value="long">Long</option>
-        </select>
-      </div>
-      <div class="frow"><span>Hair</span><input id="lookHairColor" type="color"></div>
-      <div class="frow"><span>Shirt</span><input id="lookShirt" type="color"></div>
-      <div class="frow"><span>Pants</span><input id="lookPants" type="color"></div>
+      <canvas id="lookPreview" width="150" height="170"></canvas>
+      <div id="lookEditor"></div>
       <div class="spRow">
         <button id="lookApply">Save look</button>
         <button id="lookClose">Close</button>
       </div>
+      <p id="lookErr"></p>
     </div>
     <!-- now playing / voting -->
     <div id="nowPlaying" class="hidden">
@@ -184,7 +178,9 @@
   </div>
 </div>
 <script src="sprites.js"></script>
+<script src="looks.js"></script>
 <script src="client.js"></script>
+<script src="create.js"></script>
 <script src="mixer.js"></script>
 <script src="casino.js"></script>
 <script src="studio.js"></script>

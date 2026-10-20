@@ -9,9 +9,10 @@
  * item; right-click a placed item to pick it up), and kick visitors.
  * All rules are enforced server-side; this panel only sends intents.
  *
- * Look panel: hair style + hair/shirt/pants colors, sent as one
- * {type:'avatar-update'} — the server validates against the same sets
- * registration uses and the room sees the change via snapshots.
+ * Look panel (Phase 6): the full creation axis set, built by the
+ * shared looks.js editor from GET /api/appearance — the same lists
+ * the creation screen uses and the server validates against. Sent as
+ * one {type:'avatar-update'}; the room sees the change via snapshots.
  */
 
 const Studio = {
@@ -58,26 +59,31 @@ const Studio = {
       const id = Number(this.el.kickSel.value);
       if (id) this.hooks.send({ type: 'studio-kick', userId: id });
     };
-    // Look panel
-    $('lookBtn').onclick = () => {
+    // Look panel (Phase 6: shared looks.js editor, full axis set)
+    this.lookState = null;
+    $('lookBtn').onclick = async () => {
+      const opening = this.el.lookPanel.classList.contains('hidden');
+      this.el.lookPanel.classList.toggle('hidden', !opening);
+      if (!opening) return;
       const me = this.hooks.getMe();
-      if (me) {
-        $('lookHairStyle').value = me.hair_style || 'short';
-        $('lookHairColor').value = me.hair_color || '#3a2a1c';
-        $('lookShirt').value = me.body_color || '#3aa7e0';
-        $('lookPants').value = me.accent_color || '#2b3a55';
+      if (!me || !window.SolarionLooks) return;
+      try {
+        const options = await window.SolarionLooks.loadOptions();
+        const state = { ...options.defaults[me.gender === 'F' ? 'F' : 'M'] };
+        for (const k of Object.keys(state)) if (me[k] !== undefined) state[k] = me[k];
+        this.lookState = state;
+        const draw = () => window.SolarionLooks.drawPreview($('lookPreview'), state, 'down', 3.1, false);
+        window.SolarionLooks.createEditor($('lookEditor'), options, state, draw);
+        draw();
+        $('lookErr').textContent = '';
+      } catch (e) {
+        $('lookErr').textContent = 'Could not load look options.';
       }
-      this.el.lookPanel.classList.toggle('hidden');
     };
     $('lookClose').onclick = () => this.el.lookPanel.classList.add('hidden');
     $('lookApply').onclick = () => {
-      this.hooks.send({
-        type: 'avatar-update',
-        hair_style: $('lookHairStyle').value,
-        hair_color: $('lookHairColor').value,
-        body_color: $('lookShirt').value,
-        accent_color: $('lookPants').value,
-      });
+      if (!this.lookState) return;
+      this.hooks.send({ type: 'avatar-update', ...this.lookState });
     };
     // Tile-click placement + right-click pickup on the world canvas.
     const cv = $('cv');
@@ -191,6 +197,10 @@ const Studio = {
 
   handle(m) {
     switch (m.type) {
+      case 'avatar-updated':
+        this.hooks.toast('🎨 Look saved — the new you is live.');
+        this.el.lookPanel.classList.add('hidden');
+        break;
       case 'studio-state':
         this.ownerId = m.ownerId;
         this.ownerName = m.ownerName;

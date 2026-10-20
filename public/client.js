@@ -66,7 +66,6 @@ function setMode(m) {
   $('tab-login').classList.toggle('active', m === 'login');
   $('tab-register').classList.toggle('active', m === 'register');
   $('authGo').textContent = m === 'login' ? 'Log in' : 'Create account';
-  $('avatarForm').classList.toggle('show', m === 'register');
   $('password').autocomplete = m === 'login' ? 'current-password' : 'new-password';
   $('authErr').textContent = '';
 }
@@ -84,22 +83,27 @@ async function api(path, body) {
   return j;
 }
 
+/**
+ * Phase 6 routing: after any successful auth, an account with no
+ * created character goes to the creation screen; everyone else goes
+ * straight into the world.
+ */
+function enterWorld(avatar) {
+  if (avatar && avatar.created === false && window.SolarionCreate) {
+    window.SolarionCreate.show(avatar, () => connect());
+  } else {
+    connect();
+  }
+}
+
 $('authGo').onclick = async () => {
   $('authErr').textContent = '';
   try {
     const body = { username: $('username').value.trim(), password: $('password').value };
-    if (mode === 'register') {
-      body.shirt = $('shirtColor').value;
-      body.pants = $('pantsColor').value;
-      body.hair_color = $('hairColor').value;
-      body.hair_style = $('hairStyle').value;
-      const skin = document.querySelector('input[name=skin]:checked');
-      body.skin_tone = skin ? skin.value : '#f1c27d';
-    }
     const r = await api('/api/' + (mode === 'register' ? 'register' : 'login'), body);
     token = r.token;
     localStorage.setItem('solarion_token', token);
-    connect();
+    enterWorld(r.avatar);
   } catch (e) {
     $('authErr').textContent = e.message;
   }
@@ -114,7 +118,13 @@ function connect() {
     try { m = JSON.parse(ev.data); } catch (e) { return; }
     handle(m);
   };
-  ws.onclose = () => {
+  ws.onclose = (ev) => {
+    // 4403 = the server requires a created character first: route
+    // back through the creation screen instead of reconnect-looping.
+    if (ev && ev.code === 4403) {
+      api('/api/me', { token }).then((r) => enterWorld(r.avatar)).catch(() => {});
+      return;
+    }
     if ($('game').classList.contains('hidden')) return;
     setTimeout(() => { if (!ws || ws.readyState !== 1) connect(); }, 2000);
   };
@@ -487,7 +497,9 @@ function draw() {
     ctx.fill();
 
     const dirKey = p.dir === 'up' ? 'up' : p.dir === 'down' ? 'down' : 'side';
-    const spr = Sprites.makeSprite({ skin_tone: p.skin_tone, hair_style: p.hair_style, hair_color: p.hair_color, shirt: p.body_color, pants: p.accent_color }, dirKey);
+    // Phase 6: the snapshot player IS the full appearance object —
+    // pass it straight to the sprite renderer.
+    const spr = Sprites.makeSprite(p, dirKey);
     const sw = spr.width, sh = spr.height;
     ctx.save();
     ctx.translate(sx, sy - bob);
@@ -547,7 +559,7 @@ if (window.SolarionMixer) {
 // resume an existing session on load
 if (token) {
   api('/api/me', { token })
-    .then(() => connect())
+    .then((r) => enterWorld(r.avatar))
     .catch(() => { localStorage.removeItem('solarion_token'); token = null; });
 }
 setMode('login');

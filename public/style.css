@@ -19,15 +19,36 @@ html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; ba
   width: 100%; padding: 10px 12px; margin-bottom: 10px; border-radius: 8px;
   border: 1px solid #33415c; background: #121827; color: #eef; font-size: 15px;
 }
-#avatarForm { display: none; text-align: left; margin-bottom: 12px; color: #9fb2d8; font-size: 14px; }
-#avatarForm.show { display: block; }
-#avatarForm .frow { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-#avatarForm select { flex: 1; padding: 6px; border-radius: 6px; border: 1px solid #33415c; background: #121827; color: #eef; }
-#avatarForm input[type=color] { width: 40px; height: 28px; border: none; background: none; }
-.swatches label { cursor: pointer; }
-.swatches input { display: none; }
-.swatches i { display: inline-block; width: 22px; height: 22px; border-radius: 50%; border: 2px solid transparent; }
-.swatches input:checked + i { border-color: #ffd23f; }
+/* ------------------------------------------------ Phase 6: character creation + shared look editor */
+#create { max-width: 560px; margin: 3vh auto; max-height: 94vh; overflow-y: auto; text-align: center; }
+#createStage { background: radial-gradient(ellipse at 50% 88%, #2a3a5f 0%, #141b2e 62%);
+  border: 1px solid #33415c; border-radius: 12px; padding: 10px 6px 4px; margin-bottom: 12px; }
+#createPreview { display: block; margin: 0 auto; }
+.createBtns { display: flex; gap: 6px; justify-content: center; padding: 6px 0 8px; }
+.createBtns button { padding: 6px 12px; border-radius: 8px; border: 1px solid #33415c;
+  background: #232f4d; color: #cdd9f5; cursor: pointer; font-size: 13px; }
+.createBtns button:hover { border-color: #ffd23f; color: #ffd23f; }
+.createBtns button.sel { background: #ffd23f; color: #1a2238; font-weight: 700; }
+#createGo { width: 100%; padding: 12px; border-radius: 8px; border: none; background: #ffd23f;
+  color: #1a2238; font-size: 16px; font-weight: 700; cursor: pointer; margin-top: 12px; }
+#createErr, #lookErr { color: #ff7b7b; min-height: 18px; margin-top: 8px; font-size: 14px; }
+.lookGroup { text-align: left; margin-bottom: 10px; }
+.lookGroupTitle { color: #ffd23f; font-size: 12px; font-weight: 800; letter-spacing: 1.5px;
+  text-transform: uppercase; margin-bottom: 6px; }
+.lookRow { display: flex; gap: 8px; margin-bottom: 7px; align-items: flex-start; }
+.lookLabel { flex: 0 0 86px; color: #9fb2d8; font-size: 13px; padding-top: 5px; }
+.lookOpts { flex: 1; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.chip { padding: 4px 9px; border-radius: 999px; border: 1px solid #33415c; background: #121827;
+  color: #cdd9f5; cursor: pointer; font-size: 12px; }
+.chip:hover { border-color: #ffd23f; }
+.chip.sel { background: #ffd23f; color: #1a2238; font-weight: 700; border-color: #ffd23f; }
+.sw { width: 22px; height: 22px; border-radius: 50%; border: 2px solid #33415c; cursor: pointer; padding: 0; }
+.sw.sel { border-color: #ffd23f; box-shadow: 0 0 0 2px rgba(255,210,63,.35); }
+.customColor { width: 30px; height: 24px; border: none; background: none; cursor: pointer; padding: 0; }
+.genderRow { display: flex; gap: 8px; }
+.genderBtn { flex: 1; padding: 10px; border-radius: 10px; border: 1px solid #33415c;
+  background: #121827; color: #cdd9f5; cursor: pointer; font-size: 15px; }
+.genderBtn.sel { background: #ffd23f; color: #1a2238; font-weight: 800; border-color: #ffd23f; }
 #authGo { width: 100%; padding: 11px; border-radius: 8px; border: none; background: #ffd23f;
   color: #1a2238; font-size: 16px; font-weight: 700; cursor: pointer; }
 #authErr { color: #ff7b7b; min-height: 18px; margin-top: 10px; font-size: 14px; }
@@ -154,14 +175,14 @@ html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; ba
 #inventoryList button { padding: 3px 8px; border-radius: 6px; border: 1px solid #33415c;
   background: #232f4d; color: #eef; cursor: pointer; font-size: 12px; }
 #studioPanel .qItem button { margin-left: 4px; }
-#lookPanel { position: absolute; right: 10px; top: 320px; width: 250px;
+#lookPanel { position: absolute; right: 10px; top: 56px; width: 330px; max-height: 86vh; overflow-y: auto;
   background: rgba(20,28,48,.94); border: 1px solid #ffd23f; border-radius: 10px; padding: 12px; z-index: 20;
   box-shadow: 0 8px 30px rgba(0,0,0,.6); }
-#lookPanel .frow { display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
-  color: #9fb2d8; font-size: 13px; }
-#lookPanel select { flex: 1; padding: 6px; border-radius: 6px; border: 1px solid #33415c;
-  background: #121827; color: #eef; }
-#lookPanel input[type=color] { width: 40px; height: 28px; border: none; background: none; }
+#lookPreview { display: block; margin: 4px auto 8px; background: radial-gradient(ellipse at 50% 88%, #2a3a5f 0%, #141b2e 65%);
+  border-radius: 10px; }
+#lookPanel .spRow button { padding: 7px 12px; border-radius: 8px; border: 1px solid #33415c;
+  background: #232f4d; color: #eef; cursor: pointer; }
+#lookPanel #lookApply { background: #ffd23f; color: #1a2238; font-weight: 700; border-color: #ffd23f; }
 /* ------------------------------------------------ Phase 3: casino */
 #casinoPanel { position: absolute; top: 56px; left: 10px; width: 300px; max-height: 78vh; overflow-y: auto;
   background: rgba(16,10,30,.92); border: 2px solid #ffd23f; border-radius: 10px; padding: 10px; z-index: 5;
