@@ -90,10 +90,33 @@ Live at https://solarion.onrender.com
       Chips conserved? Side pots handled right?
 - [ ] The bar: see section 1c.
 
-## 6. Private studio
-- [ ] Buy furniture from the 14-item catalog, place pieces by clicking tiles.
-      (Tile-click placement was never human-tested — this is the big one.)
-- [ ] Relog — is the room exactly as you left it?
+## 6. Your home (Phase 8 — NEW, never human-tested)
+- [ ] The catalog is 44 items now: beds, 9 chairs/sofas, shelves,
+      rugs, lamps/plants/posters, TVs, radios. Buy a spread of them,
+      place pieces by clicking tiles. (Tile-click placement was
+      never human-tested — this is still the big one.)
+- [ ] RUGS: place one under a chair — it lies flat, you walk over
+      it, furniture and avatars draw on top. Right look?
+- [ ] SIT on the new chairs (dining chair, armchair, beanbag,
+      loveseat…) — E key next to one. Seated pose reads right?
+- [ ] TV: buy a Tube TV, place it, turn it on from the 🏠 Studio
+      panel's ROOM DEVICES section. Flip all 6 channels — fake news,
+      the soap opera (read the captions), cooking, weather, Captain
+      Comet, static. Do the little shows read as shows at that size?
+      Which channel is your favorite?
+- [ ] RADIO: save a mix in the 🎵 Mixer first. Buy a Boombox, hit
+      ▶ Play (loop library), ⏭ through a few loops, then 🔀 to
+      "Mixes" — your own mix should be listed and play. Does the
+      room hear it start together (two tabs/devices if you can)?
+- [ ] INVITE a friend: type their username in the Invite box (works
+      from anywhere, you don't have to be home). They get a prompt —
+      accept lands them in your room after the load screen. Kick
+      them, then invite them back: the fresh invite should let them
+      in despite the kick block.
+- [ ] Have a VISITOR work your TV and radio — that's by design
+      (anyone in the room can). Does it feel social or chaotic?
+- [ ] Relog — is the room exactly as you left it, TV channel and
+      all?
 
 ## 7. Avatar & economy
 - [ ] Edit your avatar — changes stick?

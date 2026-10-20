@@ -135,7 +135,7 @@ async function main() {
     try { const r = await fetch(`${BASE}/health`); if (r.ok) { health = await r.json(); break; } } catch (e) {}
     await sleep(3000);
   }
-  report('health: service answers, phase 7, ten maps', !!(health && health.ok && health.phase === 7 && Object.keys(health.maps).length === 10),
+  report('health: service answers, phase 8, ten maps', !!(health && health.ok && health.phase === 8 && Object.keys(health.maps).length === 10),
     health ? `uptime ${health.uptime_s}s, phase ${health.phase}` : 'no response in 150s');
   if (!health) return finish();
 
@@ -402,6 +402,64 @@ async function main() {
     await waitFor(() => lastOf(A.client, 'map', m => !m.map.id.startsWith('studio:')), 8000, 'A leaves studio after relog');
     report('studio: buy chair (-40z) -> place -> relog persistence verified', true, `balance ${preBal} -> ${preBal - 40}, furniture intact after relog`);
   } catch (e) { report('studio: buy chair (-40z) -> place -> relog persistence verified', false, e.message); }
+
+  // ---- player homes (Phase 8): catalog, room invite, radio sync.
+  // Fresh account D (100z) buys a boombox (80z); B — sitting in the
+  // Casino Lounge — accepts D's invite from across the world and
+  // watches the radio state change. (A fresh account can't reach a
+  // 150z TV, so TV behavior is covered by the local suite; the live
+  // catalog check asserts TVs and radios are on sale.)
+  try {
+    const NAME_D = NAME_A.slice(0, -1) + 'd';
+    const rd = await api('/api/register', { username: NAME_D, password: PW });
+    if (rd.status !== 200 || !rd.json.token) throw new Error(`register D -> ${rd.status}`);
+    const cd = await api('/api/create-character', { token: rd.json.token, name: NAME_D, gender: 'F' });
+    if (cd.status !== 200) throw new Error(`create D -> ${cd.status}`);
+    const D = { name: NAME_D, token: rd.json.token, client: await connectClient(rd.json.token) };
+    D.id = D.client.hello.you.id;
+    const balD = async () => (await api('/api/me', { token: D.token })).json.avatar.zcoins;
+    D.client.send({ type: 'enter-studio', owner: NAME_D });
+    await waitFor(() => lastOf(D.client, 'map', m => m.map.id === `studio:${D.id}`), 8000, 'D enters own studio');
+    const dst = await waitFor(() => lastOf(D.client, 'studio-state', s => s.isOwner), 6000, 'D owner studio-state');
+    if (!dst.catalog || dst.catalog.length < 40) throw new Error(`homes catalog ${dst.catalog && dst.catalog.length}`);
+    if (!dst.catalog.some(i => i.type === 'tv') || !dst.catalog.some(i => i.type === 'radio')) throw new Error('catalog lacks TVs or radios');
+    report('homes catalog: 40+ items on sale incl. TVs and radios', true, `${dst.catalog.length} items`);
+    D.client.send({ type: 'studio-buy', itemId: 'boombox' });
+    const dst1 = await waitFor(() => lastOf(D.client, 'studio-state', s => s.inventory && s.inventory.length === 1), 6000, 'boombox in inventory');
+    if ((await balD()) !== 20) throw new Error(`D balance after boombox = ${await balD()} (want 100-80=20)`);
+    const boom = dst1.inventory[0];
+    D.client.send({ type: 'studio-place', instanceItemId: boom.instanceId, x: 5, y: 5, rot: 0 });
+    await waitFor(() => lastOf(D.client, 'studio-furniture', f => f.furniture.length === 1), 6000, 'boombox placed');
+
+    // invite: B is across the world in the Casino Lounge
+    B.client.msgs.length = 0;
+    D.client.send({ type: 'studio-invite', username: NAME_B });
+    const prompt = await waitFor(() => lastOf(B.client, 'studio-invite'), 6000, 'B invite prompt');
+    if (prompt.fromName !== NAME_D || prompt.ownerId !== D.id) throw new Error(`invite payload ${JSON.stringify(prompt)}`);
+    B.client.send({ type: 'studio-invite-response', ownerId: D.id, accept: true });
+    const bArr = await waitFor(() => lastOf(B.client, 'map', m => m.map.id === `studio:${D.id}`), 8000, 'B lands in D studio');
+    if (bArr.transferMs !== 3000) throw new Error(`invite transferMs ${bArr.transferMs}`);
+    report('room invite: B accepted from the Casino Lounge and landed in D\'s home via the 3s transfer', true, 'prompt -> accept -> map studio:<D> transferMs=3000');
+    await sleep(3400); // ride out B's transfer window
+
+    // radio: D plays the loop library; B watches play + next; B stops it
+    const dev0 = await waitFor(() => lastOf(B.client, 'studio-state', s => s.devices && s.devices.length === 1), 6000, 'B studio-state devices');
+    if (dev0.devices[0].kind !== 'radio' || dev0.devices[0].playing !== false) throw new Error('radio default state wrong');
+    D.client.send({ type: 'home-device', instanceId: boom.instanceId, action: 'play' });
+    const play = await waitFor(() => lastOf(B.client, 'home-device', m => m.device && m.device.playing === true), 6000, 'B sees radio play');
+    const firstLoop = play.device.track && play.device.track.loopId;
+    if (!firstLoop || !play.device.startedAt) throw new Error(`play payload ${JSON.stringify(play.device)}`);
+    D.client.send({ type: 'home-device', instanceId: boom.instanceId, action: 'next' });
+    const nxt = await waitFor(() => lastOf(B.client, 'home-device', m => m.device && m.device.track && m.device.track.loopId && m.device.track.loopId !== firstLoop), 6000, 'B sees next track');
+    B.client.send({ type: 'home-device', instanceId: boom.instanceId, action: 'stop' });
+    await waitFor(() => lastOf(D.client, 'home-device', m => m.device && m.device.playing === false), 6000, 'D sees B stop the radio');
+    report('home radio: play/next state syncs to a visitor with server start times; a visitor can stop it', true, `${firstLoop} -> ${nxt.device.track.loopId}, startedAt set`);
+    // B heads back to the Casino Lounge (its return point) for later checks
+    B.client.send({ type: 'leave-studio' });
+    await waitFor(() => lastOf(B.client, 'map', m => m.map.id === 'casino-lounge'), 8000, 'B returns to the lounge');
+    await sleep(3400);
+    D.client.ws.close();
+  } catch (e) { report('player homes (Phase 8): catalog / invite / radio', false, e.message); }
 
   // ---- return A to The Gateway (the studio step leaves A wherever
   // A entered from — currently the Casino Lounge)

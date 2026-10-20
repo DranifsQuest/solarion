@@ -1,4 +1,4 @@
-# Solarion — Phase 7 (World Expansion: Big Maps, Doors, Casinos, Bars)
+# Solarion — Phase 8 (Player Homes: Furniture, TVs, Radios, Invites)
 
 A multiplayer browser-based social game by **Re-Launch Studios** — an
 original-IP take on the classic Coke Music / Coke Studios loop:
@@ -62,6 +62,23 @@ for 20 seconds**, waking at 2. The **hookah lounge** sells **5z
 puffs** with a psychedelic screen effect; at **10 puffs you turn
 hippy for 20 seconds** (a broadcast appearance override), then your
 real look returns. See the Phase 7 notes in `docs/playtest-checklist.md`.
+
+**Phase 8 turns studios into player homes.** The furniture catalog
+grows from 14 to **44 items**: 4 beds, 9 sittable chairs & sofas
+(the Phase 7 sitting system just works on them), 5 shelves, 6 rugs
+(flat, walkable, drawn under everything), more lamps/plants/tables/
+wall art, **3 TVs and 3 radios**. Placed TVs and radios are
+*devices* with server-side state in a new `studio_devices` table:
+TVs have power + 6 fake channels (procedurally drawn shows — news,
+soap, cooking, weather, a cartoon, static), and radios play either
+the 48-loop library or **the room owner's own saved mixes**, with
+server-timestamped starts so the whole room hears the same track
+together. Anyone present in the room may work the TV/radio (the
+furniture itself stays owner-only). And **room invites**: an owner
+can invite any online player from anywhere; accepting rides the
+standard 3-second transfer into the room — and a fresh invite is
+the one way back in for a kicked visitor. See the Phase 8 section
+below.
 
 ## Run it locally
 
@@ -460,6 +477,89 @@ pre-v2 database, existing rows are marked `created = 1` — a v1
 avatar was a finished character. Idempotent; verified against a
 hand-built v1-shaped DB in `test/creation.test.js`.
 
+## Phase 8 — player homes (studios, upgraded)
+
+Phase 4's private studio becomes a real home. Everything below is
+enforced server-side; the client only sends intents.
+
+### The catalog: 44 items
+
+`src/studio.js` owns the catalog. The original 14 items keep their
+ids and prices; Phase 8 adds 30 more. All footprints stay 1 tile —
+the furniture system has always been 1-tile, beds included.
+
+| category (`cat`) | count | what's in it |
+|---|---|---|
+| beds | 4 | Single, Double, Bunk, Canopy (90–220z) |
+| chairs | 9 | the Cozy Chair + Cloud Couch, plus Dining Chair, Armchair, Beanbag, Rocking Chair, Bar Stool, Floor Cushion, Loveseat — all type `seating`, so the Phase 7 sitting system works on every one, in homes exactly as in the world |
+| shelves | 5 | Bookshelf, Wall Shelf, Display Shelf, Cube Storage, Tall Bookcase |
+| rugs | 6 | Sun, Wave, Star, Checker, Rainbow, Moon — type `rug`: flat, walkable, no collision, rendered under furniture and avatars |
+| tvs | 3 | Tube TV (150z), Flat TV (260z), Cinema TV (400z) |
+| radios | 3 | Boombox (80z), Retro Radio (120z), Hi-Fi System (200z) |
+| decor | 14 | tables, plants, lamps (incl. the new Floor Lamp + Cactus + Side Table + Wave Poster), wall art, the jukebox, speaker, dispenser |
+
+Purchases are the same atomic debit + insert as Phase 4; placement
+rules are unchanged (inside the walls, never the door tile, rot 0–3,
+max 100 placed).
+
+### TVs with fake shows
+
+A placed TV is a **device**: `{ on, channel }` stored per placed
+instance in the `studio_devices` table, so it survives relogs and
+server restarts and is identical for everyone in the room. Six
+channels, all original and drawn procedurally on the TV screen by
+the client (no footage, no assets):
+
+| ch | id | show |
+|---|---|---|
+| 1 | news | **Solarion News 24/7** — anchor, story panel, scrolling ticker, blinking LIVE dot |
+| 2 | soap | **Days of Our Tides** — two faces mid-argument, rotating dialogue captions |
+| 3 | cooking | **Sizzle & Sun** — a pan, bobbing dinner, rising steam |
+| 4 | weather | **Solarion Weather** — spinning sun, drifting cloud, 24° |
+| 5 | cartoon | **Captain Comet** — a comet streaking a starfield |
+| 6 | static | **Off-Air Static** — honest noise |
+
+Controls (`{type:'home-device', instanceId, action}`): `power`,
+`channel-next` / `channel-prev`, `channel-set` (changing channel
+wakes the TV). **Documented choice: anyone present in the room** —
+owner or visitor — may work the TV. State changes broadcast the
+resolved device (`{type:'home-device', ownerId, device}`) to the
+whole room and ride along in the studio entry payload.
+
+### Radios: the loop library, or the owner's own mixes
+
+A placed radio is a device too: `{ source, index, playing,
+startedAt }`. **Source A** is the game's 48-loop library; **source
+B is the room owner's saved mixes** (Phase 2) — the state payload
+carries the owner's mix list by name, and for the playing mix the
+full mix data, exactly like `performance-start`. Controls: `play`,
+`stop`, `next`, `prev`, `source` — same anyone-in-the-room rule as
+the TV. Playing an empty mix source is refused (the owner hasn't
+saved any mixes yet).
+
+Playback renders client-side over the existing Web Audio engine
+(the same `AE` the stage uses). The server stamps each play/track
+change with `startedAt = now + 1.2s` (the stage's sync-delay idea):
+occupants schedule the track from that instant together, and a
+late joiner aligns to the next loop/mix pass on the `startedAt`
+grid — approximate to within one pass, exact thereafter. If two
+radios in one room play at once, each client sounds only the most
+recently started one.
+
+### Room invites
+
+`{type:'studio-invite', username}` invites any **online** player,
+from anywhere in the world — the owner needn't be standing in the
+room. The invitee gets a prompt (`{type:'studio-invite'}` with the
+inviter's name) and answers `{type:'studio-invite-response',
+ownerId, accept}` within 60 seconds. Accepting consumes the invite
+and runs the ordinary enter flow — the standard **3-second
+load-screen transfer** into the owner's instance. An invite is one
+transport, not standing access: leaving works as always, the
+owner's kick stays absolute, and a kicked visitor's 10-minute block
+is lifted **only** by a fresh invite's accept (the kick handler is
+otherwise untouched). Declines are reported back to the owner.
+
 ## Stubbed / deferred to later phases
 
 - More Casino Lounges: `makeCasinoLounge()` can build one for any
@@ -467,8 +567,9 @@ hand-built v1-shaped DB in `test/creation.test.js`.
   generalizing it to several lounges is its own task, so Phase 4
   ships without a second lounge rather than destabilizing poker.
 - Studio upgrades: multiple rooms per player, room naming/themes,
-  sitting on furniture, and the jukebox actually playing visitors'
-  mixes (it's decorative in v1)
+  and the jukebox actually playing visitors' mixes (still decorative —
+  Phase 8 radios play the room *owner's* mixes; guest mixes are the
+  natural next step)
 - Deployment (Fly.io, cheap always-on — per Zan, later)
 
 <!-- deploy-refresh 2026-10-20: force fresh Render instance to clear suspected wedged edge/instance state (POST-body hang investigation). No code change. -->
