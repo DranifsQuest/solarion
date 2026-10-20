@@ -1,4 +1,4 @@
-# Solarion — Phase 5 (Security + Launch Readiness)
+# Solarion — Phase 6 (Character Creation)
 
 A multiplayer browser-based social game by **Re-Launch Studios** — an
 original-IP take on the classic Coke Music / Coke Studios loop:
@@ -28,6 +28,19 @@ re-denominated in z coins.
 District, Cinder Mesa, Frosthaven, Verdant Hollow — each with its own
 palette, layout and a working stage), private decorated **studios**
 with a furniture catalog, and **avatar editing** after creation.
+
+**Phase 6 is character creation.** Registering now creates only the
+account; after login, a dedicated creation screen ("Become someone")
+designs the character before the world opens. Male and female
+characters with genuinely distinct sprite work, and deep
+customization: 10 face shapes, 10 eye styles (+8 eye colors), 10
+noses and 10 lip styles **per gender**, 8 skin tones, 10 hair styles
+per gender × free color, 6 tops, 5 bottoms per gender (skirt on F),
+shoe colors and an accessory layer. One options module
+(`src/appearance.js`) drives server validation, the creation screen
+and the in-game editor, so the three can never disagree. Existing
+v1 accounts migrate in place (schema v2) and skip creation. See the
+Phase 6 section below.
 
 ## Run it locally
 
@@ -98,6 +111,13 @@ test/security.test.js Phase 5 suite (frame caps + fuzz, malformed HTTP,
                 vote/bonus/slots/poker concurrency races, studio
                 ownership, avatar whitelist, untradeable currency,
                 debug hooks dead without SOLARION_TEST)
+test/creation.test.js Phase 6 suite (creation gate + WS 4403, per-axis
+                validation/fuzz, M/F snapshot appearance, editor
+                parity + gender-switch normalization, restart
+                persistence, v1->v2 migration on a hand-built v1 DB)
+test/sprites.test.js Phase 6 suite (pixel-row widths, every axis
+                value renders in 3 directions, every face/eye/nose/
+                lip/hair/top/bottom option renders distinctly, M != F)
 scripts/load-test.js Phase 5 load sanity (~50 concurrent bots)
 ```
 
@@ -358,6 +378,66 @@ wants true iso pathing/occlusion, it's a client concern only.
 ### Deploy
 
 `render.yaml` mirrors the Kingdom of Goleon precedent: free plan, `npm install` build, `npm start`, `SOLARION_DB_PATH=./data/solarion.db`, `SOLARION_TEST` unset, `/health` health check. The server already reads Render's injected `PORT`. NOTE (same as Goleon): the free plan has no persistent disk, so the SQLite DB at `./data/` is ephemeral across redeploys/idle-spins unless a disk is added — see the deploy handoff notes.
+
+## Phase 6 — character creation
+
+### The flow
+
+Register → login → **creation screen** → The Gateway. Registration
+inserts a placeholder avatar (`created = 0`); `POST
+/api/create-character` validates the display name and every axis,
+writes the look, and flips `created = 1` — one-shot (a second call
+gets 409; later changes go through the look editor). The WebSocket
+refuses uncreated accounts with close code **4403**, and the client
+routes them back to the creation screen. v1 accounts never see it:
+the migration backfills `created = 1`.
+
+### One options module
+
+`src/appearance.js` is the single source of truth for legal looks.
+The server validates against it (`auth.createCharacter` /
+`auth.updateAvatar` via `appearance.mergeLook`); `GET
+/api/appearance` serves it; `public/looks.js` builds BOTH the
+creation screen and the in-game 🎨 Look panel from it. Creation and
+editing share every list — there is nothing to drift.
+
+| Axis | Options |
+| --- | --- |
+| gender | M / F (distinct sprite sets, not a palette swap) |
+| face | 10 per gender (span-profile head/jaw/cheek geometry) |
+| eyes | 10 per gender (incl. lash/winged/wink variants) |
+| eye color | 8 |
+| nose | 10 per gender |
+| lips | 10 per gender (shape + tint) |
+| skin tone | 8 (the 4 v1 tones included) |
+| hair style | 10 per gender (16 distinct maps) |
+| hair / top / bottom color | 12-swatch palettes + custom #rrggbb |
+| top style | 6 (tee, hoodie, jacket, tank, sweater, button-up) |
+| bottom style | 5 per gender (F includes skirt) |
+| shoe color | 8 |
+| accessory | none + cap, beanie, glasses, sunglasses, headband |
+
+Switching gender in the editor normalizes per-gender axes that don't
+exist for the new gender to its defaults (skirt → pants, ponytail →
+short), on both the WS and HTTP paths.
+
+### Sprites
+
+`public/sprites.js` renders parametrically: per-gender face span
+profiles, eye/nose/lip pixel patterns, torso templates with per-style
+detail (hoodie pocket, jacket opening, button-up collar/buttons,
+sweater bands, sleeve lengths), per-gender leg maps, and the
+accessory layer last. `test/sprites.test.js` proves every option
+renders distinctly — a menu entry that looks like another entry is
+a failed test, not a shrug.
+
+### Migration (schema v2)
+
+Column-presence-driven `ALTER TABLE` on `avatars` (the casino_chips
+pattern): the ten new columns arrive with defaults; when upgrading a
+pre-v2 database, existing rows are marked `created = 1` — a v1
+avatar was a finished character. Idempotent; verified against a
+hand-built v1-shaped DB in `test/creation.test.js`.
 
 ## Stubbed / deferred to later phases
 

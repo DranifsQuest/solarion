@@ -129,7 +129,7 @@ async function main() {
     try { const r = await fetch(`${BASE}/health`); if (r.ok) { health = await r.json(); break; } } catch (e) {}
     await sleep(3000);
   }
-  report('health: service answers, phase 5, six maps', !!(health && health.ok && health.phase === 5 && Object.keys(health.maps).length === 6),
+  report('health: service answers, phase 6, six maps', !!(health && health.ok && health.phase === 6 && Object.keys(health.maps).length === 6),
     health ? `uptime ${health.uptime_s}s, phase ${health.phase}` : 'no response in 150s');
   if (!health) return finish();
 
@@ -139,14 +139,47 @@ async function main() {
 
   // ---- accounts
   try {
-    const ra = await api('/api/register', { username: NAME_A, password: PW, shirt: '#aa0000', pants: '#003366', skin_tone: '#f1c27d', hair_style: 'short', hair_color: '#222222' });
+    const ra = await api('/api/register', { username: NAME_A, password: PW });
     if (ra.status !== 200 || !ra.json.token) throw new Error(`register A -> ${ra.status} ${JSON.stringify(ra.json)}`);
-    const rb = await api('/api/register', { username: NAME_B, password: PW, shirt: '#00aa44', pants: '#333333', skin_tone: '#f1c27d', hair_style: 'long', hair_color: '#444444' });
+    if (ra.json.avatar.created !== false) throw new Error('fresh account A should start uncreated');
+    const rb = await api('/api/register', { username: NAME_B, password: PW });
     if (rb.status !== 200 || !rb.json.token) throw new Error(`register B -> ${rb.status} ${JSON.stringify(rb.json)}`);
+    if (rb.json.avatar.created !== false) throw new Error('fresh account B should start uncreated');
     A = { name: NAME_A, token: ra.json.token };
     B = { name: NAME_B, token: rb.json.token };
     report('register: two fresh verify_* accounts created over HTTPS POST', true, `A=${NAME_A} B=${NAME_B}`);
   } catch (e) { report('register: two fresh verify_* accounts created over HTTPS POST', false, e.message); return finish(); }
+
+  // ---- character creation (Phase 6): A becomes F, B becomes M
+  try {
+    const lookA = {
+      token: A.token, name: NAME_A, gender: 'F', face: 'heart', eyes: 'lash',
+      eye_color: '#1e4d8f', nose: 'tiny', lips: 'rose', skin_tone: '#c68642',
+      hair_style: 'ponytail', hair_color: '#c0392b', top_style: 'hoodie',
+      body_color: '#e5639e', bottom_style: 'skirt', accent_color: '#2b3a55',
+      shoe_color: '#ffd23f', accessory: 'glasses',
+    };
+    const ca = await api('/api/create-character', lookA);
+    if (ca.status !== 200 || !ca.json.avatar || ca.json.avatar.created !== true) throw new Error(`create A -> ${ca.status} ${JSON.stringify(ca.json)}`);
+    for (const k of ['gender', 'face', 'eyes', 'nose', 'lips', 'hair_style', 'bottom_style']) {
+      if (ca.json.avatar[k] !== lookA[k]) throw new Error(`A avatar.${k} = ${ca.json.avatar[k]}, expected ${lookA[k]}`);
+    }
+    const lookB = {
+      token: B.token, name: NAME_B, gender: 'M', face: 'square', eyes: 'bold',
+      eye_color: '#20242c', nose: 'long', lips: 'smirk', skin_tone: '#f1c27d',
+      hair_style: 'mohawk', hair_color: '#222222', top_style: 'jacket',
+      body_color: '#3aa7e0', bottom_style: 'cargo', accent_color: '#003366',
+      shoe_color: '#23262b', accessory: 'cap',
+    };
+    const cb = await api('/api/create-character', lookB);
+    if (cb.status !== 200 || !cb.json.avatar || cb.json.avatar.created !== true) throw new Error(`create B -> ${cb.status} ${JSON.stringify(cb.json)}`);
+    for (const k of ['gender', 'face', 'eyes', 'nose', 'lips', 'hair_style', 'bottom_style']) {
+      if (cb.json.avatar[k] !== lookB[k]) throw new Error(`B avatar.${k} = ${cb.json.avatar[k]}, expected ${lookB[k]}`);
+    }
+    const dup = await api('/api/create-character', lookA);
+    if (dup.status !== 409) throw new Error(`second create for A -> ${dup.status}, expected 409`);
+    report('character creation: F + M characters created over POST, one-shot enforced', true, 'A=F heart/lash/ponytail/skirt, B=M square/bold/mohawk/cargo');
+  } catch (e) { report('character creation: F + M characters created over POST, one-shot enforced', false, e.message); return finish(); }
 
   try {
     const li = await api('/api/login', { username: NAME_A, password: PW });
@@ -164,14 +197,20 @@ async function main() {
     const h = A.client.hello;
     if (h.map.id !== 'the-gateway') throw new Error(`spawn map ${h.map.id}`);
     if (h.bonusGranted !== true || h.zcoins !== 100) throw new Error(`bonus=${h.bonusGranted} z=${h.zcoins}`);
-    report('ws connect A: hello in The Gateway, +100z daily bonus granted', true, `zcoins=${h.zcoins}`);
+    if (h.you.gender !== 'F' || h.you.face !== 'heart' || h.you.hair_style !== 'ponytail' || h.you.bottom_style !== 'skirt') {
+      throw new Error(`hello appearance mismatch: ${JSON.stringify({ g: h.you.gender, f: h.you.face, hair: h.you.hair_style, b: h.you.bottom_style })}`);
+    }
+    report('ws connect A: hello in The Gateway, +100z daily bonus granted', true, `zcoins=${h.zcoins}, appearance F/heart/ponytail/skirt in hello`);
   } catch (e) { report('ws connect A: hello in The Gateway, +100z daily bonus granted', false, e.message); return finish(); }
 
   try {
     B.client = await connectClient(B.token);
     B.id = B.client.hello.you.id;
     if (B.client.hello.zcoins !== 100) throw new Error(`B z=${B.client.hello.zcoins}`);
-    report('ws connect B: hello received, +100z daily bonus granted', true, `zcoins=${B.client.hello.zcoins}`);
+    if (B.client.hello.you.gender !== 'M' || B.client.hello.you.face !== 'square' || B.client.hello.you.hair_style !== 'mohawk') {
+      throw new Error('B hello appearance mismatch');
+    }
+    report('ws connect B: hello received, +100z daily bonus granted', true, `zcoins=${B.client.hello.zcoins}, appearance M/square/mohawk in hello`);
   } catch (e) { report('ws connect B: hello received, +100z daily bonus granted', false, e.message); return finish(); }
 
   // ---- presence + chat + movement
