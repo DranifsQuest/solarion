@@ -27,6 +27,35 @@ const bubbles = new Map();   // id -> { text, until }
 let keys = { up: false, down: false, left: false, right: false };
 let lastSentKeys = '';
 let coins = 0;
+let camState = { x: 0, y: 0, init: false, map: null }; // Phase 9 eased camera
+let curArea = null; // Phase 9: named-area nameplate state
+
+/** Current eased camera top-left (projected px). Used by draw + input. */
+function cameraPos() {
+  return { x: camState.x, y: camState.y };
+}
+
+/** Phase 9: raise the place nameplate when entering a named area. */
+function checkArea() {
+  if (!me || !mapDef || !mapDef.areas) return;
+  const myPub = players.find(p => p.id === me.id);
+  if (!myPub) return;
+  const a = mapDef.areas.find(r => myPub.x >= r.x && myPub.x < r.x + r.w && myPub.y >= r.y && myPub.y < r.y + r.h);
+  const name = a ? a.name : null;
+  if (name && name !== curArea) {
+    curArea = name;
+    const el = $('areaPlate');
+    el.textContent = name;
+    el.classList.remove('hidden');
+    el.classList.remove('show');
+    void el.offsetWidth; // restart the fade animation
+    el.classList.add('show');
+    clearTimeout(checkArea._t);
+    checkArea._t = setTimeout(() => el.classList.add('hidden'), 2800);
+  } else if (!name) {
+    curArea = null;
+  }
+}
 
 // ------------------------------------------------------------------ dom
 const $ = (id) => document.getElementById(id);
@@ -181,6 +210,8 @@ setInterval(() => {
 
 function setMap(m, you, chat) {
   mapDef = m;
+  curArea = null;
+  camState.init = false;
   $('mapName').textContent = m.name;
   if (window.SolarionMixer) window.SolarionMixer.onMapChanged(m);
   if (window.SolarionCasino) window.SolarionCasino.onMapChanged(m);
@@ -213,6 +244,7 @@ function handle(m) {
     }
     case 'snapshot': {
       players = m.players;
+      checkArea();
       if (transfer) transfer.snapshotSeen = true;
       for (const p of players) {
         if (!renderPos.has(p.id)) renderPos.set(p.id, { x: p.x, y: p.y, moving: false });
@@ -297,6 +329,45 @@ setInterval(() => {
 }, 50);
 
 $('sitBtn').onclick = () => { if (!transfer) send({ type: 'interact' }); };
+
+// ------------------------------------------------------------------
+// Phase 9 — click/tap-to-move + run toggle. A click (or phone tap)
+// on the world canvas sends ONE {type:'move-to'} intent; the server
+// routes and walks there (src/pathfind.js). Clicks are ignored while
+// a studio placement is armed (studio.js owns those clicks), during
+// transfers, and when they land on another player (profile card,
+// item 7) rather than the ground.
+/** Invert the iso projection for a pointer event → world px point. */
+function screenToWorld(e) {
+  const rect = cv.getBoundingClientRect();
+  const px = (e.clientX - rect.left) * (cv.width / rect.width);
+  const py = (e.clientY - rect.top) * (cv.height / rect.height);
+  const myRp = me ? renderPos.get(me.id) : null;
+  if (!myRp) return null;
+  const cam = cameraPos();
+  const sx = px + cam.x, sy = py + cam.y;
+  const a = sx / ZOOM, b = sy / (ZOOM * 0.5);
+  return { x: (a + b) / 2, y: (b - a) / 2 };
+}
+
+cv.addEventListener('click', (e) => {
+  if (transfer || !me || !mapDef) return;
+  if (window.SolarionStudio && window.SolarionStudio.placeInstanceId != null) return;
+  const w = screenToWorld(e);
+  if (!w) return;
+  // A click ON a player opens their profile (item 7), not a walk.
+  if (window.SolarionSocial && window.SolarionSocial.tryProfileAt(w)) return;
+  send({ type: 'move-to', x: Math.round(w.x), y: Math.round(w.y) });
+});
+
+let runOn = false;
+$('runBtn').onclick = () => {
+  runOn = !runOn;
+  $('runBtn').classList.toggle('active', runOn);
+  $('runBtn').textContent = runOn ? '🏃 Running' : '🚶 Walk';
+  send({ type: 'run', on: runOn });
+};
+$('chatBtn').onclick = () => { $('chatInput').focus(); };
 
 $('chatForm').addEventListener('submit', (e) => {
   e.preventDefault();
@@ -605,7 +676,21 @@ function draw() {
 
   const myRp = me ? renderPos.get(me.id) : null;
   const [fcx, fcy] = myRp ? proj(myRp.x, myRp.y) : [0, 0];
-  const camX = fcx - W / 2, camY = fcy - H / 2;
+  // Phase 9 — eased camera with movement lookahead: the camera
+  // glides toward (my projected position + a nudge in the facing
+  // direction) instead of hard-locking, so big-map walking feels
+  // like travelling, not dragging a window.
+  if (!camState.init || mapDef !== camState.map) {
+    camState = { x: fcx - W / 2, y: fcy - H / 2, init: true, map: mapDef };
+  } else if (myRp) {
+    const myPub = players.find(p => me && p.id === me.id);
+    const look = { down: [0, 20], up: [0, -20], left: [-26, 10], right: [26, 10] }[myPub ? myPub.dir : 'down'] || [0, 0];
+    const tx = fcx - W / 2 + (myRp.moving ? look[0] : 0);
+    const ty = fcy - H / 2 + (myRp.moving ? look[1] : 0);
+    camState.x += (tx - camState.x) * 0.09;
+    camState.y += (ty - camState.y) * 0.09;
+  }
+  const camX = camState.x, camY = camState.y;
 
   ctx.save();
   ctx.translate(-camX, -camY);

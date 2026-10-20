@@ -74,6 +74,10 @@ function stageDef(tx, ty) {
 function seat(mapId, n, tx, ty, dir, kind) {
   return { id: `${mapId}-seat-${n}`, x: cx(tx), y: cy(ty), dir, kind };
 }
+/** A named area (Phase 9): entering one raises a place nameplate. */
+function area(name, tx, ty, tw, th) {
+  return { name, x: px(tx), y: px(ty), w: px(tw), h: px(th) };
+}
 
 // ------------------------------------------------------------------
 // THE GATEWAY — entrance plaza / hub. Five gateway arches along the
@@ -108,6 +112,12 @@ function buildGateway() {
     ],
     doors: [
       door(62, 32, 'gateway-cafe', { x: cx(10), y: cy(10) }, 'Gateway Café'),
+    ],
+    areas: [
+      area('The Arches', 2, 0, 68, 4),
+      area('Fountain Plaza', 28, 15, 16, 14),
+      area('Café Corner', 54, 28, 16, 15),
+      area('South Market', 6, 32, 20, 10),
     ],
     seats: [
       seat(id, 1, 31, 19, 'right', 'bench'),
@@ -150,6 +160,7 @@ function buildCafe() {
     doors: [
       door(9, 11, 'the-gateway', { x: cx(62), y: cy(31) }, 'The Gateway', 2),
     ],
+    areas: [area('The Café', 1, 1, 18, 11)],
     seats: chairPairs.map(([x, y, dir], i) => seat(id, i + 1, x, y, dir, 'cafe')),
   };
 }
@@ -184,6 +195,12 @@ function buildSolsticeBay() {
       door(15, 37, 'casino-lounge', { x: cx(15), y: cy(16) }, 'Casino Lounge'),
     ],
     stage: stageDef(33, 6),
+    areas: [
+      area('The Stage', 29, 4, 14, 6),
+      area('The Boardwalk', 8, 10, 56, 12),
+      area('The Beach', 16, 24, 40, 16),
+      area('Casino Corner', 1, 31, 16, 12),
+    ],
     seats: [
       seat(id, 1, 10, 8, 'up', 'chair'),
       seat(id, 2, 14, 8, 'up', 'chair'),
@@ -273,6 +290,12 @@ function buildCasino({ id, name, hostId, hostLabel, hostSpawn, floor, floorAlt, 
       door(14, 18, hostId, hostSpawn, hostLabel, 2),
     ],
     seats,
+    areas: [
+      area('Poker Floor', 1, 1, 14, 17),
+      area('The Slots', 15, 1, 14, 10),
+      area('The Bar', 1, 14, 9, 5),
+      area('The Foyer', 10, 14, 12, 5),
+    ],
     casino: {
       id: `${id}-casino`,
       mapId: id,
@@ -349,6 +372,7 @@ function buildHookahLounge() {
       door(9, 12, 'cinder-mesa', { x: cx(30), y: cy(30) }, 'Cinder Mesa', 2),
     ],
     seats,
+    areas: [area('The Lounge', 1, 1, 18, 12)],
     hookahs: stations.map(([tx, ty]) => ({ x: cx(tx), y: cy(ty) })),
   };
 }
@@ -388,6 +412,11 @@ function buildNeonDistrict() {
       door(61, 29, 'neon-casino', { x: cx(15), y: cy(16) }, 'Neon Casino'),
     ],
     stage: stageDef(33, 3),
+    areas: [
+      area('Stage Grounds', 29, 1, 14, 9),
+      area('Market Square', 26, 14, 20, 16),
+      area('Casino Row', 52, 26, 18, 14),
+    ],
     seats: [
       seat(id, 1, 20, 13, 'down', 'bench'),
       seat(id, 2, 50, 13, 'down', 'bench'),
@@ -421,6 +450,11 @@ function buildCinderMesa() {
       door(30, 31, 'hookah-lounge', { x: cx(10), y: cy(11) }, 'Hookah Lounge'),
     ],
     stage: stageDef(63, 21),
+    areas: [
+      area('Forge Plaza', 20, 15, 16, 14),
+      area('Stage Rim', 58, 17, 13, 10),
+      area('Hookah Corner', 24, 29, 16, 12),
+    ],
     seats: [
       seat(id, 1, 58, 20, 'right', 'bench'),
       seat(id, 2, 58, 24, 'right', 'bench'),
@@ -451,6 +485,10 @@ function buildFrosthaven() {
     gateways: [arch(35, 1, 'the-gateway', 'The Gateway')],
     doors: [],
     stage: stageDef(33, 37),
+    areas: [
+      area('The Frozen Pond', 2, 2, 20, 10),
+      area('Stage Grounds', 29, 33, 14, 10),
+    ],
     seats: [
       seat(id, 1, 30, 34, 'down', 'bench'),
       seat(id, 2, 42, 34, 'down', 'bench'),
@@ -481,6 +519,10 @@ function buildVerdantHollow() {
     gateways: [arch(66, 43, 'the-gateway', 'The Gateway')],
     doors: [],
     stage: stageDef(33, 21),
+    areas: [
+      area('The Clearing', 29, 17, 14, 12),
+      area('The Pond Shore', 28, 35, 14, 8),
+    ],
     seats: [
       seat(id, 1, 28, 25, 'up', 'bench'),
       seat(id, 2, 44, 25, 'up', 'bench'),
@@ -568,6 +610,7 @@ function clientMap(map) {
       x: d.x, y: d.y, w: d.w, h: d.h, label: d.label,
     })),
     seats: (map.seats || []).map(s => ({ id: s.id, x: s.x, y: s.y, dir: s.dir, kind: s.kind })),
+    areas: (map.areas || []).map(a => ({ ...a })),
     hookahs: (map.hookahs || []).map(h => ({ x: h.x, y: h.y })),
     stage: map.stage ? {
       x: map.stage.x, y: map.stage.y, w: map.stage.w, h: map.stage.h,

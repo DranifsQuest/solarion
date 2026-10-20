@@ -30,6 +30,7 @@ function studioOf(sceneId) {
 
 const PLAYER_RADIUS = 12;
 const SPEED = 175;              // px per second
+const RUN_MULT = 1.55;          // Phase 9: run-toggle speed multiplier
 const TICK_HZ = 20;             // simulation
 const SNAPSHOT_HZ = 10;         // broadcast
 const CHAT_LIMIT = 6;           // messages ...
@@ -174,6 +175,8 @@ class Game {
       x, y,
       dir: 'down',
       keys: {},
+      path: null,         // Phase 9: server-owned waypoint route (click/tap-to-move)
+      run: false,         // Phase 9: run toggle (both input modes)
       chatTimes: [],
       lastGatewayAt: 0,
       transferUntil: 0,   // Phase B: movement locked until this epoch-ms (load screen)
@@ -315,6 +318,39 @@ class Game {
       left: Boolean(keys && keys.left),
       right: Boolean(keys && keys.right),
     };
+    // Phase 9: grabbing the keys cancels any click-to-move route.
+    if (p.keys.up || p.keys.down || p.keys.left || p.keys.right) p.path = null;
+  }
+
+  // ---------------------------------------------------------- Phase 9: path movement
+
+  /**
+   * { type:'move-to', x, y } — click/tap-to-move. The destination is
+   * validated (finite, inside the scene), snapped to the nearest
+   * walkable tile, and routed server-side (src/pathfind.js). The
+   * player then walks the route in tick(); keyboard input cancels.
+   */
+  handleMoveTo(p, x, y) {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    if (p.transferUntil && Date.now() < p.transferUntil) return;
+    if (p.passedOutUntil && Date.now() < p.passedOutUntil) return;
+    const map = this.sceneFor(p.mapId);
+    if (!map) return;
+    const maxX = map.tiles.w * TILE, maxY = map.tiles.h * TILE;
+    const tx = Math.max(0, Math.min(maxX - 1, x));
+    const ty = Math.max(0, Math.min(maxY - 1, y));
+    const { findPath } = require('./pathfind');
+    const path = findPath(map, p.x, p.y, tx, ty);
+    if (!path || !path.length) {
+      this.send(p, { type: 'notice', text: "Can't get there from here." });
+      return;
+    }
+    p.path = path;
+  }
+
+  /** { type:'run', on } — the run toggle (×1.55 speed, both input modes). */
+  handleRun(p, on) {
+    p.run = Boolean(on);
   }
 
   // ---------------------------------------------------------- chat
@@ -381,18 +417,32 @@ class Game {
       if (p.keys.right) dx += 1;
       if (p.keys.up) dy -= 1;
       if (p.keys.down) dy += 1;
+      // Phase 9: no keys held → follow the click-to-move route, if any.
+      if (dx === 0 && dy === 0 && p.path && p.path.length) {
+        const wp = p.path[0];
+        const ddx = wp.x - p.x, ddy = wp.y - p.y;
+        const dist = Math.hypot(ddx, ddy);
+        if (dist <= 6) {
+          p.path.shift();
+          if (!p.path.length) p.path = null;
+        } else {
+          dx = ddx / dist; dy = ddy / dist;
+        }
+      }
       if (dx === 0 && dy === 0) continue;
       // Phase B sitting: any movement input stands you up (and is
       // consumed — you don't slide off the chair in the same tick).
       if (p.seated) {
         p.seated = null;
         p.keys = {};
+        p.path = null;
         this.send(p, { type: 'sit-state', seated: false });
         continue;
       }
+      const speed = SPEED * (p.run ? RUN_MULT : 1);
       const len = Math.hypot(dx, dy);
-      dx = (dx / len) * SPEED * dt;
-      dy = (dy / len) * SPEED * dt;
+      dx = (dx / len) * speed * dt;
+      dy = (dy / len) * speed * dt;
       // Phase B amendment — drunk wobble: from 3 drinks the walk
       // direction sways sinusoidally (server-side, so everyone sees
       // the same stagger); strength grows with the count.
@@ -462,6 +512,7 @@ class Game {
     p.lastGatewayAt = Date.now();
     p.performing = false; // never carry a performance across scenes
     p.seated = null;      // ... or a chair
+    p.path = null;        // ... or a walking route
     // Phase B: EVERY scene transfer runs the fixed load-screen window.
     // The server places the player immediately and locks movement for
     // TRANSFER_MS; the client lifts its screen only after the window
@@ -665,4 +716,4 @@ class Game {
   }
 }
 
-module.exports = { Game, localDay, PLAYER_RADIUS, SPEED, CHAT_LIMIT, TRANSFER_MS, VICE };
+module.exports = { Game, localDay, PLAYER_RADIUS, SPEED, RUN_MULT, CHAT_LIMIT, TRANSFER_MS, VICE };

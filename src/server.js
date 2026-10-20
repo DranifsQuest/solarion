@@ -288,6 +288,13 @@ wss.on('connection', (ws, req) => {
         if (!casino.isSeated(p.userId)) game.handleInput(p, msg.keys);
         else p.keys = {};
         break;
+      case 'move-to':
+        // Phase 9: click/tap-to-move (server-routed). Poker seats lock it too.
+        if (!casino.isSeated(p.userId)) game.handleMoveTo(p, msg.x, msg.y);
+        break;
+      case 'run':
+        game.handleRun(p, msg.on);
+        break;
       case 'poker':
         casino.handlePoker(p, msg);
         break;
