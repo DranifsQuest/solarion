@@ -228,6 +228,7 @@ function handle(m) {
   if (window.SolarionMixer) window.SolarionMixer.handle(m);
   if (window.SolarionCasino) window.SolarionCasino.handle(m);
   if (window.SolarionStudio) window.SolarionStudio.handle(m);
+  if (window.SolarionSocial) window.SolarionSocial.handle(m);
   switch (m.type) {
     case 'hello': {
       me = { ...m.you };
@@ -909,7 +910,9 @@ function draw() {
     const rp = renderPos.get(p.id);
     if (!rp) continue;
     const [sx, sy] = proj(rp.x, rp.y);
-    const bob = rp.moving ? Math.abs(Math.sin(now / 110 + p.id)) * 3 : 0;
+    let bob = rp.moving ? Math.abs(Math.sin(now / 110 + p.id)) * 3 : 0;
+    // Phase 9: dancing is a whole-body bounce (anywhere, anytime).
+    if (p.emote === 'dance') bob += Math.abs(Math.sin(now / 130 + p.id * 1.3)) * 6;
 
     // soft ground shadow
     ctx.beginPath();
@@ -967,6 +970,17 @@ function draw() {
       ctx.fillText('☮️', sx, sy - sh - 20 - bob);
     }
 
+    // Phase 9 — emote glyph floats beside the name while it lasts.
+    if (p.emote) {
+      const glyph = { wave: '👋', dance: '🎵', laugh: '😂', thumbsup: '👍' }[p.emote];
+      if (glyph) {
+        ctx.font = '15px system-ui';
+        ctx.textAlign = 'center';
+        const wob = p.emote === 'wave' ? Math.sin(now / 90 + p.id) * 3 : 0;
+        ctx.fillText(glyph, sx + 16 + wob, sy - sh - 8 - bob);
+      }
+    }
+
     // name
     ctx.font = 'bold 12px system-ui';
     ctx.textAlign = 'center';
@@ -976,9 +990,13 @@ function draw() {
     ctx.strokeText(p.name, sx, sy - sh - 6 - bob);
     ctx.fillText(p.name, sx, sy - sh - 6 - bob);
 
-    // speech bubble
+    // speech bubble (Phase 9: fades out over its last 900ms)
     const b = bubbles.get(p.id);
     if (b && b.until > now) {
+      const remain = b.until - now;
+      const alpha = Math.min(1, remain / 900);
+      ctx.save();
+      ctx.globalAlpha = alpha;
       ctx.font = '12px system-ui';
       const text = b.text.slice(0, 30);
       const w = Math.min(ctx.measureText(text).width + 16, 200);
@@ -992,6 +1010,7 @@ function draw() {
       ctx.closePath(); ctx.fill();
       ctx.fillStyle = '#1a2238';
       ctx.fillText(text, sx, by + 16);
+      ctx.restore();
     }
   }
   ctx.restore();

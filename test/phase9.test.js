@@ -130,6 +130,101 @@ async function toBay(user) {
     5000, `${user.name} arrives in solstice-bay`);
 }
 
+// ------------------------------------------------------------ items 6/4/7
+
+test('friends: request → accept, presence + locations, join-friend travel, remove', { timeout: 60000 }, async () => {
+  const a = await makeUser('pal_a_p9');
+  const b = await makeUser('pal_b_p9');
+  // A asks; B is notified and sees the incoming request.
+  a.client.send({ type: 'friend-request', username: b.name });
+  await waitFor(() => b.client.msgs.filter(m => m.type === 'friend-request' && m.fromId === a.id).pop(),
+    5000, 'B notified of friend request');
+  const inc = await waitFor(() => {
+    const f = b.client.msgs.filter(m => m.type === 'friends').pop();
+    return f && f.incoming.some(u => u.id === a.id) ? f : null;
+  }, 5000, 'B friends payload shows incoming');
+  assert.ok(inc);
+  // B accepts.
+  b.client.send({ type: 'friend-respond', userId: a.id, accept: true });
+  const fa = await waitFor(() => {
+    const f = a.client.msgs.filter(m => m.type === 'friends').pop();
+    return f && f.friends.some(u => u.id === b.id) ? f : null;
+  }, 5000, 'A sees B as friend');
+  assert.equal(fa.friends.find(u => u.id === b.id).online, true, 'friend presence: online');
+
+  // B travels to the Bay; A's refreshed list shows the location.
+  await toBay(b);
+  a.client.send({ type: 'friend-list' });
+  const loc = await waitFor(() => {
+    const f = a.client.msgs.filter(m => m.type === 'friends').pop();
+    const e = f && f.friends.find(u => u.id === b.id);
+    return e && e.mapId === 'solstice-bay' ? e : null;
+  }, 5000, 'A sees B in Solstice Bay');
+  assert.equal(loc.mapName, 'Solstice Bay');
+
+  // Navigator shows the Bay with the friend marker + counts.
+  a.client.send({ type: 'navigator' });
+  const nav = await waitFor(() => a.client.msgs.filter(m => m.type === 'navigator').pop(), 5000, 'navigator payload');
+  const bay = nav.places.find(pl => pl.id === 'solstice-bay');
+  assert.ok(bay && bay.count >= 1, 'navigator counts the bay occupants');
+  assert.ok(bay.friends.includes(b.name), 'navigator marks where friends are');
+  assert.ok(nav.places.some(pl => pl.id === 'casino-lounge'), 'navigator lists interiors');
+
+  // A joins B through the standard transfer.
+  a.client.msgs.length = 0;
+  a.client.send({ type: 'join-friend', userId: b.id });
+  const arrived = await waitFor(() => a.client.msgs.filter(m => m.type === 'map' && m.map.id === 'solstice-bay').pop(),
+    8000, 'A joins B in the bay');
+  assert.equal(arrived.transferMs, 3000, 'join-friend rides the 3s transfer');
+  await waitPos(a, p => Math.hypot(p.x - myPos(b).x, p.y - myPos(b).y) < 160, 10000, 'A lands near B');
+
+  // Navigator travel to a city directly.
+  a.client.send({ type: 'navigate', mapId: 'frosthaven' });
+  await waitFor(() => a.client.msgs.filter(m => m.type === 'map' && m.map.id === 'frosthaven').pop(),
+    8000, 'A navigates to Frosthaven');
+
+  // Remove: both sides drop the friendship; join is refused afterwards.
+  a.client.send({ type: 'friend-remove', userId: b.id });
+  await waitFor(() => {
+    const f = a.client.msgs.filter(m => m.type === 'friends').pop();
+    return f && !f.friends.some(u => u.id === b.id) ? f : null;
+  }, 5000, 'friendship removed for A');
+  a.client.send({ type: 'join-friend', userId: b.id });
+  const refusal = await waitFor(() => a.client.msgs.filter(m => m.type === 'notice' && /only join a friend/.test(m.text)).pop(),
+    5000, 'join refused for non-friend');
+  assert.ok(refusal);
+  a.client.ws.close(); b.client.ws.close();
+});
+
+test('emotes broadcast + snapshot state; profiles carry look, mixes, friend status', { timeout: 60000 }, async () => {
+  const a = await makeUser('emo_a_p9');
+  const b = await makeUser('emo_b_p9');
+  const mix = await saveMix(a, 1, { ...SHORT_MIX, name: 'Profile Song' });
+  assert.ok(mix.id);
+  a.client.send({ type: 'emote', emote: 'dance' });
+  const ev = await waitFor(() => b.client.msgs.filter(m => m.type === 'emote' && m.userId === a.id).pop(),
+    5000, 'B receives A emote broadcast');
+  assert.equal(ev.emote, 'dance');
+  await waitFor(() => {
+    const s = b.client.msgs.filter(m => m.type === 'snapshot').pop();
+    const pa = s && s.players.find(p => p.id === a.id);
+    return pa && pa.emote === 'dance' ? pa : null;
+  }, 5000, 'snapshot carries the active emote');
+  // Bad emote names are dropped.
+  a.client.send({ type: 'emote', emote: 'backflip' });
+  await sleep(400);
+  assert.equal(b.client.msgs.filter(m => m.type === 'emote' && m.emote === 'backflip').length, 0);
+
+  b.client.send({ type: 'profile', userId: a.id });
+  const prof = await waitFor(() => b.client.msgs.filter(m => m.type === 'profile').pop(), 5000, 'profile payload');
+  assert.equal(prof.profile.name, a.name);
+  assert.equal(prof.profile.online, true);
+  assert.ok(prof.profile.look && prof.profile.look.gender, 'profile carries the look');
+  assert.deepEqual(prof.profile.mixes.map(m => m.name), ['Profile Song'], 'profile lists mix titles');
+  assert.equal(prof.profile.friendStatus, 'none');
+  a.client.ws.close(); b.client.ws.close();
+});
+
 before(async () => { await startServer(PORT, DB); });
 after(async () => { for (const c of [...children]) await stopServer(c).catch(() => {}); });
 

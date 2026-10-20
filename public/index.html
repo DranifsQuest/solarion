@@ -185,6 +185,32 @@
         <button id="mixSave">💾 Save mix</button>
       </div>
     </div>
+    <!-- navigator panel (Phase 9) -->
+    <div id="navPanel" class="sidePanel hidden">
+      <div class="spTitle">🧭 NAVIGATOR — the world</div>
+      <div id="navList"></div>
+      <div class="spTitle" style="margin-top:10px">🏠 OPEN HOMES</div>
+      <div id="navHomes"></div>
+    </div>
+    <!-- friends panel (Phase 9) -->
+    <div id="friendsPanel" class="sidePanel hidden">
+      <div class="spTitle">👥 FRIENDS</div>
+      <div id="friendIncoming"></div>
+      <div id="friendList"></div>
+      <div class="spRow">
+        <input id="friendAddName" placeholder="Add by username…" maxlength="20">
+        <button id="friendAddGo">Add</button>
+      </div>
+    </div>
+    <!-- profile card (Phase 9) -->
+    <div id="profileCard" class="hidden"><div id="profileBody"></div></div>
+    <!-- emote bar (Phase 9) -->
+    <div id="emoteBar">
+      <button data-emote="wave" title="Wave">👋</button>
+      <button data-emote="dance" title="Dance">🕺</button>
+      <button data-emote="laugh" title="Laugh">😂</button>
+      <button data-emote="thumbsup" title="Thumbs up">👍</button>
+    </div>
     <div id="bubbles"></div>
     <div id="areaPlate" class="hidden"></div>
     <div id="chatPanel">
@@ -215,5 +241,6 @@
 <script src="mixer.js"></script>
 <script src="casino.js"></script>
 <script src="studio.js"></script>
+<script src="social.js"></script>
 </body>
 </html>

@@ -60,10 +60,13 @@ const casinoModule = require('./casino');
 const { CasinoSystem } = casinoModule;
 const studioModule = require('./studio');
 const { StudioSystem } = studioModule;
+const socialModule = require('./social');
+const { SocialSystem } = socialModule;
 
 music.init();
 casinoModule.initLedger();
 studioModule.init();
+socialModule.init();
 
 const PORT = parseInt(process.env.SOLARION_PORT || process.env.PORT || '3000', 10);
 const TEST_MODE = process.env.SOLARION_TEST === '1';
@@ -96,6 +99,8 @@ casino.initFromMaps(MAPS);
 // per-studio registration anywhere: game.js resolves `studio:<id>`
 // scene ids on demand, and this system only handles studio messages.
 const studios = new StudioSystem(game);
+// Phase 9: friends / navigator / profiles (needs studios for home travel).
+const social = new SocialSystem(game, studios);
 game.onPlayerGone = (userId) => { stages.handlePlayerGone(userId); casino.handlePlayerGone(userId); };
 game.onMapEntered = (p) => { stages.syncPlayer(p); casino.syncPlayer(p); };
 
@@ -260,6 +265,7 @@ wss.on('connection', (ws, req) => {
   stages.syncPlayer(p);
   casino.syncPlayer(p);
   game.send(p, { type: 'mixes', mixes: music.listMixes(session.user.id) });
+  social.sendFriends(p);
 
   ws.on('message', (raw) => {
     // Phase 5 — inbound frame guards. NOTHING reaches a handler until
@@ -294,6 +300,20 @@ wss.on('connection', (ws, req) => {
         break;
       case 'run':
         game.handleRun(p, msg.on);
+        break;
+      case 'emote':
+        game.handleEmote(p, msg.emote);
+        break;
+      case 'friend-request':
+      case 'friend-respond':
+      case 'friend-remove':
+      case 'friend-list':
+      case 'navigator':
+      case 'navigate':
+      case 'navigate-home':
+      case 'join-friend':
+      case 'profile':
+        social.handle(p, msg);
         break;
       case 'poker':
         casino.handlePoker(p, msg);

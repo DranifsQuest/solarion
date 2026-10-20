@@ -58,6 +58,12 @@ const VICE = {
 };
 const FURN_ROT_DIRS = ['down', 'left', 'up', 'right']; // studio furniture rot -> facing
 
+// Phase 9 — emotes: one-shot social expressions. The server tracks
+// the active emote per player (snapshots carry it, so late viewers
+// see it too) and broadcasts the start. Dance lasts longest and is
+// cancelled by walking.
+const EMOTES = { wave: 2600, dance: 6000, laugh: 2600, thumbsup: 2600 };
+
 /** Server-local calendar day, YYYY-MM-DD (daily-bonus day boundary). */
 function localDay(now = new Date()) {
   const m = String(now.getMonth() + 1).padStart(2, '0');
@@ -177,6 +183,7 @@ class Game {
       keys: {},
       path: null,         // Phase 9: server-owned waypoint route (click/tap-to-move)
       run: false,         // Phase 9: run toggle (both input modes)
+      emote: null,        // Phase 9: { name, until } while emoting
       chatTimes: [],
       lastGatewayAt: 0,
       transferUntil: 0,   // Phase B: movement locked until this epoch-ms (load screen)
@@ -277,6 +284,7 @@ class Game {
       shoe_color: p.shoe_color,
       accessory: p.accessory,
       performing: Boolean(p.performing),
+      emote: p.emote && now < p.emote.until ? p.emote.name : null,
     };
     if (hippy) {
       // The trip is a view-layer override only: the stored avatar is
@@ -353,6 +361,14 @@ class Game {
     p.run = Boolean(on);
   }
 
+  /** { type:'emote', emote } — wave / dance / laugh / thumbsup. */
+  handleEmote(p, name) {
+    if (typeof name !== 'string' || !(name in EMOTES)) return;
+    if (p.passedOutUntil && Date.now() < p.passedOutUntil) return;
+    p.emote = { name, until: Date.now() + EMOTES[name] };
+    this.broadcastToMap(p.mapId, { type: 'emote', userId: p.userId, emote: name });
+  }
+
   // ---------------------------------------------------------- chat
 
   handleChat(p, rawText) {
@@ -417,6 +433,7 @@ class Game {
       if (p.keys.right) dx += 1;
       if (p.keys.up) dy -= 1;
       if (p.keys.down) dy += 1;
+      if ((dx !== 0 || dy !== 0) && p.emote && p.emote.name === 'dance') p.emote = null; // walking ends the dance
       // Phase 9: no keys held → follow the click-to-move route, if any.
       if (dx === 0 && dy === 0 && p.path && p.path.length) {
         const wp = p.path[0];
@@ -716,4 +733,4 @@ class Game {
   }
 }
 
-module.exports = { Game, localDay, PLAYER_RADIUS, SPEED, RUN_MULT, CHAT_LIMIT, TRANSFER_MS, VICE };
+module.exports = { Game, localDay, PLAYER_RADIUS, SPEED, RUN_MULT, CHAT_LIMIT, TRANSFER_MS, VICE, EMOTES };
