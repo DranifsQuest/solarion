@@ -1,8 +1,9 @@
 # Solarion v1 Playtest Checklist
 
-Everything below is protocol-proven (21/21 automated checks passed) but never
-touched by a human. Work through it in any order; jot what hits wrong and
-v1.1 starts there. Live at https://solarion.onrender.com
+Everything below is protocol-proven (22/22 automated live checks passed,
+incl. the Phase 6 creation flow) but never touched by a human. Work
+through it in any order; jot what hits wrong and v1.1 starts there.
+Live at https://solarion.onrender.com
 
 ## Free-tier manners (not bugs)
 - First load after idle takes ~50 seconds to wake — that's Render's free tier.
