@@ -13,7 +13,14 @@
  */
 
 const { MAPS, TILE, collides, gatewayAt, doorAt } = require('./maps');
-const { q } = require('./db');
+const { db, q } = require('./db');
+
+// Phase B amendment — vice money moves (atomic debit, same pattern
+// as the casino's ledger: the WHERE guard makes overspend impossible).
+const VQ = {
+  debit: db.prepare('UPDATE avatars SET zcoins = zcoins - ? WHERE user_id = ? AND zcoins >= ?'),
+  zOf: db.prepare('SELECT zcoins FROM avatars WHERE user_id = ?'),
+};
 // NOTE: studio is required lazily inside methods (not at the top) to
 // keep the require graph acyclic: studio.js requires maps.js only,
 // and studio-system handlers call back into Game via the instance.
@@ -32,6 +39,22 @@ const CHAT_HISTORY = 40;        // messages kept per map for joiners
 const POSITION_SAVE_MS = 15e3;  // periodic crash-safe position flush
 const TRANSFER_MS = 3000;       // Phase B: fixed load-screen window on every scene transfer
 const SIT_RADIUS = 52;          // px: how close to a seat `interact` must be
+
+// Phase B amendment — vices (bar drinks + hookah puffs). All state
+// is server-tracked per player; clients only render the effects.
+// Decay: one point wears off per minute (re-anchored on each drink /
+// puff). 10 drinks = pass out cold for 20s, wake at 2 drinks.
+// 10 puffs = hippy transformation for 20s; the trip burns the puff
+// count back to 0 when it starts.
+const VICE = {
+  DRINK_COST: 5, PUFF_COST: 5,
+  DECAY_MS: 60e3,
+  THRESHOLD: 10,
+  PASSOUT_MS: 20e3,
+  PASSOUT_RESET: 2,
+  HIPPY_MS: 20e3,
+  BAR_RADIUS: 90,        // px from the bar's patron spot to buy a drink
+};
 const FURN_ROT_DIRS = ['down', 'left', 'up', 'right']; // studio furniture rot -> facing
 
 /** Server-local calendar day, YYYY-MM-DD (daily-bonus day boundary). */
@@ -155,6 +178,9 @@ class Game {
       lastGatewayAt: 0,
       transferUntil: 0,   // Phase B: movement locked until this epoch-ms (load screen)
       seated: null,       // Phase B: { id, dir, kind } while sitting, else null
+      vice: { drinks: { count: 0, at: 0 }, puffs: { count: 0, at: 0 } }, // Phase B amendment
+      passedOutUntil: 0,  // Phase B amendment: epoch-ms while out cold
+      hippyUntil: 0,      // Phase B amendment: epoch-ms while hippified
       performing: false,
       returnTo: null,   // Phase 4: public map/pos to return to from a studio
     };
@@ -217,7 +243,9 @@ class Game {
   }
 
   publicPlayer(p) {
-    return {
+    const now = Date.now();
+    const hippy = Boolean(p.hippyUntil && now < p.hippyUntil);
+    const pub = {
       id: p.userId,
       name: p.name,
       x: Math.round(p.x * 10) / 10,
@@ -225,6 +253,11 @@ class Game {
       // While seated the avatar faces the seat's way and snapshots say so.
       dir: p.seated ? p.seated.dir : p.dir,
       seated: Boolean(p.seated),
+      // Phase B amendment — vice state, visible to everyone in scene.
+      drinks: this.viceCount(p, 'drinks', now),
+      puffs: this.viceCount(p, 'puffs', now),
+      fallen: Boolean(p.passedOutUntil && now < p.passedOutUntil),
+      hippy,
       gender: p.gender,
       face: p.face,
       eyes: p.eyes,
@@ -242,6 +275,14 @@ class Game {
       accessory: p.accessory,
       performing: Boolean(p.performing),
     };
+    if (hippy) {
+      // The trip is a view-layer override only: the stored avatar is
+      // never mutated, so the real look returns when the window ends.
+      pub.body_color = '#ff5da2';    // tie-dye pink
+      pub.accent_color = '#ffd23f';  // sunshine yellow
+      pub.accessory = 'headband';
+    }
+    return pub;
   }
 
   /** Players in a scene (public map OR studio instance). */
@@ -318,6 +359,23 @@ class Game {
       // holds the player exactly where the transfer placed them —
       // movement input is ignored until the window ends.
       if (p.transferUntil && now < p.transferUntil) continue;
+      // Phase B amendment — passed out cold: no movement at all until
+      // the window ends (chat is handled outside the tick and still
+      // works). Waking up resets the count to PASSOUT_RESET.
+      if (p.passedOutUntil) {
+        if (now >= p.passedOutUntil) {
+          p.passedOutUntil = 0;
+          p.vice.drinks = { count: VICE.PASSOUT_RESET, at: now };
+          this.send(p, { type: 'notice', text: 'You wake up on the floor, still a little wobbly.' });
+          this.sendVice(p);
+        } else {
+          continue;
+        }
+      }
+      if (p.hippyUntil && now >= p.hippyUntil) {
+        p.hippyUntil = 0;
+        this.sendVice(p);
+      }
       let dx = 0, dy = 0;
       if (p.keys.left) dx -= 1;
       if (p.keys.right) dx += 1;
@@ -335,6 +393,16 @@ class Game {
       const len = Math.hypot(dx, dy);
       dx = (dx / len) * SPEED * dt;
       dy = (dy / len) * SPEED * dt;
+      // Phase B amendment — drunk wobble: from 3 drinks the walk
+      // direction sways sinusoidally (server-side, so everyone sees
+      // the same stagger); strength grows with the count.
+      const drinksNow = this.viceCount(p, 'drinks', now);
+      if (drinksNow >= 3) {
+        const sway = Math.sin(now / 300 + p.userId * 1.7) * 0.22 * Math.min(1, (drinksNow - 2) / 6);
+        const c = Math.cos(sway), s = Math.sin(sway);
+        const rx = dx * c - dy * s, ry = dx * s + dy * c;
+        dx = rx; dy = ry;
+      }
 
       // Axis-separated movement → wall sliding for free.
       const nx = p.x + dx;
@@ -449,15 +517,117 @@ class Game {
     return out;
   }
 
+  // ---------------------------------------------------------- vices
+  // Phase B amendment: drinks (casino bars) + puffs (hookah lounge).
+  // Counts decay one point per VICE.DECAY_MS, re-anchored at each
+  // consumption; everything money-shaped is server-side and atomic.
+
+  /** Effective (decayed) count for 'drinks' or 'puffs'. */
+  viceCount(p, kind, now = Date.now()) {
+    const v = p.vice[kind];
+    if (!v || !v.count) return 0;
+    return Math.max(0, v.count - Math.floor((now - v.at) / VICE.DECAY_MS));
+  }
+
+  viceAdd(p, kind, now = Date.now()) {
+    const next = this.viceCount(p, kind, now) + 1;
+    p.vice[kind] = { count: next, at: now };
+    return next;
+  }
+
+  viceStateMsg(p, now = Date.now()) {
+    return {
+      type: 'vice-state',
+      drinks: this.viceCount(p, 'drinks', now),
+      puffs: this.viceCount(p, 'puffs', now),
+      passedOut: Boolean(p.passedOutUntil && now < p.passedOutUntil),
+      hippy: Boolean(p.hippyUntil && now < p.hippyUntil),
+    };
+  }
+
+  sendVice(p) { this.send(p, this.viceStateMsg(p)); }
+
+  zcoinsOf(userId) {
+    const r = VQ.zOf.get(userId);
+    return r ? r.zcoins : 0;
+  }
+
+  /**
+   * Buy a drink (5z) at a casino bar: stand at the bar's patron spot.
+   * The 10th drink knocks the player out cold for PASSOUT_MS.
+   */
+  handleBuyDrink(p) {
+    const now = Date.now();
+    if (p.passedOutUntil && now < p.passedOutUntil) {
+      this.send(p, { type: 'notice', text: 'You are out cold — the drinks can wait.' });
+      return;
+    }
+    const map = this.sceneFor(p.mapId);
+    const bar = map && map.casino && map.casino.bar;
+    if (!bar) {
+      this.send(p, { type: 'notice', text: 'There is no bar here.' });
+      return;
+    }
+    if (Math.hypot(p.x - bar.x, p.y - bar.y) > VICE.BAR_RADIUS) {
+      this.send(p, { type: 'notice', text: 'Head to the bar — the bartender pours there.' });
+      return;
+    }
+    const debited = VQ.debit.run(VICE.DRINK_COST, p.userId, VICE.DRINK_COST);
+    if (debited.changes !== 1) {
+      this.send(p, { type: 'notice', text: `A drink costs ${VICE.DRINK_COST}z — you don't have enough.` });
+      return;
+    }
+    const count = this.viceAdd(p, 'drinks', now);
+    this.send(p, { type: 'zcoins', zcoins: this.zcoinsOf(p.userId) });
+    this.send(p, { type: 'notice', text: `🍸 Drink #${count} slides across the bar (${VICE.DRINK_COST}z).` });
+    if (count >= VICE.THRESHOLD) {
+      p.passedOutUntil = now + VICE.PASSOUT_MS;
+      p.keys = {};
+      if (p.seated) {
+        p.seated = null;
+        this.send(p, { type: 'sit-state', seated: false });
+      }
+      this.send(p, { type: 'notice', text: '🍸 The room spins… you PASS OUT cold for 20 seconds!' });
+    }
+    this.sendVice(p);
+  }
+
+  /** Take a hookah puff (5z) while seated at a hookah station. */
+  handlePuff(p) {
+    const now = Date.now();
+    const debited = VQ.debit.run(VICE.PUFF_COST, p.userId, VICE.PUFF_COST);
+    if (debited.changes !== 1) {
+      this.send(p, { type: 'notice', text: `A puff costs ${VICE.PUFF_COST}z — you don't have enough.` });
+      return;
+    }
+    const count = this.viceAdd(p, 'puffs', now);
+    this.send(p, { type: 'zcoins', zcoins: this.zcoinsOf(p.userId) });
+    this.send(p, { type: 'notice', text: `💨 Puff #${count} (${VICE.PUFF_COST}z). The colours get louder…` });
+    if (count >= VICE.THRESHOLD) {
+      p.hippyUntil = now + VICE.HIPPY_MS;
+      p.vice.puffs = { count: 0, at: now }; // the trip burns the count off
+      this.send(p, { type: 'notice', text: '🌈 Far out! You are a full-blown HIPPY for 20 seconds!' });
+    }
+    this.sendVice(p);
+  }
+
   /**
    * `interact` (E key / Sit button): toggle sitting. Standing next to
    * a free seat sits you on it (snapped into place, facing the seat's
    * way); interacting again stands. Movement input also stands (see
    * tick). Chat works seated — nothing here touches chat.
+   * Phase B amendment: while seated at a hookah station, interact
+   * takes a puff instead of standing.
    */
   handleInteract(p) {
     if (p.transferUntil && Date.now() < p.transferUntil) return;
+    if (p.passedOutUntil && Date.now() < p.passedOutUntil) return; // out cold
     if (p.seated) {
+      if (p.seated.kind === 'hookah') { this.handlePuff(p); return; }
+      if (p.seated.kind === 'poker') {
+        this.send(p, { type: 'notice', text: 'Use the casino panel to stand up from the poker table.' });
+        return;
+      }
       p.seated = null;
       this.send(p, { type: 'sit-state', seated: false });
       return;
@@ -486,7 +656,12 @@ class Game {
     p.seated = { id: s.id, dir: s.dir, kind: s.kind };
     this.savePosition(p);
     this.send(p, { type: 'sit-state', seated: true });
+    if (s.kind === 'hookah') {
+      this.send(p, { type: 'notice', text: `Settled in. Press E to take a puff — ${VICE.PUFF_COST}z each.` });
+    } else if (String(s.id).includes('-slotseat-')) {
+      this.send(p, { type: 'notice', text: 'Seated at the slot machine — hit SPIN in the casino panel!' });
+    }
   }
 }
 
-module.exports = { Game, localDay, PLAYER_RADIUS, SPEED, CHAT_LIMIT, TRANSFER_MS };
+module.exports = { Game, localDay, PLAYER_RADIUS, SPEED, CHAT_LIMIT, TRANSFER_MS, VICE };

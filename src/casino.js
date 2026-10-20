@@ -148,6 +148,9 @@ class PokerTable {
     this.game = game;
     this.casino = casino;
     this.id = def.id;
+    // Phase B amendment: TWO casino scenes exist; each table knows
+    // its own scene so broadcasts and sit checks stay lounge-local.
+    this.mapId = def.mapId || casino.mapId;
     this.x = def.x; this.y = def.y;
     // def.chairs: [{ dir, x, y }] — absolute px, from the map casino def.
     this.chairs = def.chairs.map((c) => ({
@@ -236,10 +239,10 @@ class PokerTable {
     };
   }
 
-  /** Table state goes to everyone in the casino's map (small payload). */
+  /** Table state goes to everyone in the table's own casino scene. */
   broadcast() {
     const st = this.publicState();
-    this.game.broadcastToMap(this.casino.mapId, st);
+    this.game.broadcastToMap(this.mapId, st);
   }
 
   sendHoleCards() {
@@ -258,7 +261,7 @@ class PokerTable {
 
   // ------------------------------------------------------------------ sit
   sit(p, dir) {
-    if (p.mapId !== this.casino.mapId) { this.game.send(p, { type: 'notice', text: 'The poker tables are in the Solstice Bay Casino Lounge.' }); return; }
+    if (p.mapId !== this.mapId) { this.game.send(p, { type: 'notice', text: 'The poker tables are in a casino lounge.' }); return; }
     if (!this.nearTable(p)) { this.game.send(p, { type: 'notice', text: 'Walk up to the table to sit down.' }); return; }
     if (this.casino.findSeatByUser(p.userId)) { this.game.send(p, { type: 'notice', text: 'You are already seated at a table.' }); return; }
     // Phase 5: chair must be a known chair string — no probing other shapes.
@@ -801,23 +804,36 @@ const TICK_MS = 500;
 class CasinoSystem {
   constructor(game) {
     this.game = game;
-    this.mapId = 'casino-lounge';
-    this.tables = new Map();   // id -> PokerTable
-    this.slots = [];           // slot machine defs from the map casino def
+    this.mapId = 'casino-lounge'; // first lounge (back-compat default)
+    this.tables = new Map();   // id -> PokerTable, across ALL lounges
+    this.lounges = new Map();  // scene id -> { mapId, tables: [], slots: [] }
     this.slotCd = new Map();   // userId -> timestamp (spin cooldown)
     this.timer = null;
   }
 
-  /** Register tables + slots from every map that defines a casino lounge. */
+  /**
+   * Register tables + slots from every map that defines a casino.
+   * Phase B amendment: exactly two casino scenes (Solstice Bay's
+   * Casino Lounge + the Neon Casino), each an independent lounge.
+   */
   initFromMaps(MAPS) {
     for (const map of Object.values(MAPS)) {
       if (!map.casino) continue;
-      this.mapId = map.casino.mapId || map.id;
+      const mapId = map.casino.mapId || map.id;
+      if (!this.lounges.size) this.mapId = mapId;
+      const lounge = { mapId, tables: [], slots: (map.casino.slots || []).map((s) => ({ ...s })) };
       for (const t of map.casino.tables) {
-        this.tables.set(t.id, new PokerTable(this.game, this, t));
+        const table = new PokerTable(this.game, this, { ...t, mapId });
+        this.tables.set(t.id, table);
+        lounge.tables.push(table);
       }
-      this.slots = (map.casino.slots || []).map((s) => ({ ...s }));
+      this.lounges.set(mapId, lounge);
     }
+  }
+
+  /** The lounge a player is standing in, or null. */
+  loungeFor(p) {
+    return this.lounges.get(p.mapId) || null;
   }
 
   start() {
@@ -845,21 +861,16 @@ class CasinoSystem {
   isSeated(userId) { return Boolean(this.findSeatByUser(userId)); }
 
   tableFor(p) {
-    // The casino's tables live in the lounge map; resolve by proximity
-    // so a player near table 2 doesn't accidentally sit at table 1.
+    // Resolve within the player's own lounge by proximity, so a
+    // player near table 2 doesn't accidentally sit at table 1.
+    const lounge = this.loungeFor(p);
+    const pool = lounge ? lounge.tables : [...this.tables.values()];
     let best = null, bestD = Infinity;
-    for (const t of this.tables.values()) {
+    for (const t of pool) {
       const d = Math.hypot(p.x - t.x, p.y - t.y);
       if (d < bestD) { bestD = d; best = t; }
     }
     return best;
-  }
-
-  slotNear(p) {
-    for (const s of this.slots) {
-      if (Math.hypot(p.x - s.ix, p.y - s.iy) <= 90) return s;
-    }
-    return null;
   }
 
   zcoinsOf(userId) {
@@ -877,7 +888,9 @@ class CasinoSystem {
       return;
     }
     if (action === 'state') {
-      for (const t of this.tables.values()) this.game.send(p, t.publicState());
+      const lounge = this.loungeFor(p);
+      const pool = lounge ? lounge.tables : this.tables.values();
+      for (const t of pool) this.game.send(p, t.publicState());
       return;
     }
     const table = (typeof msg.table === 'string' && this.tableById(msg.table)) || this.tableFor(p);
@@ -902,12 +915,18 @@ class CasinoSystem {
       this.game.send(p, { type: 'notice', text: 'Choose a wager: 5, 10, or 25 z.' });
       return;
     }
-    if (p.mapId !== this.mapId) {
-      this.game.send(p, { type: 'notice', text: 'The slot machines are in the Solstice Bay Casino Lounge.' });
+    const lounge = this.loungeFor(p);
+    if (!lounge) {
+      this.game.send(p, { type: 'notice', text: 'The slot machines are in the Casino Lounge.' });
       return;
     }
-    if (!this.slotNear(p)) {
-      this.game.send(p, { type: 'notice', text: 'Walk up to a slot machine to play.' });
+    // Phase B amendment: you play slots SITTING on the machine's own
+    // stool in the slots section (separate from the poker floor).
+    const slot = p.seated
+      ? lounge.slots.find((s) => s.seatId === p.seated.id)
+      : null;
+    if (!slot || Math.hypot(p.x - slot.ix, p.y - slot.iy) > 40) {
+      this.game.send(p, { type: 'notice', text: 'Take a seat at a slot machine to play.' });
       return;
     }
     if (now < (this.slotCd.get(p.userId) || 0)) return; // silent rate-limit
@@ -988,10 +1007,11 @@ class CasinoSystem {
     } catch (e) { return 0; }
   }
 
-  /** Send table states + hole cards to a player entering the map. */
+  /** Send table states + hole cards to a player entering a casino scene. */
   syncPlayer(p) {
-    if (p.mapId !== this.mapId) return;
-    for (const t of this.tables.values()) {
+    const lounge = this.loungeFor(p);
+    if (!lounge) return;
+    for (const t of lounge.tables) {
       this.game.send(p, t.publicState());
       const found = t.findSeat(p.userId);
       if (found && found.seat.inHand && found.seat.hole.length === 2) {
