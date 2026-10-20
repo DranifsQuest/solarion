@@ -213,6 +213,9 @@ function listMixes(userId) {
 }
 
 function getMix(userId, mixId) {
+  // Phase 5: mixId arrives from the wire — a non-integer (object, array,
+  // string) must never reach SQLite, whose binder throws on such values.
+  if (!Number.isInteger(mixId)) return null;
   return rowToMix(mq.byId.get(userId, mixId));
 }
 

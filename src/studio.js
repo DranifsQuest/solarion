@@ -208,8 +208,13 @@ class StudioSystem {
   }
 
   resolveUser(ref) {
-    if (typeof ref === 'number' && Number.isInteger(ref)) return q.userById.get(ref) || null;
+    // Phase 5: ref arrives from the wire — cap it before it touches the DB.
+    if (typeof ref === 'number') {
+      if (!Number.isSafeInteger(ref) || ref < 0 || ref > 1e12) return null;
+      return q.userById.get(ref) || null;
+    }
     if (typeof ref === 'string') {
+      if (ref.length === 0 || ref.length > 64) return null;
       const byName = q.userByName.get(ref);
       if (byName) return byName;
       if (/^\d+$/.test(ref)) return q.userById.get(Number(ref)) || null;
@@ -309,7 +314,8 @@ class StudioSystem {
       this.game.send(p, { type: 'notice', text: 'You can only buy furniture in your own studio.' });
       return;
     }
-    const item = CATALOG_BY_ID.get(msg.itemId);
+    const item = typeof msg.itemId === 'string' && msg.itemId.length <= 64
+      ? CATALOG_BY_ID.get(msg.itemId) : undefined;
     if (!item) {
       this.game.send(p, { type: 'notice', text: 'That item is not in the catalog.' });
       return;
@@ -347,6 +353,10 @@ class StudioSystem {
       this.game.send(p, { type: 'notice', text: 'You can only place furniture in your own studio.' });
       return;
     }
+    if (!Number.isInteger(msg.instanceItemId)) { // Phase 5: wire value, never trust its type
+      this.game.send(p, { type: 'notice', text: 'That is not one of your studio items.' });
+      return;
+    }
     const row = SQ.byIdOwner.get(msg.instanceItemId, p.userId);
     if (!row) {
       this.game.send(p, { type: 'notice', text: 'That is not one of your studio items.' });
@@ -382,6 +392,10 @@ class StudioSystem {
   handlePickup(p, msg) {
     if (!this.isInOwnStudio(p)) {
       this.game.send(p, { type: 'notice', text: 'You can only pick up furniture in your own studio.' });
+      return;
+    }
+    if (!Number.isInteger(msg.instanceItemId)) { // Phase 5: wire value, never trust its type
+      this.game.send(p, { type: 'notice', text: 'That is not one of your studio items.' });
       return;
     }
     const row = SQ.byIdOwner.get(msg.instanceItemId, p.userId);

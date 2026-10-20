@@ -260,6 +260,8 @@ class PokerTable {
     if (p.mapId !== this.casino.mapId) { this.game.send(p, { type: 'notice', text: 'The poker tables are in the Solstice Bay Casino Lounge.' }); return; }
     if (!this.nearTable(p)) { this.game.send(p, { type: 'notice', text: 'Walk up to the table to sit down.' }); return; }
     if (this.casino.findSeatByUser(p.userId)) { this.game.send(p, { type: 'notice', text: 'You are already seated at a table.' }); return; }
+    // Phase 5: chair must be a known chair string — no probing other shapes.
+    if (typeof dir !== 'string' || dir.length > 8) { this.game.send(p, { type: 'notice', text: 'No such chair.' }); return; }
     const i = this.chairs.findIndex((c) => c.dir === dir);
     if (i < 0) { this.game.send(p, { type: 'notice', text: 'No such chair.' }); return; }
     if (this.chairs[i].seat) { this.game.send(p, { type: 'notice', text: 'That chair is taken.' }); return; }
@@ -454,7 +456,9 @@ class PokerTable {
       this.applyBet(s, amt);
       this.game.send(p, { type: 'notice', text: amt >= toCall ? `You call ${amt}z.` : `All in for ${amt}z.` });
     } else if (action === 'raise') {
-      const target = Math.round(amount) || 0; // total street bet
+      // Phase 5: amount must be a finite number before it becomes money.
+      const amtNum = typeof amount === 'number' ? amount : Number(amount);
+      const target = Number.isFinite(amtNum) ? Math.round(amtNum) : 0; // total street bet
       if (target <= this.currentBet) { this.game.send(p, { type: 'notice', text: 'Raise must exceed the current bet.' }); return; }
       const need = target - s.bet;
       if (need > s.chips) { this.game.send(p, { type: 'notice', text: 'Not enough chips.' }); return; }
@@ -859,11 +863,16 @@ class CasinoSystem {
 
   handlePoker(p, msg) {
     const action = msg.action;
+    // Phase 5: action must be one of the known strings; anything else is dropped.
+    if (typeof action !== 'string' || !['state', 'sit', 'stand', 'rebuy', 'act'].includes(action)) {
+      this.game.send(p, { type: 'notice', text: 'Unknown poker action.' });
+      return;
+    }
     if (action === 'state') {
       for (const t of this.tables.values()) this.game.send(p, t.publicState());
       return;
     }
-    const table = (msg.table && this.tableById(msg.table)) || this.tableFor(p);
+    const table = (typeof msg.table === 'string' && this.tableById(msg.table)) || this.tableFor(p);
     if (!table) { this.game.send(p, { type: 'notice', text: 'No poker table here.' }); return; }
     if (action === 'sit') { table.sit(p, msg.chair); return; }
     if (action === 'stand') { table.stand(p); return; }
@@ -877,7 +886,10 @@ class CasinoSystem {
     if (action === 'info') { this.game.send(p, this.slotInfo()); return; }
     if (action !== 'spin') return;
     const now = Date.now();
-    const bet = Math.round(msg.bet) || 0;
+    // Phase 5: bet must coerce to a finite number first, then match the
+    // allowlist exactly — objects/arrays/NaN can never become a wager.
+    const betNum = typeof msg.bet === 'number' ? msg.bet : Number(msg.bet);
+    const bet = Number.isFinite(betNum) ? Math.round(betNum) : 0;
     if (!SLOT_BETS.includes(bet)) {
       this.game.send(p, { type: 'notice', text: 'Choose a wager: 5, 10, or 25 z.' });
       return;

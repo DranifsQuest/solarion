@@ -1,9 +1,13 @@
-# Solarion — Phase 4 (Cities, Private Studios, Avatar Editing)
+# Solarion — Phase 5 (Security + Launch Readiness)
 
 A multiplayer browser-based social game by **Re-Launch Studios** — an
 original-IP take on the classic Coke Music / Coke Studios loop:
 customizable avatars, social rooms, a music mixer, stage performances
 with audience voting, a virtual currency, and private decorated rooms.
+
+**Phase 5 is the security + launch-readiness pass** — see the Phase 5
+section below for the findings table, the load-test harness, and the
+Render deploy shape (`render.yaml`).
 
 **Phase 1** built the foundation: accounts, avatars, the Gateway hub,
 one city lobby (Solstice Bay), gateway travel, real-time presence, chat,
@@ -89,6 +93,12 @@ test/studios.test.js Phase 4 suite (4-city travel + isolation, stage
                 in a new city, studio buy/place/persist + restart
                 persistence, visitor limits + kick/block, avatar
                 editing live + persisted + validation)
+test/security.test.js Phase 5 suite (frame caps + fuzz, malformed HTTP,
+                reserved names, login lockout, register throttle,
+                vote/bonus/slots/poker concurrency races, studio
+                ownership, avatar whitelist, untradeable currency,
+                debug hooks dead without SOLARION_TEST)
+scripts/load-test.js Phase 5 load sanity (~50 concurrent bots)
 ```
 
 ## Phase 2 — music, mixer, stage
@@ -321,6 +331,33 @@ isometrically. Movement maths, collision and gateway detection are
 projection-independent, so the foundation stays simple and testable
 while the presentation reads as a true isometric room. If a later phase
 wants true iso pathing/occlusion, it's a client concern only.
+
+## Phase 5 — security + launch readiness
+
+### Findings and fixes (all reproduced before patching)
+
+| # | vulnerability | how it was exploited in testing | fix |
+|---|---|---|---|
+| 1 | **Any signed-in client could crash the server with one frame.** WS handlers passed wire values (objects/arrays) straight into `node:sqlite`, whose binder throws — e.g. `{type:'stage-join', mixId:{}}` in Solstice Bay killed the whole process. | Fuzz probe: server exit code 1, `/health` dead, all players dropped. | Type-guards at every DB boundary (mixId/instanceItemId must be integers, studio `owner`/`itemId` length-capped, casino actions/amounts validated), strict vote values, + the whole WS dispatch wrapped in try/catch so one bad frame can never kill the server again. |
+| 2 | **No WS frame size cap.** `ws` defaults to 100 MB — a huge frame could OOM the process. | 5 MB chat frame was accepted and processed. | `maxPayload: 64 KB` on the WebSocket server + an explicit byte-length check that closes the offending socket (1009); rest of the world unaffected. |
+| 3 | **Malformed HTTP bodies → 500 + stack trace.** A numeric login password threw inside `bcrypt.compareSync`, returning Express's HTML error page. | `POST /api/login` with `{"password":12345}` → HTTP 500, bcrypt stack in the body. | Type-guard every inbound value in `auth.login`/`register` before bcrypt/SQLite; malformed bodies → plain JSON 401/400. Also: user-not-found now always runs a dummy compare (constant-time-ish, thwarts enumeration timing). |
+| 4 | **No registration throttle.** Unlimited accounts from one IP; each `register` burns a bcrypt hash (CPU DoS) and DB rows. | (By design, not reproduced — mirrors the Goleon precedent.) | Per-IP cap: 20 new accounts/hour (env `SOLARION_REGISTER_LIMIT` / `SOLARION_REGISTER_WINDOW_MS`); over-cap → 429. Bulk-test harnesses opt out via `SOLARION_TEST_NO_ABUSE_LIMITS=1`; the security suite deliberately does NOT set it and exercises the real limit. |
+| 5 | **Login lockout was IP-only** (rotating IPs could brute-force one account forever) — and malformed login shapes leaked a 500 (see #3). | Wrong-password hammering trips it; the release path is covered by the suite. | Per-IP **and** per-account lockout: 10 failures in 10 min → timed lockout (default 5 min, env `SOLARION_LOGIN_LOCKOUT_MS`); a successful login clears the streak. |
+| 6 | **No reserved usernames** — anyone could register `admin` / `system` / `solarion` and impersonate staff. | Registered `Admin`, `System`, `SOLARION` pre-fix: all accepted. | Case-insensitive reserved-name blocklist (`admin`, `system`, `moderator`, `support`, `root`, …). |
+| 7 | **Stale-socket race could evict a live session.** `addPlayer` closes the old socket on reconnect; the old socket's late `close` event then removed the NEW player — and its poker seat (mid-hand cash-out) and stage queue entry. | Reconnect test against the patched code (pre-fix ordering verified by code inspection of the close handler). | Close/error handlers now only `removePlayer` when the closing socket is the player's current one. |
+| 8 | **z-coin transfer surface audit (soul doc §9.24: untradeable).** | Sent `transfer`/`give`/`trade`/`pay`/`/give` frames between two accounts. | Confirmed: no message type moves z coins between accounts — unknown types are dropped, balances unchanged. Casino chips can only be cashed out to the same account (`stand`/disconnect), never transferred. |
+| 9 | **Poker double-sit / chip leak.** | Rapid duplicate `sit` requests across both tables. | Exactly one seat survives (server-side `findSeatByUser` + atomic debit); cash-out returns only the leaver's own chips; z+chips conserved across accounts in test. |
+| 10 | **Vote / bonus / slots payout races.** | 30× hammered duplicate votes, 6 concurrent same-token connects, 25 rapid spins. | One vote per voter per performance (existing `votes` map, now strict-valued); daily bonus is an atomic `UPDATE … WHERE last_bonus_day <> today` — exactly one grant; slot cooldown makes the burst execute exactly once. |
+
+**Regression coverage:** `test/security.test.js` (13 tests, wired into `npm test`): fuzz frames, frame-size cap, no-test-mode debug-hook deadness, stale-socket race, lockout trigger+release, register throttle, vote/bonus/slots concurrency, poker conservation, studio ownership, avatar-update whitelist (unknown fields like `zcoins`/`name` are ignored), untradeable-currency attempts, reserved names, malformed HTTP.
+
+**Debug hooks audit:** the only `SOLARION_TEST`-gated hooks are the three test-only WS messages in `src/server.js` (`debug-teleport`, `debug-seed-perf`, `debug-casino`) plus the abuse-limit test escape hatch in `src/auth.js` (`SOLARION_TEST_NO_ABUSE_LIMITS`, requires both vars) — all verified unreachable with `SOLARION_TEST` unset, and `render.yaml` explicitly leaves it unset. The login-lockout duration and register limits are plain env config with production defaults, not debug hooks.
+
+**Load sanity:** `scripts/load-test.js` — 50 concurrent bots, all moving, chatting, one stage cycle, slot spins, studio visits. Server tick health is now exposed on `/health` (`tick` counters; drift concentrates in the 50-account registration burst, where synchronous bcrypt blocks the loop — same tradeoff as the proven Goleon stack).
+
+### Deploy
+
+`render.yaml` mirrors the Kingdom of Goleon precedent: free plan, `npm install` build, `npm start`, `SOLARION_DB_PATH=./data/solarion.db`, `SOLARION_TEST` unset, `/health` health check. The server already reads Render's injected `PORT`. NOTE (same as Goleon): the free plan has no persistent disk, so the SQLite DB at `./data/` is ephemeral across redeploys/idle-spins unless a disk is added — see the deploy handoff notes.
 
 ## Stubbed / deferred to later phases
 

@@ -67,6 +67,10 @@ class Stage {
 
   join(p, mixId) {
     if (p.mapId !== this.mapId) return;
+    if (!Number.isInteger(mixId)) { // Phase 5: wire value, never trust its type
+      this.game.send(p, { type: 'notice', text: 'Pick one of your saved mixes to perform.' });
+      return;
+    }
     if (this.current && this.current.performerId === p.userId) {
       this.game.send(p, { type: 'notice', text: 'You are already performing!' });
       return;
@@ -116,6 +120,7 @@ class Stage {
   vote(p, value) {
     const cur = this.current;
     if (!cur) return;
+    if (value !== 1 && value !== -1) return;            // Phase 5: strict vote values
     if (p.mapId !== this.mapId) return;                 // must be in the room
     if (p.userId === cur.performerId) {                 // no self-votes
       this.game.send(p, { type: 'notice', text: "You can't vote on your own performance." });

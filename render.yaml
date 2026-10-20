@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: solarion
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: SOLARION_DB_PATH
+        value: ./data/solarion.db
+      # SOLARION_TEST is intentionally NOT set: unset (the default) is
+      # what keeps the test-only debug WS messages (debug-teleport,
+      # debug-seed-perf, debug-casino) unreachable in production.
+      # SOLARION_TEST_NO_ABUSE_LIMITS is likewise never set here.

@@ -65,6 +65,14 @@ const TEST_MODE = process.env.SOLARION_TEST === '1';
 const app = express();
 app.use(express.json({ limit: '16kb' }));
 app.use(express.static(path.join(__dirname, '..', 'public')));
+// Phase 5: malformed / oversized JSON bodies get a clean JSON 4xx,
+// never Express's default HTML error page (which leaks a stack trace).
+app.use((err, req, res, next) => {
+  if (err && (err.type === 'entity.parse.failed' || err.type === 'entity.too.large' || err.status === 400 || err.status === 413)) {
+    return res.status(err.status === 413 || err.type === 'entity.too.large' ? 413 : 400).json({ ok: false, error: 'Bad request body.' });
+  }
+  return next(err);
+});
 
 const game = new Game();
 const startedAt = Date.now();
@@ -95,9 +103,10 @@ function sendAvatar(res, result) {
 }
 
 app.post('/api/register', (req, res) => {
-  const { username, password, shirt, pants, skin_tone, hair_style, hair_color } = req.body || {};
-  const r = auth.register(username, password, { shirt, pants, skin_tone, hair_style, hair_color });
-  if (!r.ok) return res.status(400).json({ ok: false, error: r.error });
+  const body = (req.body && typeof req.body === 'object' && !Array.isArray(req.body)) ? req.body : {};
+  const { username, password, shirt, pants, skin_tone, hair_style, hair_color } = body;
+  const r = auth.register(username, password, { shirt, pants, skin_tone, hair_style, hair_color }, req.ip);
+  if (!r.ok) return res.status(r.code || 400).json({ ok: false, error: r.error });
   return sendAvatar(res, r);
 });
 
@@ -109,7 +118,8 @@ app.post('/api/login', (req, res) => {
 });
 
 app.post('/api/me', (req, res) => {
-  const s = auth.resolveSession((req.body || {}).token);
+  const body = (req.body && typeof req.body === 'object' && !Array.isArray(req.body)) ? req.body : {};
+  const s = auth.resolveSession(body.token);
   if (!s) return res.status(401).json({ ok: false, error: 'Invalid or expired session.' });
   return res.json({ ok: true, avatar: auth.publicAvatar(s.avatar) });
 });
@@ -118,7 +128,7 @@ app.post('/api/me', (req, res) => {
 // auth.updateAvatar — the same sets registration uses. If the player
 // is online, their live publicPlayer updates in place too.
 app.post('/api/avatar', (req, res) => {
-  const body = req.body || {};
+  const body = (req.body && typeof req.body === 'object' && !Array.isArray(req.body)) ? req.body : {};
   const s = auth.resolveSession(body.token);
   if (!s) return res.status(401).json({ ok: false, error: 'Invalid or expired session.' });
   const r = applyAvatarUpdate(s.user.id, body);
@@ -166,16 +176,22 @@ app.get('/health', (req, res) => {
   res.json({
     ok: true,
     game: 'solarion',
-    phase: 4,
+    phase: 5,
     version: require('../package.json').version,
     uptime_s: Math.floor((Date.now() - startedAt) / 1000),
     players_online: total,
     maps: counts,
+    tick: game.tickStats,
   });
 });
 
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server, path: '/ws' });
+// Phase 5: cap inbound WS frames at 64 KB. The `ws` library default is
+// 100 MB — one huge frame from any signed-in client could OOM the
+// process. Mix payloads are already capped at ~8 KB by Phase 2, so
+// 64 KB is generous headroom for every legitimate message.
+const MAX_WS_FRAME_BYTES = 64 * 1024;
+const wss = new WebSocketServer({ server, path: '/ws', maxPayload: MAX_WS_FRAME_BYTES });
 
 wss.on('connection', (ws, req) => {
   const url = new URL(req.url, 'http://localhost');
@@ -217,9 +233,26 @@ wss.on('connection', (ws, req) => {
   game.send(p, { type: 'mixes', mixes: music.listMixes(session.user.id) });
 
   ws.on('message', (raw) => {
+    // Phase 5 — inbound frame guards. NOTHING reaches a handler until
+    // the frame has passed all of these:
+    //   1. size cap (belt-and-braces with maxPayload above),
+    //   2. JSON.parse inside try/catch,
+    //   3. shape validation: a plain (non-array) object whose `type`
+    //      is a short string,
+    //   4. the dispatch itself runs inside try/catch, so a single
+    //      malformed frame can never take the process down (pre-Phase-5
+    //      a {type:'stage-join', mixId:{}} frame crashed the server via
+    //      an unbindable SQLite parameter).
+    const byteLen = Buffer.isBuffer(raw) ? raw.length : Buffer.byteLength(String(raw), 'utf8');
+    if (byteLen > MAX_WS_FRAME_BYTES) {
+      try { ws.close(1009, 'frame too large'); } catch (e) { /* already gone */ }
+      return;
+    }
     let msg;
-    try { msg = JSON.parse(raw.toString()); } catch (e) { return; }
-    if (!msg || typeof msg !== 'object') return;
+    try { msg = JSON.parse(raw.toString('utf8')); } catch (e) { return; }
+    if (!msg || typeof msg !== 'object' || Array.isArray(msg)) return;
+    if (typeof msg.type !== 'string' || msg.type.length === 0 || msg.type.length > 64) return;
+    try {
     switch (msg.type) {
       case 'input':
         // Seated at a poker table? Movement is locked until you stand.
@@ -276,10 +309,13 @@ wss.on('connection', (ws, req) => {
         stages.handleLeave(p);
         break;
       case 'vote':
-        stages.handleVote(p, msg.value === -1 ? -1 : 1);
+        // Phase 5: strict — only the numbers 1 and -1 are votes.
+        // Anything else (objects, strings, 0, 999) is dropped, not coerced.
+        if (msg.value === 1 || msg.value === -1) stages.handleVote(p, msg.value);
         break;
       case 'debug-teleport':
-        if (TEST_MODE && Number.isFinite(msg.x) && Number.isFinite(msg.y)) {
+        if (TEST_MODE && Number.isFinite(msg.x) && Number.isFinite(msg.y) &&
+            Math.abs(msg.x) < 10000 && Math.abs(msg.y) < 10000) {
           p.x = msg.x; p.y = msg.y;
           game.checkGateway(p);
         }
@@ -288,7 +324,7 @@ wss.on('connection', (ws, req) => {
         // Test-only: seed today's performance-earnings ledger so the
         // daily-cap branch can be exercised without 70 performances.
         if (TEST_MODE && Number.isFinite(msg.earned)) {
-          music.setPerfEarned(p.userId, localDay(), msg.earned);
+          music.setPerfEarned(p.userId, localDay(), Math.min(100000, Math.max(0, msg.earned)));
         }
         break;
       case 'debug-casino':
@@ -297,12 +333,12 @@ wss.on('connection', (ws, req) => {
         // can be exercised deterministically.
         if (TEST_MODE) {
           if (msg.op === 'set-balance' && Number.isFinite(msg.zcoins)) {
-            q.setZCoins.run(Math.max(0, Math.floor(msg.zcoins)), p.userId);
+            q.setZCoins.run(Math.min(10000000, Math.max(0, Math.floor(msg.zcoins))), p.userId);
             game.send(p, { type: 'zcoins', zcoins: casino.zcoinsOf(p.userId) });
           } else if (msg.op === 'set-chips' && Number.isFinite(msg.chips)) {
             const found = casino.findSeatByUser(p.userId);
             if (found) {
-              found.seat.chips = Math.max(0, Math.floor(msg.chips));
+              found.seat.chips = Math.min(10000000, Math.max(0, Math.floor(msg.chips)));
               found.table.persistSeat(found.seat);
               found.table.broadcast();
             }
@@ -312,10 +348,23 @@ wss.on('connection', (ws, req) => {
       default:
         break;
     }
+    } catch (e) {
+      // Phase 5: a handler bug on one frame must never kill the server
+      // for everyone. Log (bounded) and drop the frame.
+      console.error(`[solarion] ws handler error (${msg.type}): ${e && e.message}`);
+    }
   });
 
-  ws.on('close', () => game.removePlayer(session.user.id));
-  ws.on('error', () => game.removePlayer(session.user.id));
+  // Phase 5: only the LIVE socket may remove the player. addPlayer()
+  // closes the previous socket when an account reconnects; that stale
+  // socket's close event arriving afterwards must not delete the fresh
+  // player (pre-fix it also cashed out their poker seat mid-hand).
+  const dropIfLive = () => {
+    const cur = game.getPlayer(session.user.id);
+    if (cur && cur.ws === ws) game.removePlayer(session.user.id);
+  };
+  ws.on('close', dropIfLive);
+  ws.on('error', dropIfLive);
 });
 
 server.listen(PORT, () => {

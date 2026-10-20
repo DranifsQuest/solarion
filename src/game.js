@@ -45,6 +45,10 @@ class Game {
     this.tickTimer = null;
     this.snapTimer = null;
     this.saveTimer = null;
+    // Phase 5: tick health (surfaced on /health): how many sim ticks
+    // ran, the worst tick duration, and how many ticks/snapshots fired
+    // >1.5 intervals late (event-loop stalls) since boot.
+    this.tickStats = { ticks: 0, tickOverruns: 0, tickMaxMs: 0, snaps: 0, snapOverruns: 0, snapMaxMs: 0 };
     // Optional hook (set by server.js): called when a player disconnects
     // or changes map, so the stage can dequeue/end their performance.
     this.onPlayerGone = null;
@@ -53,8 +57,28 @@ class Game {
   }
 
   start() {
-    this.tickTimer = setInterval(() => this.tick(), 1000 / TICK_HZ);
-    this.snapTimer = setInterval(() => this.broadcastSnapshots(), 1000 / SNAPSHOT_HZ);
+    const tickMs = 1000 / TICK_HZ;
+    let lastTick = performance.now();
+    this.tickTimer = setInterval(() => {
+      const t0 = performance.now();
+      if (t0 - lastTick > tickMs * 1.5 && this.tickStats.ticks > 0) this.tickStats.tickOverruns++;
+      lastTick = t0;
+      this.tick();
+      const dur = performance.now() - t0;
+      this.tickStats.ticks++;
+      if (dur > this.tickStats.tickMaxMs) this.tickStats.tickMaxMs = Math.round(dur * 10) / 10;
+    }, tickMs);
+    const snapMs = 1000 / SNAPSHOT_HZ;
+    let lastSnap = performance.now();
+    this.snapTimer = setInterval(() => {
+      const t0 = performance.now();
+      if (t0 - lastSnap > snapMs * 1.5 && this.tickStats.snaps > 0) this.tickStats.snapOverruns++;
+      lastSnap = t0;
+      this.broadcastSnapshots();
+      const dur = performance.now() - t0;
+      this.tickStats.snaps++;
+      if (dur > this.tickStats.snapMaxMs) this.tickStats.snapMaxMs = Math.round(dur * 10) / 10;
+    }, snapMs);
     this.saveTimer = setInterval(() => this.saveAllPositions(), POSITION_SAVE_MS);
   }
 
