@@ -485,7 +485,7 @@ async function main() {
     C.id = C.client.hello.you.id;
     const balC = async () => (await api('/api/me', { token: C.token })).json.avatar.zcoins;
     await travel(C.client, 672, 48, 'cinder-mesa', 'C gateway -> cinder mesa');
-    await walkTo(C.client, 976, 1250);
+    await walkTo(C.client, 1250, 976); // swing wide to the building's north side — its door faces north
     const hm = await travel(C.client, 976, 1008, 'hookah-lounge', 'C cinder -> hookah lounge door');
     if (!hm.map.hookahs || hm.map.hookahs.length !== 4) throw new Error('hookah payload incomplete');
     await walkTo(C.client, 176, 160, { arrive: 12 }); // station 1's seats
