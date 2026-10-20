@@ -369,3 +369,5 @@ wants true iso pathing/occlusion, it's a client concern only.
   sitting on furniture, and the jukebox actually playing visitors'
   mixes (it's decorative in v1)
 - Deployment (Fly.io, cheap always-on — per Zan, later)
+
+<!-- deploy-refresh 2026-10-20: force fresh Render instance to clear suspected wedged edge/instance state (POST-body hang investigation). No code change. -->
