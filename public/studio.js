@@ -165,6 +165,12 @@ const Studio = {
       this.ownerName = mapDef.studio.ownerName;
       const me = this.hooks.getMe();
       this.isOwner = Boolean(me && me.id === this.ownerId);
+      // Phase 9: the entry 'map' message is handled BEFORE the new
+      // scene is applied (inStudio was still stale), so re-run the
+      // radio sync now that the flag is right — a radio already
+      // playing in this room must sound for the person who just
+      // walked in, owner included.
+      this.syncRadio();
     } else {
       this.placeInstanceId = null;
       this.devices.clear();

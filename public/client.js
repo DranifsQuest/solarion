@@ -931,3 +931,19 @@ if (token) {
     .catch(() => { localStorage.removeItem('solarion_token'); token = null; });
 }
 setMode('login');
+
+// ------------------------------------------------------------------
+// Phase 9 — audio unlock (audibility hardening). Browsers create an
+// AudioContext SUSPENDED when it is born outside a user gesture —
+// and performance-start / home-device arrive over the WebSocket, not
+// from a click — so scheduled playback could be silently swallowed
+// for everyone in the room, the performer included. Any gesture
+// anywhere unlocks/resumes the shared engine, after which every
+// scheduled performance and radio track actually sounds.
+for (const evName of ['pointerdown', 'keydown', 'touchstart']) {
+  addEventListener(evName, () => {
+    if (window.SolarionMixer) { /* AE lives in mixer.js */ }
+    try { if (typeof AE !== 'undefined' && AE.ensure()) AE.ctx.resume(); } catch (e) { /* no audio */ }
+    if (window.SolarionSfx) window.SolarionSfx.unlock();
+  }, { passive: true });
+}

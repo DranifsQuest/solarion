@@ -219,6 +219,10 @@ const Mixer = {
         const genres = [...new Set(j.loops.map(l => l.genre))];
         if (genres.length) this.selGenre = genres[0];
         this.renderBrowser();
+        // Phase 9 (audibility): a radio that tried to start before
+        // the catalog arrived bailed silently — re-sync it now that
+        // every loopId resolves.
+        if (window.SolarionStudio) window.SolarionStudio.syncRadio();
       })
       .catch(() => {});
   },
