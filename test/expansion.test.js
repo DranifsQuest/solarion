@@ -270,7 +270,7 @@ test('door transfer bay ⇄ lounge with the 3s input lock', { timeout: 60000 }, 
   teleport(u, 480, 592); // lounge door-back rect
   const back = await arriveMap(u, 'solstice-bay');
   assert.equal(back.transferMs, 3000);
-  assert.ok(Math.abs(back.you.x - 496) < 2 && Math.abs(back.you.y - 1200) < 2, 'lands outside the casino door');
+  assert.ok(Math.abs(back.you.x - 528) < 2 && Math.abs(back.you.y - 1200) < 2, 'lands outside the casino door (off the pad, so it cannot bounce back in)');
   u.client.ws.close();
 });
 

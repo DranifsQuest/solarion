@@ -290,7 +290,11 @@ function buildCasino({ id, name, hostId, hostLabel, hostSpawn, floor, floorAlt, 
 function buildCasinoLounge() {
   return buildCasino({
     id: 'casino-lounge', name: 'Casino Lounge',
-    hostId: 'solstice-bay', hostLabel: 'Solstice Bay', hostSpawn: { x: cx(15), y: cy(37) },
+    // hostSpawn is where the door back LANDS in the bay: one tile
+    // EAST of the door pad (the pad is tile (15,37)). Landing ON the
+    // pad would bounce the player straight back inside the moment
+    // the portal debounce lapses and they take a step.
+    hostId: 'solstice-bay', hostLabel: 'Solstice Bay', hostSpawn: { x: cx(16), y: cy(37) },
     floor: CASINO_FLOOR, floorAlt: CASINO_FLOOR_ALT, wall: CASINO_WALL,
     bartender: {
       name: 'Salty Sam',
