@@ -119,6 +119,9 @@ async function makeUser(name, port = PORT) {
     hair_style: 'short', hair_color: '#222222',
   });
   assert.equal(r.status, 200, `register ${name}: ${JSON.stringify(r.json)}`);
+  // Phase 6: create the character before entering the world.
+  const c = await api(port, '/api/create-character', { token: r.json.token, name, gender: 'M' });
+  assert.equal(c.status, 200, `create ${name}: ${JSON.stringify(c.json)}`);
   const client = await connectClient(port, r.json.token);
   return { name, token: r.json.token, client, id: client.hello.you.id };
 }

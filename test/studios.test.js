@@ -112,6 +112,9 @@ async function makeUser(name, port = PORT) {
     hair_style: 'short', hair_color: '#222222',
   });
   assert.equal(r.status, 200, `register ${name}: ${JSON.stringify(r.json)}`);
+  // Phase 6: create the character before entering the world.
+  const c = await api(port, '/api/create-character', { token: r.json.token, name, gender: 'M' });
+  assert.equal(c.status, 200, `create ${name}: ${JSON.stringify(c.json)}`);
   const client = await connectClient(port, r.json.token);
   return { name, token: r.json.token, client, id: client.hello.you.id };
 }
@@ -412,7 +415,7 @@ test('avatar editing: live for the room, persists, invalid rejected (WS + HTTP)'
 
   // Invalid style and invalid color are rejected; look stays spiky/green.
   editor.client.msgs.length = 0;
-  editor.client.send({ type: 'avatar-update', hair_style: 'mohawk' });
+  editor.client.send({ type: 'avatar-update', hair_style: 'dreadhawk' });
   await waitFor(() => editor.client.msgs.filter(m => m.type === 'notice' && /Invalid hair style/.test(m.text)).pop(), 5000, 'bad style rejected');
   editor.client.send({ type: 'avatar-update', hair_color: 'red' });
   await waitFor(() => editor.client.msgs.filter(m => m.type === 'notice' && /Invalid hair color/.test(m.text)).pop(), 5000, 'bad color rejected');
@@ -424,7 +427,7 @@ test('avatar editing: live for the room, persists, invalid rejected (WS + HTTP)'
   assert.equal(still.body_color, '#00ff00');
 
   // HTTP endpoint: same validation, partial update.
-  const badHttp = await api(PORT, '/api/avatar', { token: editor.token, hair_style: 'mohawk' });
+  const badHttp = await api(PORT, '/api/avatar', { token: editor.token, hair_style: 'dreadhawk' });
   assert.equal(badHttp.status, 400);
   const noAuth = await api(PORT, '/api/avatar', { token: 'deadbeefdeadbeefdeadbeef', hair_style: 'long' });
   assert.equal(noAuth.status, 401);

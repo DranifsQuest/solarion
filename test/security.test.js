@@ -116,6 +116,9 @@ async function registerOk(name) {
   const r = await api(PORT, '/api/register', { username: name, password: 'secretpw' });
   assert.equal(r.status, 200, `register ${name}: ${JSON.stringify(r.json)}`);
   registrations++;
+  // Phase 6: a playable account needs its character created too.
+  const c = await api(PORT, '/api/create-character', { token: r.json.token, name, gender: 'M' });
+  assert.equal(c.status, 200, `create ${name}: ${JSON.stringify(c.json)}`);
   return { name, token: r.json.token, avatar: r.json.avatar };
 }
 
@@ -225,7 +228,7 @@ test('WS fuzz: malformed/null/absurd frames never crash the server', { timeout: 
   assert.equal(mainChild.exitCode, null, 'server process still alive after fuzz');
   const h = await health(PORT);
   assert.equal(h.status, 200);
-  assert.equal(h.json.phase, 5, '/health reports phase 5');
+  assert.equal(h.json.phase, 6, '/health reports phase 6');
   // the fuzzed client is still fully functional
   u.client.msgs.length = 0;
   u.client.send({ type: 'chat', text: 'still here' });
@@ -281,6 +284,8 @@ test('SOLARION_TEST debug hooks are dead when the env var is unset', { timeout: 
   });
   const reg = await api(PORT_NOTEST, '/api/register', { username: 'sec_notest', password: 'secretpw' });
   assert.equal(reg.status, 200);
+  const cre = await api(PORT_NOTEST, '/api/create-character', { token: reg.json.token, name: 'sec_notest', gender: 'M' });
+  assert.equal(cre.status, 200, `create sec_notest: ${JSON.stringify(cre.json)}`);
   const c = await connectClient(PORT_NOTEST, reg.json.token);
   assert.equal(c.hello.zcoins, 100, 'starts with the daily bonus only');
   c.send({ type: 'debug-teleport', x: 480, y: 48 });       // would enter Solstice Bay if live

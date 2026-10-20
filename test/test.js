@@ -121,7 +121,11 @@ async function registerUser(name, extra) {
   });
   assert.equal(r.status, 200, `register ${name}: ${JSON.stringify(r.json)}`);
   assert.ok(r.json.ok && r.json.token);
-  users[name] = { token: r.json.token, avatar: r.json.avatar };
+  // Phase 6: registration alone no longer enters the world — create
+  // the character (default look, name = username) like the client does.
+  const c = await api(serverPort, '/api/create-character', { token: r.json.token, name, gender: 'M' });
+  assert.equal(c.status, 200, `create ${name}: ${JSON.stringify(c.json)}`);
+  users[name] = { token: r.json.token, avatar: c.json.avatar };
   return users[name];
 }
 
@@ -270,7 +274,7 @@ test('/health reports status and counts', { timeout: 30000 }, async () => {
   const r = await fetch(`http://localhost:${serverPort}/health`).then(r => r.json());
   assert.equal(r.ok, true);
   assert.equal(r.game, 'solarion');
-  assert.equal(r.phase, 5);
+  assert.equal(r.phase, 6);
   assert.ok(r.uptime_s >= 0);
   for (const id of ['the-gateway', 'solstice-bay', 'neon-district', 'cinder-mesa', 'frosthaven', 'verdant-hollow']) {
     assert.equal(typeof r.maps[id], 'number', `map ${id} counted`);
@@ -283,8 +287,10 @@ test('session survives a full server restart (same token, avatar + z coins intac
   const child1 = await startServer(PORT_RESTART, DB_RESTART);
   const reg = await api(PORT_RESTART, '/api/register', { username: 'dave_p1', password: 'secretpw' });
   assert.equal(reg.status, 200);
-  const avatarId = reg.json.avatar.id;
   const token = reg.json.token;
+  const cre = await api(PORT_RESTART, '/api/create-character', { token, name: 'dave_p1', gender: 'M', face: 'square' });
+  assert.equal(cre.status, 200, `create dave_p1: ${JSON.stringify(cre.json)}`);
+  const avatarId = cre.json.avatar.id;
   const c1 = await connectClient(PORT_RESTART, token);
   assert.equal(c1.hello.zcoins, 100);
   c1.ws.close();
