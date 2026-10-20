@@ -207,11 +207,11 @@ test('gateway travel: Gateway -> Solstice Bay -> Gateway; Phase 4 cities open', 
   const a = users.alice_p1.client;
   const b = users.bob_p1.client;
   const aId = users.alice_p1.id, bId = users.bob_p1.id;
-  // Solstice Bay gateway rect on the-gateway: x=14*32=448, y=32, w=64,h=32 -> center (480,48)
-  a.send({ type: 'debug-teleport', x: 480, y: 48 });
+  // Solstice Bay gateway rect on the-gateway: x=34*32=1088, y=32, w=64,h=32 -> point (1120,48)
+  a.send({ type: 'debug-teleport', x: 1120, y: 48 });
   const toBay = await waitFor(() => a.msgs.filter(m => m.type === 'map' && m.map.id === 'solstice-bay').pop(), 5000, 'map switch to solstice-bay');
   assert.equal(toBay.map.name, 'Solstice Bay');
-  assert.ok(Math.abs(toBay.you.x - 512) < 2 && Math.abs(toBay.you.y - 480) < 2, 'spawned at bay spawn');
+  assert.ok(Math.abs(toBay.you.x - 1168) < 2 && Math.abs(toBay.you.y - 1328) < 2, 'spawned at bay spawn');
   assert.ok(toBay.map.gateways.some(g => g.label === 'The Gateway' && g.active), 'return gateway listed');
   // B still in the-gateway must stop seeing A (fresh snapshots only —
   //  older ones in the buffer legitimately still show her pre-travel)
@@ -224,21 +224,21 @@ test('gateway travel: Gateway -> Solstice Bay -> Gateway; Phase 4 cities open', 
     const s = a.msgs.filter(m => m.type === 'snapshot').pop();
     return s && s.players.length === 1 && s.players[0].id === aId;
   }, 5000, 'A alone in solstice-bay');
-  // Back through the return gateway: x=15*32=480, y=17*32=544, w=64 -> center (512,560)
+  // Back through the return gateway: x=35*32=1120, y=43*32=1376, w=64 -> center (1152,1392)
   await sleep(1600); // gateway debounce
-  a.send({ type: 'debug-teleport', x: 512, y: 560 });
+  a.send({ type: 'debug-teleport', x: 1152, y: 1392 });
   const toHub = await waitFor(() => a.msgs.filter(m => m.type === 'map' && m.map.id === 'the-gateway').pop(), 5000, 'map switch back to the-gateway');
   assert.equal(toHub.map.name, 'The Gateway');
   // the neon arch on the gateway is now OPEN (Phase 4)
   await sleep(1600);
-  a.send({ type: 'debug-teleport', x: 160, y: 48 });
+  a.send({ type: 'debug-teleport', x: 224, y: 48 });
   const toNeon = await waitFor(() => a.msgs.filter(m => m.type === 'map' && m.map.id === 'neon-district').pop(), 5000, 'map switch to neon-district');
   assert.equal(toNeon.map.name, 'Neon District');
   assert.ok(toNeon.map.stage, 'Neon District has a stage');
   assert.ok(toNeon.map.gateways.some(g => g.label === 'The Gateway' && g.active), 'Neon return gateway listed');
-  // back to the hub through the neon return gateway: x=15*32=480, y=18*32=576 -> center (512,592)
+  // back to the hub through the neon return gateway: x=35*32=1120, y=43*32=1376 -> center (1152,1392)
   await sleep(1600);
-  a.send({ type: 'debug-teleport', x: 512, y: 592 });
+  a.send({ type: 'debug-teleport', x: 1152, y: 1392 });
   await waitFor(() => a.msgs.filter(m => m.type === 'map' && m.map.id === 'the-gateway').pop(), 5000, 'map switch back from neon');
 });
 
@@ -274,9 +274,9 @@ test('/health reports status and counts', { timeout: 30000 }, async () => {
   const r = await fetch(`http://localhost:${serverPort}/health`).then(r => r.json());
   assert.equal(r.ok, true);
   assert.equal(r.game, 'solarion');
-  assert.equal(r.phase, 6);
+  assert.equal(r.phase, 7);
   assert.ok(r.uptime_s >= 0);
-  for (const id of ['the-gateway', 'solstice-bay', 'neon-district', 'cinder-mesa', 'frosthaven', 'verdant-hollow']) {
+  for (const id of ['the-gateway', 'gateway-cafe', 'solstice-bay', 'casino-lounge', 'neon-district', 'neon-casino', 'cinder-mesa', 'hookah-lounge', 'frosthaven', 'verdant-hollow']) {
     assert.equal(typeof r.maps[id], 'number', `map ${id} counted`);
   }
   assert.equal(r.players_online, Object.values(r.maps).reduce((sum, n) => sum + n, 0));

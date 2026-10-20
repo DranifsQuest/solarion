@@ -135,10 +135,20 @@ async function balanceOf(token) {
 }
 
 async function toBay(user) {
-  user.client.send({ type: 'debug-teleport', x: 480, y: 48 });
+  user.client.send({ type: 'debug-teleport', x: 1120, y: 48 });
   await waitFor(
     () => user.client.msgs.filter(m => m.type === 'map' && m.map.id === 'solstice-bay').pop(),
     5000, `${user.name} arrives in solstice-bay`);
+}
+
+/** Bay -> through the Casino building door -> Casino Lounge scene. */
+async function toCasino(user) {
+  await toBay(user);
+  await sleep(1600); // portal debounce from the arch hop
+  user.client.send({ type: 'debug-teleport', x: 496, y: 1200 }); // door tile, bay casino building east face
+  await waitFor(
+    () => user.client.msgs.filter(m => m.type === 'map' && m.map.id === 'casino-lounge').pop(),
+    5000, `${user.name} arrives in casino-lounge`);
 }
 
 let mainChild = null;
@@ -228,7 +238,7 @@ test('WS fuzz: malformed/null/absurd frames never crash the server', { timeout: 
   assert.equal(mainChild.exitCode, null, 'server process still alive after fuzz');
   const h = await health(PORT);
   assert.equal(h.status, 200);
-  assert.equal(h.json.phase, 6, '/health reports phase 6');
+  assert.equal(h.json.phase, 7, '/health reports phase 7');
   // the fuzzed client is still fully functional
   u.client.msgs.length = 0;
   u.client.send({ type: 'chat', text: 'still here' });
@@ -288,7 +298,7 @@ test('SOLARION_TEST debug hooks are dead when the env var is unset', { timeout: 
   assert.equal(cre.status, 200, `create sec_notest: ${JSON.stringify(cre.json)}`);
   const c = await connectClient(PORT_NOTEST, reg.json.token);
   assert.equal(c.hello.zcoins, 100, 'starts with the daily bonus only');
-  c.send({ type: 'debug-teleport', x: 480, y: 48 });       // would enter Solstice Bay if live
+  c.send({ type: 'debug-teleport', x: 1120, y: 48 });       // would enter Solstice Bay if live
   c.send({ type: 'debug-casino', op: 'set-balance', zcoins: 999999 });
   c.send({ type: 'debug-seed-perf', earned: 300 });
   await sleep(900);
@@ -350,17 +360,17 @@ test('vote race: hammered duplicate votes count once per voter, payout exact', {
 test('poker: double-sit impossible, no cross-account chip leak, totals conserved', { timeout: 60000 }, async () => {
   const a = await makeUser('sec_pk_a');
   const b = await makeUser('sec_pk_b');
-  await toBay(a); await toBay(b);
-  const T1 = { id: 'solstice-bay-poker-1', x: 176, y: 464 };
+  await toCasino(a); await toCasino(b);
+  const T1 = { id: 'casino-lounge-poker-1', x: 176, y: 144 };
   a.client.send({ type: 'debug-teleport', x: T1.x, y: T1.y });
   await sleep(300);
   for (let i = 0; i < 10; i++) a.client.send({ type: 'poker', action: 'sit', table: T1.id, chair: 'N' });
-  a.client.send({ type: 'poker', action: 'sit', table: 'solstice-bay-poker-2', chair: 'N' }); // other table too
+  a.client.send({ type: 'poker', action: 'sit', table: 'casino-lounge-poker-2', chair: 'N' }); // other table too
   await sleep(800);
   const allStates = a.client.msgs.filter(m => m.type === 'poker-state');
   const lastT1 = allStates.filter(m => m.id === T1.id).pop();
   assert.equal(lastT1.chairs.filter(c => c.name === 'sec_pk_a').length, 1, 'A occupies exactly one chair');
-  const lastT2 = allStates.filter(m => m.id === 'solstice-bay-poker-2').pop();
+  const lastT2 = allStates.filter(m => m.id === 'casino-lounge-poker-2').pop();
   assert.equal(lastT2.chairs.filter(c => c.name === 'sec_pk_a').length, 0, 'A is not also at table 2');
   assert.equal(await balanceOf(a.token), 0, 'A debited exactly one 100z buy-in');
   assert.equal(lastT1.chairs.find(c => c.name === 'sec_pk_a').chips, 100, 'A holds exactly 100 chips');
@@ -386,11 +396,13 @@ test('poker: double-sit impossible, no cross-account chip leak, totals conserved
 
 test('slots race: 25 rapid spins execute exactly one (cooldown), accounting exact', { timeout: 30000 }, async () => {
   const u = await makeUser('sec_slot');
-  await toBay(u);
+  await toCasino(u);
   u.client.send({ type: 'debug-casino', op: 'set-balance', zcoins: 1000 });
   await waitFor(() => u.client.msgs.filter(m => m.type === 'zcoins' && m.zcoins === 1000).pop(), 5000, 'balance seeded');
-  u.client.send({ type: 'debug-teleport', x: 144, y: 560 }); // slot machine 1 spot
-  await sleep(300);
+  u.client.send({ type: 'debug-teleport', x: 528, y: 112 }); // slot machine 1's stool
+  await sleep(3400); // outlast the transfer lock from the door hop
+  u.client.send({ type: 'interact' }); // sit to spin
+  await waitFor(() => u.client.msgs.filter(m => m.type === 'sit-state' && m.seated).pop(), 5000, 'seated at slot 1');
   u.client.msgs.length = 0;
   for (let i = 0; i < 25; i++) u.client.send({ type: 'slots', action: 'spin', bet: 10 });
   await sleep(1800);

@@ -111,7 +111,7 @@ async function makeUser(name) {
 
 /** Teleport through the Gateway → Solstice Bay arch and wait for the map switch. */
 async function toBay(user) {
-  user.client.send({ type: 'debug-teleport', x: 480, y: 48 });
+  user.client.send({ type: 'debug-teleport', x: 1120, y: 48 });
   await waitFor(
     () => user.client.msgs.filter(m => m.type === 'map' && m.map.id === 'solstice-bay').pop(),
     5000, `${user.name} arrives in solstice-bay`);

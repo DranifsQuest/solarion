@@ -133,15 +133,25 @@ async function balanceOf(user, port = PORT) {
 }
 
 async function toBay(user) {
-  user.client.send({ type: 'debug-teleport', x: 480, y: 48 });
+  user.client.send({ type: 'debug-teleport', x: 1120, y: 48 });
   await waitFor(
     () => user.client.msgs.filter(m => m.type === 'map' && m.map.id === 'solstice-bay').pop(),
     5000, `${user.name} arrives in solstice-bay`);
 }
 
-const T1 = { id: 'solstice-bay-poker-1', x: 176, y: 464 };
-const T2 = { id: 'solstice-bay-poker-2', x: 304, y: 464 };
-const SLOT1_SPOT = { x: 144, y: 560 };
+/** Bay -> through the Casino building door -> Casino Lounge scene. */
+async function toCasino(user) {
+  await toBay(user);
+  await sleep(1600); // portal debounce from the arch hop
+  user.client.send({ type: 'debug-teleport', x: 496, y: 1200 }); // door tile, building east face
+  await waitFor(
+    () => user.client.msgs.filter(m => m.type === 'map' && m.map.id === 'casino-lounge').pop(),
+    5000, `${user.name} arrives in casino-lounge`);
+}
+
+const T1 = { id: 'casino-lounge-poker-1', x: 176, y: 144 };
+const T2 = { id: 'casino-lounge-poker-2', x: 400, y: 144 };
+const SLOT1_SPOT = { x: 528, y: 112 }; // slot 1's stool in the slots section (sit to spin)
 
 function latestTable(user, tableId) {
   return user.client.msgs.filter(m => m.type === 'poker-state' && m.id === tableId).pop() || null;
@@ -240,7 +250,7 @@ test('poker: full 2-player hand start -> showdown, chip conservation, private ho
   const b = await makeUser('pk_bob');
   assert.equal(a.client.hello.zcoins, 100);
   assert.equal(b.client.hello.zcoins, 100);
-  await toBay(a); await toBay(b);
+  await toCasino(a); await toCasino(b);
 
   await sitAt(a, T1, 'N');
   await sitAt(b, T1, 'S');
@@ -285,7 +295,7 @@ test('poker: live 3-player all-in hand creates side-pot ladder and conserves chi
   const a = await makeUser('sp_ann');
   const b = await makeUser('sp_ben');
   const c = await makeUser('sp_cyd');
-  await toBay(a); await toBay(b); await toBay(c);
+  await toCasino(a); await toCasino(b); await toCasino(c);
   await sitAt(a, T1, 'N');
   await sitAt(b, T1, 'E');
   await sitAt(c, T1, 'S');
@@ -323,7 +333,7 @@ test('poker: invalid actions are rejected', { timeout: 90000 }, async () => {
   const a = await makeUser('bad_andy');
   const b = await makeUser('bad_beth');
   const c = await makeUser('bad_cleo');
-  await toBay(a); await toBay(b); await toBay(c);
+  await toCasino(a); await toCasino(b); await toCasino(c);
   await sitAt(a, T2, 'N');
   await sitAt(b, T2, 'S');
 
@@ -397,17 +407,46 @@ test('slots: bet sizes, exact balance math, insufficient funds, cooldown, proxim
   const u = await makeUser('slot_sue');
   await toBay(u);
 
-  // Proximity: from the bay spawn (far from any machine) a spin is refused.
+  // Wrong scene entirely: from the bay a spin is refused (the
+  // machines live in the Casino Lounge interior since Phase B).
   u.client.msgs.length = 0;
   u.client.send({ type: 'slots', action: 'spin', bet: 10 });
-  const far = await waitFor(() => u.client.msgs.filter(m => m.type === 'notice' && /Walk up to a slot machine/.test(m.text)).pop(),
-    5000, 'spin from afar rejected');
+  const wrongMap = await waitFor(() => u.client.msgs.filter(m => m.type === 'notice' && /Casino Lounge/.test(m.text)).pop(),
+    5000, 'spin from the bay rejected');
+  assert.ok(wrongMap);
+  assert.equal(await balanceOf(u), 100, 'balance untouched by refused spin');
+
+  // Inside the lounge but not seated at a machine: refused — since
+  // the Phase B amendment you play slots SITTING on the machine's
+  // stool in the slots section. (Already in the bay: door hop only.)
+  await sleep(1600); // portal debounce from the arch hop
+  u.client.send({ type: 'debug-teleport', x: 496, y: 1200 });
+  await waitFor(() => u.client.msgs.filter(m => m.type === 'map' && m.map.id === 'casino-lounge').pop(),
+    5000, 'slot_sue in lounge');
+  u.client.send({ type: 'debug-teleport', x: 700, y: 420 }); // poker floor side, no stool
+  await sleep(300);
+  u.client.msgs.length = 0;
+  u.client.send({ type: 'slots', action: 'spin', bet: 10 });
+  const far = await waitFor(() => u.client.msgs.filter(m => m.type === 'notice' && /Take a seat at a slot machine/.test(m.text)).pop(),
+    5000, 'spin while unseated rejected');
   assert.ok(far);
   assert.equal(await balanceOf(u), 100, 'balance untouched by refused spin');
 
-  // Walk up to machine 1 and spin at each bet size; math must be exact.
+  // Standing ON the stool spot isn't enough either — you must sit.
   u.client.send({ type: 'debug-teleport', x: SLOT1_SPOT.x, y: SLOT1_SPOT.y });
   await sleep(300);
+  u.client.msgs.length = 0;
+  u.client.send({ type: 'slots', action: 'spin', bet: 10 });
+  const standing = await waitFor(() => u.client.msgs.filter(m => m.type === 'notice' && /Take a seat at a slot machine/.test(m.text)).pop(),
+    5000, 'spin while standing on the stool rejected');
+  assert.ok(standing);
+  assert.equal(await balanceOf(u), 100, 'balance untouched by refused spin');
+
+  // Sit on machine 1's stool and spin at each bet size; math exact.
+  await sleep(3400); // outlast the transfer lock from the door hop
+  u.client.send({ type: 'interact' });
+  await waitFor(() => u.client.msgs.filter(m => m.type === 'sit-state' && m.seated).pop(),
+    5000, 'seated at slot machine 1');
   let expected = 100;
   for (const bet of [5, 10, 25]) {
     u.client.msgs.length = 0;
@@ -466,7 +505,7 @@ test('slots: bet sizes, exact balance math, insufficient funds, cooldown, proxim
 test('cleanup: disconnect and map change cash out and free the seat', { timeout: 60000 }, async () => {
   const a = await makeUser('gone_gail');
   const watcher = await makeUser('gone_walt');
-  await toBay(a); await toBay(watcher);
+  await toCasino(a); await toCasino(watcher);
   await sitAt(a, T1, 'N');
   assert.equal(await balanceOf(a), 0, 'buy-in debited');
 
@@ -480,18 +519,19 @@ test('cleanup: disconnect and map change cash out and free the seat', { timeout:
   }, 5000, 'no phantom seat after disconnect');
   assert.ok(stFree);
 
-  // Reconnect, sit again, then walk out through the return gateway:
-  // map change must also cash out and free the seat.
+  // Reconnect (respawned in the lounge — her saved scene), sit
+  // again, then leave through the lounge door: the map change must
+  // also cash out and free the seat.
   const a2client = await connectClient(PORT, a.token);
   a.client = a2client;
-  assert.equal(a2client.hello.map.id, 'solstice-bay', 'respawned in the bay');
+  assert.equal(a2client.hello.map.id, 'casino-lounge', 'respawned in the lounge');
   assert.equal(a2client.hello.zcoins, 100);
   await sitAt(a, T1, 'W');
   assert.equal(await balanceOf(a), 0);
-  await sleep(1600); // gateway debounce
-  a.client.send({ type: 'debug-teleport', x: 512, y: 560 }); // return gateway rect
-  await waitFor(() => a.client.msgs.filter(m => m.type === 'map' && m.map.id === 'the-gateway').pop(),
-    5000, 'gail travels back to the gateway');
+  await sleep(1600); // portal debounce
+  a.client.send({ type: 'debug-teleport', x: 480, y: 592 }); // lounge door-back rect
+  await waitFor(() => a.client.msgs.filter(m => m.type === 'map' && m.map.id === 'solstice-bay').pop(),
+    5000, 'gail leaves through the lounge door');
   await sleep(300);
   assert.equal(await balanceOf(a), 100, 'chips refunded on map change');
   const stFree2 = await waitFor(() => {
@@ -508,11 +548,17 @@ test('persistence: balances survive restart; stranded table chips are refunded',
   const child1 = await startServer(PORT_R1, DB_RESTART);
   const u = await makeUser('rest_ruth', PORT_R1);
   assert.equal(u.client.hello.zcoins, 100);
-  // Travel to the bay and spin once so the balance is a non-round number.
-  u.client.send({ type: 'debug-teleport', x: 480, y: 48 });
+  // Travel to the bay, through the casino door, and spin once so the
+  // balance is a non-round number.
+  u.client.send({ type: 'debug-teleport', x: 1120, y: 48 });
   await waitFor(() => u.client.msgs.filter(m => m.type === 'map' && m.map.id === 'solstice-bay').pop(), 5000, 'ruth in bay');
+  await sleep(1600); // portal debounce from the arch hop
+  u.client.send({ type: 'debug-teleport', x: 496, y: 1200 });
+  await waitFor(() => u.client.msgs.filter(m => m.type === 'map' && m.map.id === 'casino-lounge').pop(), 5000, 'ruth in lounge');
   u.client.send({ type: 'debug-teleport', x: SLOT1_SPOT.x, y: SLOT1_SPOT.y });
-  await sleep(300);
+  await sleep(3400); // outlast the transfer lock from the door hop
+  u.client.send({ type: 'interact' }); // sit on the stool to spin
+  await waitFor(() => u.client.msgs.filter(m => m.type === 'sit-state' && m.seated).pop(), 5000, 'ruth seated at slot 1');
   u.client.send({ type: 'slots', action: 'spin', bet: 10 });
   const res = await waitFor(() => u.client.msgs.filter(m => m.type === 'slot-result').pop(), 5000, 'ruth spins');
   const balanceAfterSpin = res.zcoins;

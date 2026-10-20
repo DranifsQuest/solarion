@@ -75,6 +75,10 @@ const Casino = {
       this.inLounge = inside;
       this.el.panel.classList.toggle('hidden', !inside);
       if (inside) {
+        const title = document.getElementById('casinoTitle');
+        if (title) title.textContent = `🎰 ${(c.label || 'CASINO').toUpperCase()}`;
+      }
+      if (inside) {
         this.hooks.send({ type: 'poker', action: 'state' });
         this.hooks.send({ type: 'slots', action: 'info' });
       }

@@ -100,14 +100,20 @@ async function walkTo(client, tx, ty, { timeout = 40000, arrive = 14, stopWhen =
   throw new Error(`walk to ${tx},${ty} timed out`);
 }
 
-/** Walk onto a gateway rect and wait for the map switch. Respects the 1.5s gateway debounce. */
+/**
+ * Walk onto a gateway/door rect and wait for the map switch.
+ * Phase B: every transfer runs a fixed 3s load-screen window during
+ * which the server locks movement — so after each arrival we wait
+ * out the full window (which also covers the 1.5s portal debounce)
+ * before walking again.
+ */
 async function travel(client, tx, ty, expectMap, label) {
   await sleep(1750);
   const marker = client.msgs.length;
   const arrived = () => client.msgs.slice(marker).some(m => m.type === 'map' && m.map.id === expectMap) ? true : null;
-  await walkTo(client, tx, ty, { timeout: 45000, stopWhen: arrived });
+  await walkTo(client, tx, ty, { timeout: 60000, stopWhen: arrived });
   const m = await waitFor(() => client.msgs.slice(marker).filter(x => x.type === 'map' && x.map.id === expectMap).pop(), 8000, label);
-  await sleep(1750); // debounce for the next hop
+  await sleep(3400); // 3s transfer lock + debounce for the next hop
   return m;
 }
 
@@ -129,7 +135,7 @@ async function main() {
     try { const r = await fetch(`${BASE}/health`); if (r.ok) { health = await r.json(); break; } } catch (e) {}
     await sleep(3000);
   }
-  report('health: service answers, phase 6, six maps', !!(health && health.ok && health.phase === 6 && Object.keys(health.maps).length === 6),
+  report('health: service answers, phase 7, ten maps', !!(health && health.ok && health.phase === 7 && Object.keys(health.maps).length === 10),
     health ? `uptime ${health.uptime_s}s, phase ${health.phase}` : 'no response in 150s');
   if (!health) return finish();
 
@@ -247,9 +253,9 @@ async function main() {
 
   // ---- travel to Solstice Bay (both)
   try {
-    const m = await travel(A.client, 480, 48, 'solstice-bay', 'A gateway -> solstice-bay');
+    const m = await travel(A.client, 1120, 48, 'solstice-bay', 'A gateway -> solstice-bay');
     if (m.map.name !== 'Solstice Bay') throw new Error(`map name ${m.map.name}`);
-    await travel(B.client, 480, 48, 'solstice-bay', 'B gateway -> solstice-bay');
+    await travel(B.client, 1120, 48, 'solstice-bay', 'B gateway -> solstice-bay');
     report('gateway travel: A and B walked Gateway -> Solstice Bay', true, 'map switch confirmed for both');
   } catch (e) { report('gateway travel: A and B walked Gateway -> Solstice Bay', false, e.message); return finish(); }
 
@@ -274,10 +280,19 @@ async function main() {
   const balA = async () => (await api('/api/me', { token: A.token })).json.avatar.zcoins;
   const balB = async () => (await api('/api/me', { token: B.token })).json.avatar.zcoins;
   try {
-    // A: bay -> casino doorway -> slot 1 standing spot
-    await walkTo(A.client, 430, 496);
-    await walkTo(A.client, 368, 496, { timeout: 60000, arrive: 8, deadband: 2, strafeMs: 260 });
-    await walkTo(A.client, 144, 560);
+    // A: bay -> Casino building door -> Casino Lounge scene -> slot 1 spot
+    const dm = await travel(A.client, 496, 1200, 'casino-lounge', 'A bay -> casino lounge door');
+    if (dm.map.name !== 'Casino Lounge') throw new Error(`lounge name ${dm.map.name}`);
+    if (!dm.map.casino || dm.map.casino.tables.length !== 6 || dm.map.casino.slots.length !== 10) {
+      throw new Error(`lounge payload tables=${dm.map.casino && dm.map.casino.tables.length} slots=${dm.map.casino && dm.map.casino.slots.length}`);
+    }
+    await walkTo(A.client, 528, 112); // slot 1's stool in the slots section
+    A.client.send({ type: 'interact' }); // sit to spin (Phase B amendment)
+    await waitFor(() => {
+      const s = lastOf(A.client, 'snapshot');
+      const me2 = s && s.players.find(p => p.id === A.id);
+      return me2 && me2.seated ? true : null;
+    }, 6000, 'A seated at slot machine 1');
     const beforeBal = await balA();
     A.client.msgs.length = 0;
     A.client.send({ type: 'slots', action: 'spin', bet: 5 });
@@ -289,14 +304,40 @@ async function main() {
     await sleep(1600); // slot cooldown
   } catch (e) { report('casino slots: spin settles with exact balance math', false, e.message); }
 
+  // ---- casino bar: drinks cost exactly 5z; the 10th passes A out
+  // for a REAL 20 seconds, then A wakes with the count reset to 2.
+  try {
+    await walkTo(A.client, 176, 528); // bar patron spot (movement stands A up from the stool)
+    const b0 = await balA();
+    A.client.msgs.length = 0;
+    A.client.send({ type: 'buy-drink' });
+    const vs1 = await waitFor(() => lastOf(A.client, 'vice-state'), 6000, 'vice-state after drink 1');
+    if (vs1.drinks !== 1) throw new Error(`drinks after 1st = ${vs1.drinks}`);
+    if ((await balA()) !== b0 - 5) throw new Error(`first drink did not charge exactly 5z (${b0} -> ${await balA()})`);
+    report('casino bar: a drink costs exactly 5z and the count is server-tracked', true, `balance ${b0} -> ${b0 - 5}, drinks=1`);
+    for (let i = 0; i < 9; i++) A.client.send({ type: 'buy-drink' });
+    const vsOut = await waitFor(() => lastOf(A.client, 'vice-state', v => v.passedOut), 8000, 'A passed out at drink 10');
+    if (vsOut.drinks !== 10) throw new Error(`drinks at pass-out = ${vsOut.drinks}`);
+    if ((await balA()) !== b0 - 50) throw new Error(`ten drinks did not cost exactly 50z (${b0} -> ${await balA()})`);
+    const fallen = await waitFor(() => {
+      const s = lastOf(A.client, 'snapshot');
+      const me2 = s && s.players.find(p => p.id === A.id);
+      return me2 && me2.fallen ? me2 : null;
+    }, 6000, 'fallen pose in snapshots');
+    if (!fallen) throw new Error('no fallen snapshot');
+    await sleep(21000); // the real production window
+    const vsWake = await waitFor(() => lastOf(A.client, 'vice-state', v => !v.passedOut), 8000, 'A wakes after 20s');
+    if (vsWake.drinks !== 2) throw new Error(`drinks after waking = ${vsWake.drinks} (want the reset value 2)`);
+    report('casino bar: 10th drink passes A out cold for 20s, wakes at 2 drinks', true, 'fallen broadcast, real 21s wait, count reset to 2');
+  } catch (e) { report('casino bar: 10th drink passes A out cold for 20s, wakes at 2 drinks', false, e.message); }
+
   // ---- casino: poker hand with chip conservation
   try {
-    const T1 = 'solstice-bay-poker-1';
+    const T1 = 'casino-lounge-poker-1';
     const preA = await balA(), preB = await balB();
-    await walkTo(A.client, 176, 464);
-    await walkTo(B.client, 430, 496);
-    await walkTo(B.client, 368, 496, { timeout: 60000, arrive: 8, deadband: 2, strafeMs: 260 });
-    await walkTo(B.client, 176, 464);
+    await travel(B.client, 496, 1200, 'casino-lounge', 'B bay -> casino lounge door');
+    await walkTo(A.client, 176, 144);
+    await walkTo(B.client, 176, 144);
     const tbl = (u) => lastOf(u.client, 'poker-state', s => s.id === T1);
     A.client.send({ type: 'poker', action: 'sit', table: T1, chair: 'N' });
     await waitFor(() => { const s = tbl(A); return s && s.chairs.some(c => c.name === NAME_A); }, 8000, 'A seated');
@@ -362,48 +403,127 @@ async function main() {
     report('studio: buy chair (-40z) -> place -> relog persistence verified', true, `balance ${preBal} -> ${preBal - 40}, furniture intact after relog`);
   } catch (e) { report('studio: buy chair (-40z) -> place -> relog persistence verified', false, e.message); }
 
-  // ---- return A to The Gateway (the studio step leaves A in Solstice Bay)
+  // ---- return A to The Gateway (the studio step leaves A wherever
+  // A entered from — currently the Casino Lounge)
   try {
     let cur = (lastOf(A.client, 'map') || {}).map;
     let curId = cur && cur.id;
+    const fromId = curId;
     if (curId && curId.startsWith('studio:')) {
       A.client.send({ type: 'leave-studio' });
       const m = await waitFor(() => lastOf(A.client, 'map', x => !x.map.id.startsWith('studio:')), 8000, 'A exits studio');
       curId = m.map.id;
     }
+    if (curId === 'casino-lounge') {
+      await travel(A.client, 480, 592, 'solstice-bay', 'lounge door back to the bay');
+      curId = 'solstice-bay';
+    }
     if (curId === 'solstice-bay') {
-      await travel(A.client, 512, 560, 'the-gateway', 'bay return gateway');
+      await travel(A.client, 1152, 1392, 'the-gateway', 'bay return gateway');
     } else if (curId !== 'the-gateway') {
       throw new Error(`unexpected map before city tours: ${curId}`);
     }
-    report('positioning: A returned to The Gateway for the city tours', true, `arrived from ${curId}`);
+    report('positioning: A returned to The Gateway for the city tours', true, `arrived from ${fromId}`);
   } catch (e) { report('positioning: A returned to The Gateway for the city tours', false, e.message); return finish(); }
+
+  // ---- sitting: A sits on a Gateway bench and stands back up
+  try {
+    await walkTo(A.client, 1008, 624, { arrive: 10 });
+    A.client.send({ type: 'interact' });
+    await waitFor(() => {
+      const s = lastOf(A.client, 'snapshot');
+      const me2 = s && s.players.find(p => p.id === A.id);
+      return me2 && me2.seated ? true : null;
+    }, 6000, 'A seated in snapshots');
+    A.client.send({ type: 'interact' });
+    await waitFor(() => {
+      const s = lastOf(A.client, 'snapshot');
+      const me2 = s && s.players.find(p => p.id === A.id);
+      return me2 && me2.seated === false ? true : null;
+    }, 6000, 'A stood back up');
+    report('sitting: A sat on a Gateway bench (seated in snapshots) and stood back up', true, 'seated=true -> interact -> seated=false');
+  } catch (e) { report('sitting: A sat on a Gateway bench (seated in snapshots) and stood back up', false, e.message); }
 
   // ---- travel: remaining four cities and back
   const cities = [
-    { arch: [160, 48], id: 'neon-district', name: 'Neon District', back: [512, 592] },
-    { arch: [288, 48], id: 'cinder-mesa', name: 'Cinder Mesa', back: [96, 592] },
-    { arch: [672, 48], id: 'frosthaven', name: 'Frosthaven', back: [512, 48] },
-    { arch: [800, 48], id: 'verdant-hollow', name: 'Verdant Hollow', back: [928, 592] },
+    { arch: [224, 48], id: 'neon-district', name: 'Neon District', back: [1152, 1392] },
+    { arch: [672, 48], id: 'cinder-mesa', name: 'Cinder Mesa', back: [128, 1392] },
+    { arch: [1568, 48], id: 'frosthaven', name: 'Frosthaven', back: [1152, 48] },
+    { arch: [2016, 48], id: 'verdant-hollow', name: 'Verdant Hollow', back: [2144, 1392] },
   ];
   for (const c of cities) {
     try {
       const m = await travel(A.client, c.arch[0], c.arch[1], c.id, `gateway -> ${c.id}`);
       if (m.map.name !== c.name) throw new Error(`name ${m.map.name}`);
       if (!m.map.stage) throw new Error('no stage in city payload');
+      if (c.id === 'neon-district') {
+        // Phase B amendment: the second casino, through its door.
+        try {
+          const nc = await travel(A.client, 1968, 944, 'neon-casino', 'neon -> neon casino door');
+          if (!nc.map.casino || nc.map.casino.tables.length !== 6 || nc.map.casino.slots.length !== 10) {
+            throw new Error('neon casino payload incomplete');
+          }
+          if (!nc.map.casino.bartender || nc.map.casino.bartender.name !== 'Vex') throw new Error('neon bartender missing');
+          await travel(A.client, 480, 592, 'neon-district', 'neon casino door back');
+          report('travel: Neon District -> Neon Casino -> Neon District (doors both ways)', true, 'second casino: 6 tables, 10 slots, bartender Vex');
+        } catch (e) { report('travel: Neon District -> Neon Casino -> Neon District (doors both ways)', false, e.message); }
+      }
       await travel(A.client, c.back[0], c.back[1], 'the-gateway', `${c.id} -> gateway`);
       report(`travel: Gateway -> ${c.name} -> Gateway (walking)`, true, 'round trip by walking, stage present');
     } catch (e) { report(`travel: Gateway -> ${c.name} -> Gateway (walking)`, false, e.message); }
   }
 
+  // ---- hookah lounge: a fresh visitor C puffs 5z x10, turns hippy
+  // for a REAL 20 seconds (server-broadcast override), then reverts.
+  try {
+    const NAME_C = NAME_A.replace('vera', 'carl');
+    const rc = await api('/api/register', { username: NAME_C, password: PW });
+    if (rc.status !== 200 || !rc.json.token) throw new Error(`register C -> ${rc.status}`);
+    const cc = await api('/api/create-character', { token: rc.json.token, name: NAME_C, gender: 'M', accessory: 'cap', body_color: '#39b06e' });
+    if (cc.status !== 200) throw new Error(`create C -> ${cc.status}`);
+    const C = { name: NAME_C, token: rc.json.token, client: await connectClient(rc.json.token) };
+    C.id = C.client.hello.you.id;
+    const balC = async () => (await api('/api/me', { token: C.token })).json.avatar.zcoins;
+    await travel(C.client, 672, 48, 'cinder-mesa', 'C gateway -> cinder mesa');
+    await walkTo(C.client, 976, 1250);
+    const hm = await travel(C.client, 976, 1008, 'hookah-lounge', 'C cinder -> hookah lounge door');
+    if (!hm.map.hookahs || hm.map.hookahs.length !== 4) throw new Error('hookah payload incomplete');
+    await walkTo(C.client, 176, 160, { arrive: 12 }); // station 1's seats
+    C.client.send({ type: 'interact' });
+    await waitFor(() => {
+      const s = lastOf(C.client, 'snapshot');
+      const me2 = s && s.players.find(p => p.id === C.id);
+      return me2 && me2.seated ? true : null;
+    }, 6000, 'C seated at the hookah');
+    for (let i = 0; i < 10; i++) { C.client.send({ type: 'interact' }); await sleep(120); }
+    const vsH = await waitFor(() => lastOf(C.client, 'vice-state', v => v.hippy), 8000, 'C turned hippy at puff 10');
+    if (vsH.puffs !== 0) throw new Error(`puffs after trip = ${vsH.puffs} (want reset to 0)`);
+    if ((await balC()) !== 50) throw new Error(`C balance after 10 puffs = ${await balC()} (want 100 - 10*5z = 50)`);
+    const hip = await waitFor(() => {
+      const s = lastOf(C.client, 'snapshot');
+      const me2 = s && s.players.find(p => p.id === C.id);
+      return me2 && me2.hippy && me2.accessory === 'headband' ? me2 : null;
+    }, 6000, 'hippy override in snapshots');
+    if (!hip) throw new Error('no hippy snapshot');
+    await sleep(21000); // the real production window
+    const back = await waitFor(() => {
+      const s = lastOf(C.client, 'snapshot');
+      const me2 = s && s.players.find(p => p.id === C.id);
+      return me2 && !me2.hippy && me2.accessory === 'cap' ? me2 : null;
+    }, 8000, 'C reverts after 20s');
+    if (!back) throw new Error('hippy did not revert');
+    report('hookah lounge: 10 puffs at 5z turn C hippy for 20s (broadcast), then revert', true, 'puffs reset, balance 100 -> 50, headband -> real look');
+    C.client.ws.close();
+  } catch (e) { report('hookah lounge: 10 puffs at 5z turn C hippy for 20s (broadcast), then revert', false, e.message); }
+
   // ---- abrupt-drop reconnect
   try {
-    // B is in Solstice Bay; kill the socket without a close handshake.
+    // B is in the Casino Lounge; kill the socket without a close handshake.
     B.client.ws.terminate();
     await sleep(1200);
     const re = await connectClient(B.token);
     B.client = re;
-    if (re.hello.map.id !== 'solstice-bay') throw new Error(`respawn map ${re.hello.map.id}`);
+    if (re.hello.map.id !== 'casino-lounge') throw new Error(`respawn map ${re.hello.map.id}`);
     const meB = await api('/api/me', { token: B.token });
     if (re.hello.zcoins !== meB.json.avatar.zcoins) throw new Error('balance mismatch after reconnect');
     report('reconnect: abrupt WS drop -> reconnect with same token, state intact', true, `respawned in ${re.hello.map.id}, zcoins=${re.hello.zcoins}`);

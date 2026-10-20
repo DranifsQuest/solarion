@@ -13,6 +13,6 @@
   },
   "scripts": {
     "start": "node src/server.js",
-    "test": "node --test test/test.js test/music.test.js test/casino.test.js test/studios.test.js test/security.test.js test/creation.test.js test/sprites.test.js"
+    "test": "node --test test/test.js test/music.test.js test/casino.test.js test/studios.test.js test/security.test.js test/creation.test.js test/sprites.test.js test/expansion.test.js test/vice.test.js"
   }
 }

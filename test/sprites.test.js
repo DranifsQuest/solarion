@@ -59,6 +59,8 @@ test('all authored pixel rows are exactly SPR_W wide', () => {
     for (const [k, v] of Object.entries(styles)) check(`LEGS.${g}.${k}`, v);
   }
   check('SIDE_LEGS', S.SIDE_LEGS);
+  for (const [k, v] of Object.entries(S.SEATED_LEGS)) check(`SEATED_LEGS.${k}`, v);
+  check('SEATED_SIDE_LEGS', S.SEATED_SIDE_LEGS);
 });
 
 test('face profiles: 10 per gender, 9 rows, spans on-canvas', () => {
@@ -116,6 +118,25 @@ test('every top and bottom style renders distinctly', () => {
     assert.equal(bottoms.size, A.BOTTOM_STYLES[g].length, `${g} bottoms distinct`);
     const accs = new Set(A.ACCESSORIES.map(v => render({ ...baseFor(g), accessory: v }, 'down')));
     assert.equal(accs.size, A.ACCESSORIES.length, `${g} accessories distinct`);
+  }
+});
+
+test('seated variant (Phase B): renders for both genders and differs from standing', () => {
+  const renderSeated = (cfg, dir) => {
+    S.spriteCache.clear();
+    const cv = S.makeSprite(cfg, dir, { seated: true });
+    return JSON.stringify(Object.keys(cv._px).sort().map(k => k + '=' + cv._px[k]));
+  };
+  for (const g of ['M', 'F']) {
+    for (const dir of ['down', 'up', 'side']) {
+      for (const bottom of A.BOTTOM_STYLES[g]) {
+        const cfg = { ...baseFor(g), bottom_style: bottom };
+        const standing = render(cfg, dir);
+        const seated = renderSeated(cfg, dir);
+        assert.ok(seated.length > 500, `${g}/${dir}/${bottom} seated renders`);
+        assert.notEqual(seated, standing, `${g}/${dir}/${bottom} seated differs from standing`);
+      }
+    }
   }
 });
 

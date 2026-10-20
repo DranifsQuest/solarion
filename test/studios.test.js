@@ -154,10 +154,10 @@ test('travel: all 4 new cities reachable, staged, distinct, and isolated', { tim
   const b = await makeUser('bystander_p4'); // parks in the Gateway
 
   const cities = [
-    { id: 'neon-district', name: 'Neon District', archTx: 4, back: [512, 592], floor: '#17102b' },
-    { id: 'cinder-mesa', name: 'Cinder Mesa', archTx: 8, back: [96, 592], floor: '#c47b3a' },
-    { id: 'frosthaven', name: 'Frosthaven', archTx: 20, back: [512, 48], floor: '#d7edf7' },
-    { id: 'verdant-hollow', name: 'Verdant Hollow', archTx: 24, back: [928, 592], floor: '#2e5d33' },
+    { id: 'neon-district', name: 'Neon District', archTx: 6, back: [1152, 1392], floor: '#17102b' },
+    { id: 'cinder-mesa', name: 'Cinder Mesa', archTx: 20, back: [128, 1392], floor: '#c47b3a' },
+    { id: 'frosthaven', name: 'Frosthaven', archTx: 48, back: [1152, 48], floor: '#d7edf7' },
+    { id: 'verdant-hollow', name: 'Verdant Hollow', archTx: 62, back: [2144, 1392], floor: '#2e5d33' },
   ];
   const floors = new Set();
   for (const city of cities) {
@@ -193,8 +193,8 @@ test('stage performance works in Neon District (Phase 2 protocol, new city)', { 
   const saved = await waitFor(() => perf.client.msgs.filter(m => m.type === 'mix-saved').pop(), 5000, 'mix saved');
   const mixId = saved.mix.id;
 
-  await travelViaArch(perf, 4, 'neon-district');
-  await travelViaArch(fan, 4, 'neon-district');
+  await travelViaArch(perf, 6, 'neon-district');
+  await travelViaArch(fan, 6, 'neon-district');
   await sleep(300);
 
   perf.client.send({ type: 'stage-join', mixId });
