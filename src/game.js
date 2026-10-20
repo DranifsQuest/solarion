@@ -485,6 +485,7 @@ class Game {
       transferMs: TRANSFER_MS,
       ...(opts.extra || {}),
     });
+    this.sendVice(p);
     if (this.onMapEntered) this.onMapEntered(p);
   }
 

@@ -301,6 +301,22 @@ wss.on('connection', (ws, req) => {
           game.handleInteract(p);
         }
         break;
+      case 'buy-drink':
+        // Phase B amendment: bartender drink purchase (5z, casino bars).
+        game.handleBuyDrink(p);
+        break;
+      case 'debug-vice':
+        // TEST MODE ONLY: fast-forward vice windows so the suite can
+        // assert recovery/revert without real 20s waits (same pattern
+        // as debug-casino; dead in production).
+        if (TEST_MODE) {
+          const now = Date.now();
+          if (msg.op === 'wake') p.passedOutUntil = 1; // tick performs the wake + count reset
+          else if (msg.op === 'unhippy') p.hippyUntil = 1; // tick clears + resyncs
+          else if (msg.op === 'set-drinks' && Number.isFinite(msg.count)) p.vice.drinks = { count: Math.max(0, Math.min(99, Math.round(msg.count))), at: now };
+          else if (msg.op === 'set-puffs' && Number.isFinite(msg.count)) p.vice.puffs = { count: Math.max(0, Math.min(99, Math.round(msg.count))), at: now };
+        }
+        break;
       case 'enter-studio':
       case 'leave-studio':
       case 'studio-buy':
