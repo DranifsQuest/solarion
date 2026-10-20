@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Solarion</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <!-- auth screen -->
+  <div id="auth" class="overlay-card">
+    <h1>☀️ SOLARION</h1>
+    <p class="tag">A social world of cities, music and games</p>
+    <div class="tabs">
+      <button id="tab-login" class="active">Log in</button>
+      <button id="tab-register">Create account</button>
+    </div>
+    <input id="username" maxlength="20" placeholder="Username (3–20 letters/numbers/_)" autocomplete="username">
+    <input id="password" type="password" maxlength="64" placeholder="Password (min 6 characters)" autocomplete="current-password">
+    <div id="avatarForm">
+      <div class="frow"><span>Skin</span>
+        <span class="swatches">
+          <label><input type="radio" name="skin" value="#ffe0bd"><i style="background:#ffe0bd"></i></label>
+          <label><input type="radio" name="skin" value="#f1c27d" checked><i style="background:#f1c27d"></i></label>
+          <label><input type="radio" name="skin" value="#e0ac69"><i style="background:#e0ac69"></i></label>
+          <label><input type="radio" name="skin" value="#8d5524"><i style="background:#8d5524"></i></label>
+        </span>
+      </div>
+      <div class="frow"><span>Hair</span>
+        <select id="hairStyle">
+          <option value="short">Short</option>
+          <option value="spiky">Spiky</option>
+          <option value="long">Long</option>
+        </select>
+        <input id="hairColor" type="color" value="#3a2a1c">
+      </div>
+      <div class="frow"><span>Shirt</span><input id="shirtColor" type="color" value="#3aa7e0">
+        <span>Pants</span><input id="pantsColor" type="color" value="#2b3a55"></div>
+    </div>
+    <button id="authGo">Log in</button>
+    <p id="authErr"></p>
+  </div>
+
+  <!-- game screen -->
+  <div id="game" class="hidden">
+    <canvas id="cv"></canvas>
+    <div id="hud">
+      <div id="coinPill">🪙 <span id="coins">0</span> z</div>
+      <div id="mapName"></div>
+    </div>
+    <div id="bubbles"></div>
+    <div id="chatPanel">
+      <div id="chatLog"></div>
+      <form id="chatForm">
+        <input id="chatInput" maxlength="240" placeholder="Chat…" autocomplete="off">
+        <button type="submit">➤</button>
+      </form>
+    </div>
+    <div id="joystick"><div id="stick"></div></div>
+    <div id="toast"></div>
+    <div id="loadScreen" class="hidden"><div class="spin"></div><p id="loadText">Traveling…</p></div>
+  </div>
+</div>
+<script src="sprites.js"></script>
+<script src="client.js"></script>
+</body>
+</html>

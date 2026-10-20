@@ -1,0 +1,71 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; background: #0e1220; color: #eef; }
+.hidden { display: none !important; }
+
+#app { height: 100%; }
+
+.overlay-card {
+  max-width: 360px; margin: 8vh auto; background: #1a2238; border: 1px solid #33415c;
+  border-radius: 14px; padding: 28px 24px; text-align: center;
+  box-shadow: 0 12px 40px rgba(0,0,0,.5);
+}
+.overlay-card h1 { font-size: 32px; letter-spacing: 3px; color: #ffd23f; }
+.tag { color: #9fb2d8; margin: 6px 0 18px; font-size: 13px; }
+.tabs { display: flex; gap: 6px; margin-bottom: 14px; }
+.tabs button { flex: 1; padding: 8px; border-radius: 8px; border: 1px solid #33415c;
+  background: #232f4d; color: #cdd9f5; cursor: pointer; }
+.tabs button.active { background: #ffd23f; color: #1a2238; font-weight: 700; }
+.overlay-card input[type=text], .overlay-card input:not([type=color]) {
+  width: 100%; padding: 10px 12px; margin-bottom: 10px; border-radius: 8px;
+  border: 1px solid #33415c; background: #121827; color: #eef; font-size: 15px;
+}
+#avatarForm { display: none; text-align: left; margin-bottom: 12px; color: #9fb2d8; font-size: 14px; }
+#avatarForm.show { display: block; }
+#avatarForm .frow { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+#avatarForm select { flex: 1; padding: 6px; border-radius: 6px; border: 1px solid #33415c; background: #121827; color: #eef; }
+#avatarForm input[type=color] { width: 40px; height: 28px; border: none; background: none; }
+.swatches label { cursor: pointer; }
+.swatches input { display: none; }
+.swatches i { display: inline-block; width: 22px; height: 22px; border-radius: 50%; border: 2px solid transparent; }
+.swatches input:checked + i { border-color: #ffd23f; }
+#authGo { width: 100%; padding: 11px; border-radius: 8px; border: none; background: #ffd23f;
+  color: #1a2238; font-size: 16px; font-weight: 700; cursor: pointer; }
+#authErr { color: #ff7b7b; min-height: 18px; margin-top: 10px; font-size: 14px; }
+
+#game { position: relative; height: 100%; overflow: hidden; }
+#cv { display: block; width: 100%; height: 100%; touch-action: none; }
+
+#hud { position: absolute; top: 10px; left: 10px; right: 10px; display: flex;
+  justify-content: space-between; pointer-events: none; }
+#coinPill { background: rgba(10,14,26,.75); border: 1px solid #ffd23f; color: #ffd23f;
+  padding: 6px 14px; border-radius: 999px; font-weight: 700; }
+#mapName { background: rgba(10,14,26,.75); padding: 6px 14px; border-radius: 999px; color: #cdd9f5; }
+
+#chatPanel { position: absolute; left: 10px; bottom: 10px; width: min(360px, 72vw);
+  background: rgba(10,14,26,.78); border: 1px solid #33415c; border-radius: 10px; overflow: hidden; }
+#chatLog { height: 120px; overflow-y: auto; padding: 8px; font-size: 13px; line-height: 1.45; }
+#chatLog .who { color: #ffd23f; font-weight: 700; }
+#chatLog .sys { color: #8ea3c9; font-style: italic; }
+#chatForm { display: flex; border-top: 1px solid #33415c; }
+#chatInput { flex: 1; padding: 9px; border: none; background: transparent; color: #eef; font-size: 14px; }
+#chatForm button { width: 44px; border: none; background: #ffd23f; color: #1a2238; font-size: 16px; cursor: pointer; }
+
+#joystick { position: absolute; right: 24px; bottom: 24px; width: 110px; height: 110px;
+  border-radius: 50%; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.25);
+  display: none; touch-action: none; }
+#stick { position: absolute; left: 50%; top: 50%; width: 48px; height: 48px; margin: -24px 0 0 -24px;
+  border-radius: 50%; background: rgba(255,210,63,.85); }
+@media (pointer: coarse) { #joystick { display: block; } }
+
+#toast { position: absolute; top: 56px; left: 50%; transform: translateX(-50%);
+  background: rgba(20,28,48,.92); border: 1px solid #ffd23f; color: #ffd23f;
+  padding: 10px 20px; border-radius: 999px; font-weight: 700; opacity: 0;
+  transition: opacity .3s; pointer-events: none; }
+#toast.show { opacity: 1; }
+
+#loadScreen { position: absolute; inset: 0; background: rgba(8,10,18,.88); z-index: 30;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; }
+#loadScreen .spin { width: 44px; height: 44px; border-radius: 50%;
+  border: 5px solid #33415c; border-top-color: #ffd23f; animation: sp 0.8s linear infinite; }
+@keyframes sp { to { transform: rotate(360deg); } }
+#loadText { color: #cdd9f5; letter-spacing: 2px; }

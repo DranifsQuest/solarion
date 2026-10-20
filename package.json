@@ -1,0 +1,18 @@
+{
+  "name": "solarion",
+  "version": "0.1.0",
+  "description": "Solarion — multiplayer browser social game (Phase 1 foundation). Re-Launch Studios.",
+  "private": true,
+  "license": "UNLICENSED",
+  "main": "src/server.js",
+  "engines": { "node": ">=22.5.0" },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "express": "^4.21.2",
+    "ws": "^8.18.0"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test test/test.js"
+  }
+}

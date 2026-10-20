@@ -1,0 +1,263 @@
+'use strict';
+
+/**
+ * Solarion — world simulation (Phase 1).
+ *
+ * Server-authoritative: clients send input intents (which keys are held);
+ * the server moves avatars, resolves collisions, detects gateway steps and
+ * broadcasts position snapshots per map. Nothing important is trusted from
+ * the client.
+ *
+ * Chat is per-map, rate-limited (6 messages per 10s sliding window).
+ * The daily +100z login bonus is claimed atomically in the DB (see db.js).
+ */
+
+const { MAPS, collides, gatewayAt } = require('./maps');
+const { q } = require('./db');
+
+const PLAYER_RADIUS = 12;
+const SPEED = 175;              // px per second
+const TICK_HZ = 20;             // simulation
+const SNAPSHOT_HZ = 10;         // broadcast
+const CHAT_LIMIT = 6;           // messages ...
+const CHAT_WINDOW_MS = 10e3;    // ... per window
+const CHAT_MAX_LEN = 240;
+const CHAT_HISTORY = 40;        // messages kept per map for joiners
+const POSITION_SAVE_MS = 15e3;  // periodic crash-safe position flush
+
+/** Server-local calendar day, YYYY-MM-DD (daily-bonus day boundary). */
+function localDay(now = new Date()) {
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${now.getFullYear()}-${m}-${d}`;
+}
+
+class Game {
+  constructor() {
+    this.players = new Map();        // userId -> player
+    this.chatHistory = new Map();    // mapId -> [ {from, text, at} ]
+    this.tickTimer = null;
+    this.snapTimer = null;
+    this.saveTimer = null;
+  }
+
+  start() {
+    this.tickTimer = setInterval(() => this.tick(), 1000 / TICK_HZ);
+    this.snapTimer = setInterval(() => this.broadcastSnapshots(), 1000 / SNAPSHOT_HZ);
+    this.saveTimer = setInterval(() => this.saveAllPositions(), POSITION_SAVE_MS);
+  }
+
+  stop() {
+    clearInterval(this.tickTimer);
+    clearInterval(this.snapTimer);
+    clearInterval(this.saveTimer);
+    this.saveAllPositions();
+  }
+
+  // ---------------------------------------------------------- connections
+
+  addPlayer(ws, { user, avatar }) {
+    // One live connection per account: a fresh login replaces a stale one.
+    const existing = this.players.get(user.id);
+    if (existing && existing.ws !== ws) {
+      try { existing.ws.close(4000, 'replaced'); } catch (e) { /* already gone */ }
+    }
+    let mapId = MAPS[avatar.map_id] ? avatar.map_id : 'the-gateway';
+    const map = MAPS[mapId];
+    let { x, y } = avatar;
+    if (collides(map, x, y, PLAYER_RADIUS)) { x = map.spawn.x; y = map.spawn.y; }
+    const p = {
+      userId: user.id,
+      name: avatar.name,
+      body_color: avatar.body_color,
+      accent_color: avatar.accent_color,
+      skin_tone: avatar.skin_tone,
+      hair_style: avatar.hair_style,
+      hair_color: avatar.hair_color,
+      ws,
+      mapId,
+      x, y,
+      dir: 'down',
+      keys: {},
+      chatTimes: [],
+      lastGatewayAt: 0,
+    };
+    this.players.set(user.id, p);
+    return p;
+  }
+
+  removePlayer(userId) {
+    const p = this.players.get(userId);
+    if (!p) return;
+    this.savePosition(p);
+    this.players.delete(userId);
+  }
+
+  getPlayer(userId) {
+    return this.players.get(userId) || null;
+  }
+
+  savePosition(p) {
+    q.saveAvatarPos.run(p.mapId, Math.round(p.x), Math.round(p.y), p.userId);
+  }
+
+  saveAllPositions() {
+    for (const p of this.players.values()) this.savePosition(p);
+  }
+
+  // ---------------------------------------------------------- daily bonus
+
+  /** Claim today's +100z. Returns true exactly once per account per day. */
+  claimDailyBonus(userId) {
+    const today = localDay();
+    const r = q.claimDailyBonus.run(today, userId, today);
+    return r.changes === 1;
+  }
+
+  // ---------------------------------------------------------- messaging
+
+  send(p, msg) {
+    try { p.ws.send(JSON.stringify(msg)); } catch (e) { /* socket dying */ }
+  }
+
+  broadcastToMap(mapId, msg, exceptUserId = null) {
+    for (const p of this.players.values()) {
+      if (p.mapId === mapId && p.userId !== exceptUserId) this.send(p, msg);
+    }
+  }
+
+  mapCounts() {
+    const counts = {};
+    for (const id of Object.keys(MAPS)) counts[id] = 0;
+    for (const p of this.players.values()) counts[p.mapId] = (counts[p.mapId] || 0) + 1;
+    return counts;
+  }
+
+  publicPlayer(p) {
+    return {
+      id: p.userId,
+      name: p.name,
+      x: Math.round(p.x * 10) / 10,
+      y: Math.round(p.y * 10) / 10,
+      dir: p.dir,
+      body_color: p.body_color,
+      accent_color: p.accent_color,
+      skin_tone: p.skin_tone,
+      hair_style: p.hair_style,
+      hair_color: p.hair_color,
+    };
+  }
+
+  playersInMap(mapId) {
+    const out = [];
+    for (const p of this.players.values()) if (p.mapId === mapId) out.push(this.publicPlayer(p));
+    return out;
+  }
+
+  broadcastSnapshots() {
+    for (const mapId of Object.keys(MAPS)) {
+      const inMap = [...this.players.values()].filter(p => p.mapId === mapId);
+      if (!inMap.length) continue;
+      const players = inMap.map(p => this.publicPlayer(p));
+      for (const p of inMap) this.send(p, { type: 'snapshot', players });
+    }
+  }
+
+  // ---------------------------------------------------------- input
+
+  handleInput(p, keys) {
+    p.keys = {
+      up: Boolean(keys && keys.up),
+      down: Boolean(keys && keys.down),
+      left: Boolean(keys && keys.left),
+      right: Boolean(keys && keys.right),
+    };
+  }
+
+  // ---------------------------------------------------------- chat
+
+  handleChat(p, rawText) {
+    const text = String(rawText == null ? '' : rawText).trim().slice(0, CHAT_MAX_LEN);
+    if (!text) return;
+    const now = Date.now();
+    p.chatTimes = p.chatTimes.filter(t => now - t < CHAT_WINDOW_MS);
+    if (p.chatTimes.length >= CHAT_LIMIT) {
+      this.send(p, { type: 'notice', text: 'Slow down — you are chatting too fast.' });
+      return;
+    }
+    p.chatTimes.push(now);
+    const msg = { type: 'chat', from: p.name, fromId: p.userId, text, at: now };
+    const hist = this.chatHistory.get(p.mapId) || [];
+    hist.push({ from: p.name, text, at: now });
+    while (hist.length > CHAT_HISTORY) hist.shift();
+    this.chatHistory.set(p.mapId, hist);
+    this.broadcastToMap(p.mapId, msg);
+  }
+
+  historyFor(mapId) {
+    return this.chatHistory.get(mapId) || [];
+  }
+
+  // ---------------------------------------------------------- simulation
+
+  tick() {
+    const dt = 1 / TICK_HZ;
+    for (const p of this.players.values()) {
+      const map = MAPS[p.mapId];
+      let dx = 0, dy = 0;
+      if (p.keys.left) dx -= 1;
+      if (p.keys.right) dx += 1;
+      if (p.keys.up) dy -= 1;
+      if (p.keys.down) dy += 1;
+      if (dx === 0 && dy === 0) continue;
+      const len = Math.hypot(dx, dy);
+      dx = (dx / len) * SPEED * dt;
+      dy = (dy / len) * SPEED * dt;
+
+      // Axis-separated movement → wall sliding for free.
+      const nx = p.x + dx;
+      if (!collides(map, nx, p.y, PLAYER_RADIUS)) p.x = nx;
+      const ny = p.y + dy;
+      if (!collides(map, p.x, ny, PLAYER_RADIUS)) p.y = ny;
+
+      if (Math.abs(dx) > Math.abs(dy)) p.dir = dx > 0 ? 'right' : 'left';
+      else p.dir = dy > 0 ? 'down' : 'up';
+
+      this.checkGateway(p);
+    }
+  }
+
+  checkGateway(p) {
+    const map = MAPS[p.mapId];
+    const gw = gatewayAt(map, p.x, p.y);
+    if (!gw) return;
+    // Debounce so a player standing on a spot can't bounce between maps.
+    if (Date.now() - p.lastGatewayAt < 1500) return;
+    const target = MAPS[gw.target];
+    if (!target) {
+      p.lastGatewayAt = Date.now();
+      this.send(p, { type: 'notice', text: `${gw.label} isn't open yet — coming in a later phase.` });
+      return;
+    }
+    this.switchMap(p, target);
+  }
+
+  switchMap(p, target) {
+    p.lastGatewayAt = Date.now();
+    p.mapId = target.id;
+    p.x = target.spawn.x;
+    p.y = target.spawn.y;
+    p.keys = {};
+    this.savePosition(p);
+    const { clientMap } = require('./maps');
+    this.send(p, {
+      type: 'map',
+      map: clientMap(target),
+      players: this.playersInMap(target.id),
+      chat: this.historyFor(target.id),
+      you: this.publicPlayer(p),
+    });
+  }
+}
+
+module.exports = { Game, localDay, PLAYER_RADIUS, SPEED, CHAT_LIMIT };
