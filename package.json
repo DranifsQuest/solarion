@@ -1,7 +1,7 @@
 {
   "name": "solarion",
   "version": "0.1.0",
-  "description": "Solarion — multiplayer browser social game (Phase 6: character creation). Re-Launch Studios.",
+  "description": "Solarion — multiplayer browser social game (Phase 7: world expansion — 5x maps, doors, load screen, two casinos, bars, hookah lounge). Re-Launch Studios.",
   "private": true,
   "license": "UNLICENSED",
   "main": "src/server.js",

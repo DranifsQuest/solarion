@@ -1,8 +1,9 @@
 # Solarion v1 Playtest Checklist
 
-Everything below is protocol-proven (22/22 automated live checks passed,
-incl. the Phase 6 creation flow) but never touched by a human. Work
-through it in any order; jot what hits wrong and v1.1 starts there.
+Everything below is protocol-proven (automated live checks pass end
+to end from a clean external network, incl. the Phase 6 creation flow
+and the whole Phase B world expansion) but never touched by a human.
+Work through it in any order; jot what hits wrong and v1.1 starts there.
 Live at https://solarion.onrender.com
 
 ## Free-tier manners (not bugs)
@@ -11,8 +12,7 @@ Live at https://solarion.onrender.com
   Same tradeoff as Goleon; the Fly.io move fixes it later.
 
 ## Don't bother testing (deferred by design)
-- Burn-to-CD ritual, Gold/Platinum trophies, Top-40 chart, jukebox playback,
-  casino lounges in cities other than Solstice Bay.
+- Burn-to-CD ritual, Gold/Platinum trophies, Top-40 chart, jukebox playback.
 
 ## 1. First load
 - [ ] Register a fresh account; log out and back in.
@@ -42,6 +42,32 @@ Live at https://solarion.onrender.com
 - [ ] Log out and back in — your character is exactly as created,
       and NO creation screen the second time.
 
+## 1c. World expansion (Phase B — NEW, never human-tested)
+- [ ] The maps are ~5× bigger now. Walk each city: does it feel
+      inhabited (plazas, streets, blocks) or stretched-and-empty?
+      Camera follows you smoothly at the edges?
+- [ ] EVERY transfer (gateway arches AND doors) shows a fixed ~3s
+      load screen and lands you already placed — no pop-in, no
+      sliding during the screen. Does 3s feel right or annoying?
+- [ ] Doors: Casino Lounge door in Solstice Bay (east face of the
+      casino building), Gateway Café door (SE building), Neon Casino
+      door (SE block, Neon District), Hookah Lounge door (S-centre
+      building, Cinder Mesa) — and every door back out. Clear to find?
+- [ ] SITTING: press E (or the Sit button) by benches, chairs, sofas,
+      café tables — in the cities, café, casinos, hookah lounge, and
+      on studio chairs/sofas. Seated pose reads right for both
+      genders? Chat while seated; walk or E to stand.
+- [ ] CASINOS (only two — Solstice Bay + Neon District): grand
+      enough? 6 poker tables west, 10 slots in their own NE section,
+      bar SW. Slots: you must SIT on the machine's stool to spin.
+- [ ] BAR (both casinos): stand at the counter, buy drinks (5z).
+      Haze builds on YOUR screen, bubbles float around you, your
+      walk sways. At 10 drinks you pass out cold for 20s (everyone
+      sees you fall), then wake wobbly. Funny or too much?
+- [ ] HOOKAH LOUNGE (Cinder Mesa): sit at a station, E to puff (5z).
+      Your screen gets psychedelic as the count builds; at 10 puffs
+      you turn hippy (tie-dye + headband, everyone sees it) for 20s.
+
 ## 2. Audio — the never-heard stuff
 - [ ] Open the mixer, audition loops across the 48 synth loops.
 - [ ] Any loops that sound broken, glitchy, or out of place?
@@ -57,10 +83,12 @@ Live at https://solarion.onrender.com
 - [ ] Vote on someone else's performance — +5z lands? Daily cap (350z)
       behaves?
 
-## 5. Casino (Solstice Bay Casino Lounge)
-- [ ] Slots: spin a while — payouts feel fair? (RTP tuned ~0.967)
+## 5. Casinos (Solstice Bay Casino Lounge + Neon Casino)
+- [ ] Slots: sit on a machine's stool and spin a while — payouts
+      feel fair? (RTP tuned ~0.967)
 - [ ] Poker: sit at a 4-chair table, play a full hand to showdown.
       Chips conserved? Side pots handled right?
+- [ ] The bar: see section 1c.
 
 ## 6. Private studio
 - [ ] Buy furniture from the 14-item catalog, place pieces by clicking tiles.

@@ -86,6 +86,9 @@ async function main() {
     const name = `loadbot_${i}`;
     const reg = await api('/api/register', { username: name, password: 'secretpw' });
     if (reg.status !== 200) { errors.push(`register ${name}: HTTP ${reg.status}`); continue; }
+    // Phase 6 gate: no world entry before character creation.
+    const cc = await api('/api/create-character', { token: reg.json.token, name, gender: i % 2 ? 'F' : 'M' });
+    if (cc.status !== 200) { errors.push(`create ${name}: HTTP ${cc.status}`); continue; }
     const bot = {
       i, name, token: reg.json.token, id: null, ws: null, msgs: [],
       counts: {}, lastMapId: null,

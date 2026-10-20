@@ -1,4 +1,4 @@
-# Solarion — Phase 6 (Character Creation)
+# Solarion — Phase 7 (World Expansion: Big Maps, Doors, Casinos, Bars)
 
 A multiplayer browser-based social game by **Re-Launch Studios** — an
 original-IP take on the classic Coke Music / Coke Studios loop:
@@ -41,6 +41,27 @@ shoe colors and an accessory layer. One options module
 and the in-game editor, so the three can never disagree. Existing
 v1 accounts migrate in place (schema v2) and skip creation. See the
 Phase 6 section below.
+
+**Phase 7 is the world expansion.** Every public scene is ~5× its old
+area (the Gateway and the five cities are 72×45 tiles), re-laid-out
+with plazas, streets, stages and decor at the new scale. Interiors are
+now real scenes behind **doors**: the Casino Lounge off Solstice Bay,
+a café off the Gateway, a second grand casino in Neon District, and a
+hookah lounge in Cinder Mesa. **Every** scene transfer (gateway
+arches and doors alike) runs through a fixed **3-second load screen**:
+input is locked server-side, and the client lifts the screen only
+once the new scene's first snapshot is in. **Sitting** works on
+benches, chairs, sofas, café tables and studio furniture (E key /
+Sit button) with a seated sprite variant for both genders. Poker
+lives in exactly the two casinos — 6 tables × 4 chairs and 10 slot
+machines each, slots in their own section played **sitting on the
+machine's stool**. Each casino has a **bar**: the bartender sells
+**5z drinks**; the server tracks your count (bubbles, sway and screen
+haze scale with it; −1 per minute) and at **10 drinks you pass out
+for 20 seconds**, waking at 2. The **hookah lounge** sells **5z
+puffs** with a psychedelic screen effect; at **10 puffs you turn
+hippy for 20 seconds** (a broadcast appearance override), then your
+real look returns. See the Phase 7 notes in `docs/playtest-checklist.md`.
 
 ## Run it locally
 
