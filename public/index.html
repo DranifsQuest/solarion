@@ -109,7 +109,15 @@
         <input id="visitName" placeholder="Visit username…" maxlength="20">
         <button id="visitGo">Visit</button>
       </div>
+      <div class="spRow">
+        <input id="inviteName" placeholder="Invite username…" maxlength="20">
+        <button id="inviteGo">📩 Invite to my studio</button>
+      </div>
       <div id="studioFurnList"></div>
+      <div id="studioDevices" class="hidden">
+        <div class="spTitle">📺📻 ROOM DEVICES — anyone in the room can use these</div>
+        <div id="deviceList"></div>
+      </div>
       <div id="studioOwner" class="hidden">
         <div class="spTitle">🛋️ CATALOG</div>
         <div id="catalogList"></div>
@@ -182,6 +190,14 @@
     </div>
     <div id="joystick"><div id="stick"></div></div>
     <div id="toast"></div>
+    <!-- room invite prompt (Phase 8) -->
+    <div id="invitePrompt" class="hidden">
+      <div id="inviteText">📩 Someone invites you to their studio!</div>
+      <div class="spRow">
+        <button id="inviteAccept">✅ Go!</button>
+        <button id="inviteDecline">No thanks</button>
+      </div>
+    </div>
     <div id="loadScreen" class="hidden"><div class="spin"></div><p id="loadText">Traveling…</p></div>
   </div>
 </div>

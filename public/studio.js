@@ -19,6 +19,15 @@ const Studio = {
   catalog: [],
   inventory: [],
   furniture: [],
+  devices: new Map(),      // Phase 8: instanceId -> resolved device payload
+  channels: [],            // Phase 8: TV channel guide (server-owned)
+  pendingInvite: null,     // Phase 8: { ownerId, fromName } awaiting an answer
+  inviteTimer: null,
+  radioKey: null,          // Phase 8: track identity the radio engine is playing
+  radioTimer: null,
+  radioNext: 0,
+  radioUnitDur: 0,
+  radioSchedule: null,
   ownerId: null,
   ownerName: null,
   isOwner: false,
@@ -40,6 +49,9 @@ const Studio = {
       visitName: $('visitName'), kickSel: $('kickSel'),
       leaveBtn: $('leaveStudio'),
       lookPanel: $('lookPanel'),
+      devicesBox: $('studioDevices'), deviceList: $('deviceList'),
+      inviteName: $('inviteName'),
+      invitePrompt: $('invitePrompt'), inviteText: $('inviteText'),
     };
     $('studioBtn').onclick = () => {
       this.panelOpen = !this.panelOpen;
@@ -54,6 +66,16 @@ const Studio = {
       const name = this.el.visitName.value.trim();
       if (name) this.hooks.send({ type: 'enter-studio', owner: name });
     };
+    // Phase 8: invite any online player to YOUR room, from anywhere.
+    $('inviteGo').onclick = () => {
+      const name = this.el.inviteName.value.trim();
+      if (name) {
+        this.hooks.send({ type: 'studio-invite', username: name });
+        this.el.inviteName.value = '';
+      }
+    };
+    $('inviteAccept').onclick = () => this.answerInvite(true);
+    $('inviteDecline').onclick = () => this.answerInvite(false);
     this.el.leaveBtn.onclick = () => this.hooks.send({ type: 'leave-studio' });
     $('kickBtn').onclick = () => {
       const id = Number(this.el.kickSel.value);
@@ -145,6 +167,8 @@ const Studio = {
       this.isOwner = Boolean(me && me.id === this.ownerId);
     } else {
       this.placeInstanceId = null;
+      this.devices.clear();
+      this.stopRadioAudio();
     }
     this.renderVisibility();
     this.render();
@@ -193,6 +217,142 @@ const Studio = {
       this.el.kickSel.innerHTML = others.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('') ||
         '<option value="">— no visitors —</option>';
     }
+    this.renderDevices();
+  },
+
+  // ------------------------------------------------------------ devices
+  // Phase 8: TVs and radios placed in this room. Controls are shown
+  // to EVERYONE in the room (owner or visitor — server-enforced the
+  // same way); the state itself is server-owned and arrives via
+  // studio-state / home-device messages.
+
+  renderDevices() {
+    if (!this.el || !this.el.devicesBox) return;
+    const esc = this.hooks.esc;
+    const devFurniture = this.inStudio
+      ? this.furniture.filter(f => f.type === 'tv' || f.type === 'radio')
+      : [];
+    this.el.devicesBox.classList.toggle('hidden', devFurniture.length === 0);
+    if (!devFurniture.length) { this.el.deviceList.innerHTML = ''; return; }
+    this.el.deviceList.innerHTML = devFurniture.map(f => {
+      const d = this.devices.get(f.instanceId);
+      if (!d) return `<div class="qItem">${esc(f.icon || '📦')} ${esc(f.name)} <span class="pkDim">…</span></div>`;
+      if (d.kind === 'tv') {
+        return `<div class="qItem">📺 ${esc(f.name)} — ${d.on
+          ? `<b>ON</b> · Ch ${d.channel + 1}: ${esc(d.channelName)}`
+          : '<span class="pkDim">off</span>'}
+          <button data-dev="${f.instanceId}" data-act="power">${d.on ? '⏻ Off' : '⏻ On'}</button>
+          <button data-dev="${f.instanceId}" data-act="channel-prev">◀ Ch</button>
+          <button data-dev="${f.instanceId}" data-act="channel-next">Ch ▶</button></div>`;
+      }
+      const trackName = d.track ? d.track.name : '(nothing)';
+      const srcLabel = d.source === 'mixes' ? `🎧 ${esc(this.ownerName || 'Owner')}'s mixes` : '📚 Loop library';
+      return `<div class="qItem">📻 ${esc(f.name)} — ${d.playing ? `<b>▶ Playing</b>` : '<span class="pkDim">stopped</span>'}
+        <br><span class="pkDim">${srcLabel}: ${esc(trackName)}</span>
+        <button data-dev="${f.instanceId}" data-act="prev">⏮</button>
+        <button data-dev="${f.instanceId}" data-act="${d.playing ? 'stop' : 'play'}">${d.playing ? '⏸ Stop' : '▶ Play'}</button>
+        <button data-dev="${f.instanceId}" data-act="next">⏭</button>
+        <button data-dev="${f.instanceId}" data-act="source">🔀 ${d.source === 'mixes' ? 'Loops' : 'Mixes'}</button></div>`;
+    }).join('');
+    for (const b of this.el.deviceList.querySelectorAll('[data-dev]')) {
+      b.onclick = () => this.hooks.send({
+        type: 'home-device', instanceId: Number(b.dataset.dev), action: b.dataset.act,
+      });
+    }
+  },
+
+  setDevices(list) {
+    this.devices.clear();
+    for (const d of list || []) this.devices.set(d.instanceId, d);
+    this.renderDevices();
+    this.syncRadio();
+  },
+
+  // ------------------------------------------------------------ radio
+  // Phase 8: room radio playback. The server owns state; clients
+  // render audio locally over the SAME Web Audio engine the stage
+  // uses (AE in mixer.js). Play starts are server-timestamped
+  // (startedAt, incl. a 1.2s sync delay), so everyone in the room
+  // schedules the same track from the same instant; a late joiner
+  // aligns to the next loop/mix pass on that grid — approximate to
+  // within one pass, exact thereafter. If several radios play at
+  // once, the client sounds only the most recently started one.
+
+  ae() {
+    try { return (typeof AE !== 'undefined') ? AE : null; } catch (e) { return null; }
+  },
+
+  stopRadioAudio() {
+    if (this.radioTimer) { clearInterval(this.radioTimer); this.radioTimer = null; }
+    this.radioKey = null;
+    this.radioSchedule = null;
+    const ae = this.ae();
+    if (ae) { try { ae.stop(); } catch (e) { /* engine idle */ } }
+  },
+
+  syncRadio() {
+    if (!this.inStudio) { this.stopRadioAudio(); return; }
+    let best = null;
+    for (const d of this.devices.values()) {
+      if (d.kind === 'radio' && d.playing && d.track) {
+        if (!best || d.startedAt > best.startedAt) best = d;
+      }
+    }
+    if (!best) { this.stopRadioAudio(); return; }
+    const key = `${best.instanceId}|${best.source}|${best.track.kind === 'mix' ? best.track.mixId : best.track.loopId}|${best.startedAt}`;
+    if (this.radioKey === key) return; // already sounding this exact play
+    this.startRadio(best, key);
+  },
+
+  startRadio(dev, key) {
+    const ae = this.ae();
+    const mixer = window.SolarionMixer;
+    if (!ae || !mixer || !ae.ensure()) { this.radioKey = null; return; }
+    ae.stop();
+    if (this.radioTimer) { clearInterval(this.radioTimer); this.radioTimer = null; }
+    this.radioKey = key;
+    const startedAtCtx = ae.ctx.currentTime + Math.max(0, (dev.startedAt - Date.now()) / 1000);
+    let schedule = null;
+    let unitDur = 0;
+    if (dev.track.kind === 'loop') {
+      const loop = mixer.loopsById.get(dev.track.loopId);
+      if (!loop) { this.radioKey = null; return; }
+      const RADIO_BPM = 112; // loops are bpm-agnostic patterns; radio tempo
+      unitDur = loop.bars * (60 / RADIO_BPM) * 4;
+      schedule = (t) => ae.playLoop(loop, t, RADIO_BPM);
+    } else {
+      const mix = dev.track.mix;
+      if (!mix) { this.radioKey = null; return; }
+      unitDur = mix.bars * 4 * (60 / mix.bpm);
+      schedule = (t) => ae.playMix(mix, t);
+    }
+    // First pass boundary at/after now, on the startedAt grid.
+    let next = startedAtCtx;
+    const nowC = ae.ctx.currentTime;
+    if (next < nowC - 0.05) next += Math.ceil((nowC - next) / unitDur) * unitDur;
+    this.radioNext = next;
+    this.radioUnitDur = unitDur;
+    this.radioSchedule = schedule;
+    const pump = () => {
+      const a = this.ae();
+      if (!a || !a.ctx || !this.radioSchedule) return;
+      while (this.radioNext < a.ctx.currentTime + 1.2) {
+        this.radioSchedule(this.radioNext);
+        this.radioNext += this.radioUnitDur;
+      }
+    };
+    pump();
+    this.radioTimer = setInterval(pump, 400);
+  },
+
+  // ------------------------------------------------------------ invites
+
+  answerInvite(accept) {
+    const inv = this.pendingInvite;
+    this.pendingInvite = null;
+    if (this.inviteTimer) { clearTimeout(this.inviteTimer); this.inviteTimer = null; }
+    this.el.invitePrompt.classList.add('hidden');
+    if (inv) this.hooks.send({ type: 'studio-invite-response', ownerId: inv.ownerId, accept });
   },
 
   handle(m) {
@@ -201,6 +361,10 @@ const Studio = {
         this.hooks.toast('🎨 Look saved — the new you is live.');
         this.el.lookPanel.classList.add('hidden');
         break;
+      case 'map':
+        // Phase 8: studio entry payloads carry device states.
+        if (m.devices) this.setDevices(m.devices);
+        break;
       case 'studio-state':
         this.ownerId = m.ownerId;
         this.ownerName = m.ownerName;
@@ -208,13 +372,42 @@ const Studio = {
         if (m.catalog) this.catalog = m.catalog;
         if (m.inventory) this.inventory = m.inventory;
         if (m.furniture) this.furniture = m.furniture;
+        if (m.channels) this.channels = m.channels;
+        if (m.devices) this.setDevices(m.devices);
         this.renderVisibility();
         this.render();
         break;
       case 'studio-furniture':
         this.furniture = m.furniture || [];
+        // A picked-up device disappears from the furniture list —
+        // drop its stale state (the server also broadcasts a null).
+        for (const id of [...this.devices.keys()]) {
+          if (!this.furniture.some(f => f.instanceId === id)) this.devices.delete(id);
+        }
+        this.renderDevices();
+        this.syncRadio();
         this.render();
         break;
+      case 'home-device':
+        if (m.device) this.devices.set(m.device.instanceId, m.device);
+        else if (Number.isInteger(m.instanceId)) this.devices.delete(m.instanceId);
+        this.renderDevices();
+        this.syncRadio();
+        break;
+      case 'studio-invite': {
+        this.pendingInvite = { ownerId: m.ownerId, fromName: m.fromName };
+        this.el.inviteText.textContent = `📩 ${m.fromName} invites you to their studio!`;
+        this.el.invitePrompt.classList.remove('hidden');
+        if (this.inviteTimer) clearTimeout(this.inviteTimer);
+        const mine = this.pendingInvite;
+        this.inviteTimer = setTimeout(() => {
+          if (this.pendingInvite === mine) {
+            this.pendingInvite = null;
+            this.el.invitePrompt.classList.add('hidden');
+          }
+        }, (m.expiresInSec || 60) * 1000);
+        break;
+      }
       case 'snapshot':
         if (this.inStudio && this.isOwner) this.render(); // keep kick list fresh
         break;

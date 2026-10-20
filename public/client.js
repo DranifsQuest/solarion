@@ -21,6 +21,7 @@ let me = null;
 let mapDef = null;
 let players = [];
 let sceneFurniture = []; // Phase 4: placed studio furniture in this scene
+let sceneDevices = {};   // Phase 8: instanceId -> TV/radio state in this scene
 const renderPos = new Map(); // id -> { x, y, moving }
 const bubbles = new Map();   // id -> { text, until }
 let keys = { up: false, down: false, left: false, right: false };
@@ -157,6 +158,8 @@ function beginTransfer(m) {
   $('loadText').textContent = `Traveling to ${m.map.name}…`;
   $('loadScreen').classList.remove('hidden');
   sceneFurniture = m.furniture || (m.studio && m.studio.furniture) || [];
+  sceneDevices = {};
+  for (const d of m.devices || []) sceneDevices[d.instanceId] = d;
   setMap(m.map, m.you, m.chat || []);
   players = m.players;
   chatLine(`<span class="sys">You arrived in ${esc(m.map.name)}.</span>`);
@@ -201,6 +204,7 @@ function handle(m) {
       $('coins').textContent = coins;
       players = m.players;
       sceneFurniture = m.furniture || [];
+      sceneDevices = {};
       showGame();
       setMap(m.map, m.you, m.chat);
       chatLine(`<span class="sys">Welcome to ${esc(m.map.name)}.</span>`);
@@ -227,6 +231,21 @@ function handle(m) {
     }
     case 'studio-furniture': {
       sceneFurniture = m.furniture || [];
+      for (const id of Object.keys(sceneDevices)) {
+        if (!sceneFurniture.some(f => f.instanceId === Number(id))) delete sceneDevices[id];
+      }
+      break;
+    }
+    case 'studio-state': {
+      if (m.devices) {
+        sceneDevices = {};
+        for (const d of m.devices) sceneDevices[d.instanceId] = d;
+      }
+      break;
+    }
+    case 'home-device': {
+      if (m.device) sceneDevices[m.device.instanceId] = m.device;
+      else if (Number.isInteger(m.instanceId)) delete sceneDevices[m.instanceId];
       break;
     }
     case 'avatar-updated': {
@@ -391,6 +410,168 @@ function drawTile(ch, tx, ty) {
   diamond(cx, cy - WALL_H, hw, hh, top);
 }
 
+// ------------------------------------------------------------------ TVs
+// Phase 8: a placed TV draws as a small cabinet with a live screen.
+// The screen content is 100% procedural canvas art (original fake
+// shows — no footage, no assets), animated off Date.now() so every
+// client in the room sees roughly the same frame of the same show.
+// Channel id + on/off come from the server-owned device state.
+function drawTelevision(f, fx, fy) {
+  const dev = sceneDevices[f.instanceId];
+  const on = Boolean(dev && dev.on);
+  // cabinet: base block + body + screen
+  diamond(fx, fy - 2, 20, 9, f.accent || '#3f475c');
+  ctx.fillStyle = f.color || '#59637a';
+  ctx.fillRect(fx - 19, fy - 30, 38, 24);
+  ctx.strokeStyle = 'rgba(0,0,0,.45)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(fx - 19, fy - 30, 38, 24);
+  if (f.itemId === 'tube-tv') { // rabbit-ear antennae on the tube set
+    ctx.strokeStyle = '#c8ccd4';
+    ctx.beginPath();
+    ctx.moveTo(fx - 4, fy - 30); ctx.lineTo(fx - 13, fy - 40);
+    ctx.moveTo(fx + 4, fy - 30); ctx.lineTo(fx + 13, fy - 40);
+    ctx.stroke();
+  }
+  const sx = fx - 15, sy = fy - 27, sw = 30, sh = 18;
+  if (!on) {
+    ctx.fillStyle = '#0d1017';
+    ctx.fillRect(sx, sy, sw, sh);
+    ctx.strokeStyle = 'rgba(255,255,255,.18)';
+    ctx.beginPath();
+    ctx.moveTo(sx + 4, sy + sh - 3); ctx.lineTo(sx + 13, sy + 3);
+    ctx.stroke();
+    return;
+  }
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(sx, sy, sw, sh);
+  ctx.clip();
+  drawTvScene(dev.channelId, sx, sy, sw, sh, Date.now());
+  ctx.restore();
+  ctx.strokeStyle = 'rgba(255,255,255,.25)';
+  ctx.strokeRect(sx, sy, sw, sh);
+}
+
+function drawTvScene(channelId, x, y, w, h, t) {
+  const cx = x + w / 2, cy = y + h / 2;
+  if (channelId === 'news') {
+    ctx.fillStyle = '#1d4ed8'; ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = '#93c5fd'; ctx.fillRect(x + w * 0.58, y + 2, w * 0.38, h * 0.52);
+    ctx.fillStyle = '#fff';
+    for (let i = 0; i < 3; i++) ctx.fillRect(x + w * 0.62, y + 4 + i * 3, w * 0.3, 1.2);
+    // the anchor: head + suit
+    ctx.fillStyle = '#f1c27d';
+    ctx.beginPath(); ctx.arc(x + w * 0.3, y + h * 0.42, 3.4, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#1f2937'; ctx.fillRect(x + w * 0.3 - 5, y + h * 0.62, 10, h * 0.3);
+    // scrolling ticker
+    ctx.fillStyle = '#dc2626'; ctx.fillRect(x, y + h - 4.5, w, 4.5);
+    ctx.fillStyle = '#fff';
+    const off = (t / 60) % (w + 24);
+    for (let i = 0; i < 3; i++) ctx.fillRect(x + w - off + i * 9, y + h - 3.2, 5, 1.6);
+    // blinking LIVE dot
+    if (Math.floor(t / 600) % 2 === 0) {
+      ctx.fillStyle = '#ef4444';
+      ctx.beginPath(); ctx.arc(x + w - 3, y + 3, 1.6, 0, Math.PI * 2); ctx.fill();
+    }
+  } else if (channelId === 'soap') {
+    ctx.fillStyle = '#6d4c41'; ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = '#8d6e63'; ctx.fillRect(x, y + h * 0.55, w, h * 0.45);
+    // two faces in profile, mid-argument (they bob at each other)
+    const bobA = Math.sin(t / 300) * 0.8, bobB = Math.cos(t / 340) * 0.8;
+    ctx.fillStyle = '#f1c27d';
+    ctx.beginPath(); ctx.arc(x + w * 0.32, cy - 1 + bobA, 3.6, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(x + w * 0.68, cy - 1 + bobB, 3.6, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#3e2723';
+    ctx.beginPath(); ctx.arc(x + w * 0.32, cy - 3.4 + bobA, 3.8, Math.PI, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ffd23f';
+    ctx.beginPath(); ctx.arc(x + w * 0.68, cy - 3.4 + bobB, 3.8, Math.PI, Math.PI * 2); ctx.fill();
+    // dialogue caption, cycling every 3s
+    const lines = ['How could you, Brad?', 'The baby is YOURS.', 'We sail at dawn…', 'I never stopped…'];
+    ctx.fillStyle = 'rgba(0,0,0,.78)'; ctx.fillRect(x, y + h - 6, w, 6);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 4.6px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillText(lines[Math.floor(t / 3000) % lines.length], cx, y + h - 1.6);
+  } else if (channelId === 'cooking') {
+    ctx.fillStyle = '#f59e0b'; ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = '#fbbf24'; ctx.fillRect(x, y, w, h * 0.45);
+    // the pan, with dinner bobbing in it
+    ctx.fillStyle = '#1f2937';
+    ctx.beginPath(); ctx.ellipse(cx, y + h * 0.72, 9, 3.4, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillRect(cx + 8, y + h * 0.72 - 1, 6, 2);
+    ctx.fillStyle = '#ef4444';
+    for (let i = 0; i < 3; i++) {
+      ctx.beginPath();
+      ctx.arc(cx - 4 + i * 4, y + h * 0.72 - 1.6 - Math.abs(Math.sin(t / 260 + i)) * 1.8, 1.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // steam curls
+    ctx.strokeStyle = 'rgba(255,255,255,.75)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 2; i++) {
+      const ph = ((t / 1300) + i * 0.5) % 1;
+      ctx.globalAlpha = 0.7 * (1 - ph);
+      ctx.beginPath();
+      ctx.arc(cx - 3 + i * 6 + Math.sin(ph * 6) * 1.2, y + h * 0.6 - ph * 7, 1.6, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  } else if (channelId === 'weather') {
+    ctx.fillStyle = '#38bdf8'; ctx.fillRect(x, y, w, h);
+    // sun with slow-spinning rays
+    ctx.strokeStyle = '#fde047';
+    ctx.lineWidth = 1.2;
+    for (let i = 0; i < 6; i++) {
+      const a = (t / 2400) + (i * Math.PI / 3);
+      ctx.beginPath();
+      ctx.moveTo(x + 7 + Math.cos(a) * 4.4, y + 6 + Math.sin(a) * 4.4);
+      ctx.lineTo(x + 7 + Math.cos(a) * 6.4, y + 6 + Math.sin(a) * 6.4);
+      ctx.stroke();
+    }
+    ctx.fillStyle = '#fde047';
+    ctx.beginPath(); ctx.arc(x + 7, y + 6, 3.4, 0, Math.PI * 2); ctx.fill();
+    // drifting cloud
+    const cloudX = x + ((t / 90) % (w + 18)) - 9;
+    ctx.fillStyle = 'rgba(255,255,255,.92)';
+    ctx.beginPath();
+    ctx.ellipse(cloudX, y + 6, 5, 2.4, 0, 0, Math.PI * 2);
+    ctx.ellipse(cloudX + 3.4, y + 7.4, 3.6, 1.9, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.font = 'bold 8px system-ui';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#fff';
+    ctx.fillText('24°', x + w - 13, y + h - 2.5);
+  } else if (channelId === 'cartoon') {
+    ctx.fillStyle = '#0f172a'; ctx.fillRect(x, y, w, h);
+    // starfield (fixed pseudo-random dots)
+    ctx.fillStyle = '#e2e8f0';
+    for (let i = 0; i < 9; i++) {
+      const px = x + ((i * 37) % 28) + 1, py = y + ((i * 23) % 15) + 1;
+      ctx.fillRect(px, py, 1, 1);
+    }
+    // Captain Comet streaks across, looping
+    const kx = x + ((t / 26) % (w + 16)) - 8;
+    const ky = cy + Math.sin(t / 300) * 3;
+    const grad = ctx.createLinearGradient(kx - 9, ky, kx, ky);
+    grad.addColorStop(0, 'rgba(255,210,63,0)');
+    grad.addColorStop(1, 'rgba(255,210,63,.85)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(kx - 9, ky - 1, 9, 2);
+    ctx.fillStyle = '#ffd23f';
+    ctx.beginPath(); ctx.arc(kx, ky, 2.6, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#e5639e';
+    ctx.beginPath(); ctx.arc(x + w - 5, y + h - 4, 3, 0, Math.PI * 2); ctx.fill();
+  } else { // static
+    ctx.fillStyle = '#111'; ctx.fillRect(x, y, w, h);
+    for (let i = 0; i < 46; i++) {
+      const g = Math.floor(Math.random() * 200) + 30;
+      ctx.fillStyle = `rgb(${g},${g},${g})`;
+      ctx.fillRect(x + Math.random() * w, y + Math.random() * h, 1.6, 1.6);
+    }
+  }
+}
+
 function draw() {
   requestAnimationFrame(draw);
   if (!mapDef) return;
@@ -536,18 +717,46 @@ function draw() {
     }
   }
 
-  // studio furniture (Phase 4): simple colored iso blocks with the
-  // item's icon glyph — drawn from the server's placed-furniture list
-  // for THIS scene (studio instance) only.
-  for (const f of sceneFurniture) {
+  // studio furniture (Phase 4 + 8): colored iso blocks with the
+  // item's icon glyph — drawn from the server's placed-furniture
+  // list for THIS scene (studio instance) only. Phase 8: rugs draw
+  // FIRST and flat (they're floor decor — under furniture and feet),
+  // TVs get a live screen (see drawTvScreen), and a playing radio
+  // floats music notes.
+  const furnSorted = [...sceneFurniture].sort((a, b) => (a.type === 'rug' ? 0 : 1) - (b.type === 'rug' ? 0 : 1));
+  for (const f of furnSorted) {
     const TS3 = mapDef.tileSize;
     const [fx, fy] = proj((f.x + 0.5) * TS3, (f.y + 0.5) * TS3);
     ctx.save();
-    if (f.rot) { /* rotation is data in v1; glyph orientation is fixed */ }
+    if (f.type === 'rug') {
+      diamond(fx, fy, TS3 * ZOOM * 0.98, TS3 * ZOOM * 0.49, f.color || '#888');
+      diamond(fx, fy, TS3 * ZOOM * 0.6, TS3 * ZOOM * 0.3, f.accent || '#555');
+      ctx.restore();
+      continue;
+    }
+    if (f.type === 'tv') {
+      drawTelevision(f, fx, fy);
+      ctx.restore();
+      continue;
+    }
     diamond(fx, fy - 3, TS3 * ZOOM * 0.92, TS3 * ZOOM * 0.46, f.color || '#888');
     ctx.font = '15px system-ui';
     ctx.textAlign = 'center';
     ctx.fillText(f.icon || '📦', fx, fy - 2);
+    if (f.type === 'radio') {
+      const dev = sceneDevices[f.instanceId];
+      if (dev && dev.playing) {
+        const nowR = Date.now();
+        ctx.font = '11px system-ui';
+        ctx.fillStyle = '#ffd23f';
+        for (let i = 0; i < 2; i++) {
+          const ph = ((nowR / 1400) + i * 0.5 + (f.instanceId % 5) * 0.17) % 1;
+          ctx.globalAlpha = 0.85 * (1 - ph * 0.5);
+          ctx.fillText(i ? '♫' : '♪', fx + Math.sin(ph * 5 + f.instanceId) * 6, fy - 16 - ph * 20);
+        }
+        ctx.globalAlpha = 1;
+      }
+    }
     ctx.restore();
   }
 
