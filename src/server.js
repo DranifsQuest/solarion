@@ -193,7 +193,7 @@ app.get('/health', (req, res) => {
   res.json({
     ok: true,
     game: 'solarion',
-    phase: 6,
+    phase: 7,
     version: require('../package.json').version,
     uptime_s: Math.floor((Date.now() - startedAt) / 1000),
     players_online: total,
@@ -291,6 +291,15 @@ wss.on('connection', (ws, req) => {
         break;
       case 'chat':
         game.handleChat(p, msg.text);
+        break;
+      case 'interact':
+        // Phase B sitting. Poker seats are managed by the casino
+        // panel — a poker-seated player stands from there, not here.
+        if (casino.isSeated(p.userId)) {
+          game.send(p, { type: 'notice', text: 'Use Stand / Cash out in the casino panel to leave the poker table.' });
+        } else {
+          game.handleInteract(p);
+        }
         break;
       case 'enter-studio':
       case 'leave-studio':

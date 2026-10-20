@@ -12,7 +12,7 @@
  * The daily +100z login bonus is claimed atomically in the DB (see db.js).
  */
 
-const { MAPS, collides, gatewayAt } = require('./maps');
+const { MAPS, TILE, collides, gatewayAt, doorAt } = require('./maps');
 const { q } = require('./db');
 // NOTE: studio is required lazily inside methods (not at the top) to
 // keep the require graph acyclic: studio.js requires maps.js only,
@@ -30,6 +30,9 @@ const CHAT_WINDOW_MS = 10e3;    // ... per window
 const CHAT_MAX_LEN = 240;
 const CHAT_HISTORY = 40;        // messages kept per map for joiners
 const POSITION_SAVE_MS = 15e3;  // periodic crash-safe position flush
+const TRANSFER_MS = 3000;       // Phase B: fixed load-screen window on every scene transfer
+const SIT_RADIUS = 52;          // px: how close to a seat `interact` must be
+const FURN_ROT_DIRS = ['down', 'left', 'up', 'right']; // studio furniture rot -> facing
 
 /** Server-local calendar day, YYYY-MM-DD (daily-bonus day boundary). */
 function localDay(now = new Date()) {
@@ -150,6 +153,8 @@ class Game {
       keys: {},
       chatTimes: [],
       lastGatewayAt: 0,
+      transferUntil: 0,   // Phase B: movement locked until this epoch-ms (load screen)
+      seated: null,       // Phase B: { id, dir, kind } while sitting, else null
       performing: false,
       returnTo: null,   // Phase 4: public map/pos to return to from a studio
     };
@@ -217,7 +222,9 @@ class Game {
       name: p.name,
       x: Math.round(p.x * 10) / 10,
       y: Math.round(p.y * 10) / 10,
-      dir: p.dir,
+      // While seated the avatar faces the seat's way and snapshots say so.
+      dir: p.seated ? p.seated.dir : p.dir,
+      seated: Boolean(p.seated),
       gender: p.gender,
       face: p.face,
       eyes: p.eyes,
@@ -303,15 +310,28 @@ class Game {
 
   tick() {
     const dt = 1 / TICK_HZ;
+    const now = Date.now();
     for (const p of this.players.values()) {
       const map = this.sceneFor(p.mapId);
       if (!map) continue;
+      // Phase B transfer lock: while the load screen is up the server
+      // holds the player exactly where the transfer placed them —
+      // movement input is ignored until the window ends.
+      if (p.transferUntil && now < p.transferUntil) continue;
       let dx = 0, dy = 0;
       if (p.keys.left) dx -= 1;
       if (p.keys.right) dx += 1;
       if (p.keys.up) dy -= 1;
       if (p.keys.down) dy += 1;
       if (dx === 0 && dy === 0) continue;
+      // Phase B sitting: any movement input stands you up (and is
+      // consumed — you don't slide off the chair in the same tick).
+      if (p.seated) {
+        p.seated = null;
+        p.keys = {};
+        this.send(p, { type: 'sit-state', seated: false });
+        continue;
+      }
       const len = Math.hypot(dx, dy);
       dx = (dx / len) * SPEED * dt;
       dy = (dy / len) * SPEED * dt;
@@ -325,25 +345,41 @@ class Game {
       if (Math.abs(dx) > Math.abs(dy)) p.dir = dx > 0 ? 'right' : 'left';
       else p.dir = dy > 0 ? 'down' : 'up';
 
-      this.checkGateway(p);
+      this.checkPortals(p);
     }
   }
 
-  checkGateway(p) {
+  /**
+   * Portal check after movement (also called by the test-only
+   * debug-teleport hook): gateway arches (hub<->cities) and doors
+   * (interior sub-areas) both trigger a full scene transfer — 3s
+   * load screen, input locked (see switchScene / TRANSFER_MS).
+   */
+  checkPortals(p) {
     const map = this.sceneFor(p.mapId);
     if (!map) return;
     const gw = gatewayAt(map, p.x, p.y);
-    if (!gw) return;
+    const dr = gw ? null : doorAt(map, p.x, p.y);
+    if (!gw && !dr) return;
     // Debounce so a player standing on a spot can't bounce between maps.
     if (Date.now() - p.lastGatewayAt < 1500) return;
-    const target = MAPS[gw.target];
-    if (!target) {
-      p.lastGatewayAt = Date.now();
-      this.send(p, { type: 'notice', text: `${gw.label} isn't open yet — coming in a later phase.` });
+    if (gw) {
+      const target = MAPS[gw.target];
+      if (!target) {
+        p.lastGatewayAt = Date.now();
+        this.send(p, { type: 'notice', text: `${gw.label} isn't open yet — coming in a later phase.` });
+        return;
+      }
+      this.switchMap(p, target);
       return;
     }
-    this.switchMap(p, target);
+    const target = MAPS[dr.target];
+    if (!target) return;
+    this.switchScene(p, target, { spawn: dr.targetSpawn || target.spawn });
   }
+
+  // Back-compat alias (older callers/tests used the gateway name).
+  checkGateway(p) { this.checkPortals(p); }
 
   switchMap(p, target) {
     this.switchScene(p, target);
@@ -357,6 +393,12 @@ class Game {
   switchScene(p, scene, opts = {}) {
     p.lastGatewayAt = Date.now();
     p.performing = false; // never carry a performance across scenes
+    p.seated = null;      // ... or a chair
+    // Phase B: EVERY scene transfer runs the fixed load-screen window.
+    // The server places the player immediately and locks movement for
+    // TRANSFER_MS; the client lifts its screen only after the window
+    // AND the new scene's first snapshot, so nobody pops in.
+    p.transferUntil = Date.now() + TRANSFER_MS;
     if (this.onPlayerGone) this.onPlayerGone(p.userId);
     p.mapId = scene.id;
     const spawn = opts.spawn || scene.spawn;
@@ -372,10 +414,79 @@ class Game {
       players: this.playersInMap(scene.id),
       chat: this.historyFor(scene.id),
       you: this.publicPlayer(p),
+      transferMs: TRANSFER_MS,
       ...(opts.extra || {}),
     });
     if (this.onMapEntered) this.onMapEntered(p);
   }
+
+  // ---------------------------------------------------------- sitting
+
+  /**
+   * All sittable spots in the player's current scene: the map's
+   * static seats (benches/chairs/sofas/café seats baked into the map
+   * data) plus, inside a studio, any placed furniture whose catalog
+   * type is 'seating' (cozy chairs, cloud couches).
+   */
+  seatsInScene(p) {
+    const out = [];
+    const map = this.sceneFor(p.mapId);
+    if (map && map.seats) out.push(...map.seats);
+    const st = studioOf(p.mapId);
+    if (st) {
+      const { getPlaced } = require('./studio');
+      for (const f of getPlaced(st.ownerId)) {
+        if (f.type !== 'seating') continue;
+        out.push({
+          id: `furn:${f.instanceId}`,
+          x: f.x * TILE + TILE / 2,
+          y: f.y * TILE + TILE / 2,
+          dir: FURN_ROT_DIRS[f.rot || 0] || 'down',
+          kind: f.itemId,
+        });
+      }
+    }
+    return out;
+  }
+
+  /**
+   * `interact` (E key / Sit button): toggle sitting. Standing next to
+   * a free seat sits you on it (snapped into place, facing the seat's
+   * way); interacting again stands. Movement input also stands (see
+   * tick). Chat works seated — nothing here touches chat.
+   */
+  handleInteract(p) {
+    if (p.transferUntil && Date.now() < p.transferUntil) return;
+    if (p.seated) {
+      p.seated = null;
+      this.send(p, { type: 'sit-state', seated: false });
+      return;
+    }
+    const taken = new Set();
+    for (const q2 of this.players.values()) {
+      if (q2 !== p && q2.mapId === p.mapId && q2.seated) taken.add(q2.seated.id);
+    }
+    const near = this.seatsInScene(p)
+      .map(s => ({ s, d: Math.hypot(s.x - p.x, s.y - p.y) }))
+      .filter(e => e.d <= SIT_RADIUS)
+      .sort((a, b) => a.d - b.d);
+    if (!near.length) {
+      this.send(p, { type: 'notice', text: 'Nothing to sit on here — walk up to a chair, bench, sofa or café table.' });
+      return;
+    }
+    const free = near.find(e => !taken.has(e.s.id));
+    if (!free) {
+      this.send(p, { type: 'notice', text: 'That seat is taken.' });
+      return;
+    }
+    const s = free.s;
+    p.x = s.x;
+    p.y = s.y;
+    p.keys = {};
+    p.seated = { id: s.id, dir: s.dir, kind: s.kind };
+    this.savePosition(p);
+    this.send(p, { type: 'sit-state', seated: true });
+  }
 }
 
-module.exports = { Game, localDay, PLAYER_RADIUS, SPEED, CHAT_LIMIT };
+module.exports = { Game, localDay, PLAYER_RADIUS, SPEED, CHAT_LIMIT, TRANSFER_MS };

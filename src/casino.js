@@ -141,6 +141,7 @@ const TURN_SECS = 25;
 const START_COUNTDOWN_SECS = 6;
 const SHOWDOWN_SECS = 6;
 const SIT_RADIUS = 170;       // px from table centre: must be this close to sit/act
+const CHAIR_FACE = { N: 'down', E: 'left', S: 'up', W: 'right' }; // chair side -> facing (toward the table)
 
 class PokerTable {
   constructor(game, casino, def) {
@@ -286,7 +287,10 @@ class PokerTable {
     this.persistSeat(seat);
     // Snap the avatar into the chair; movement is locked while seated
     // (server drops input for seated players) until they stand.
+    // Phase B: a poker chair is also a SITTING seat — the snapshot
+    // seated pose faces the table (chair N sits north, faces south).
     p.x = this.chairs[i].x; p.y = this.chairs[i].y; p.keys = {};
+    p.seated = { id: `poker:${this.id}:${dir}`, dir: CHAIR_FACE[dir], kind: 'poker' };
     this.game.savePosition(p);
     this.game.send(p, { type: 'zcoins', zcoins: this.zcoinsOf(p.userId) });
     this.game.send(p, { type: 'notice', text: `You sit at the ${dir} chair with ${buyin}z in chips.` });
@@ -302,6 +306,10 @@ class PokerTable {
     if (seat.inHand && !seat.folded) seat.folded = true;
     const refund = seat.chips;
     this.chairs[idx].seat = null;
+    if (p && p.seated && p.seated.kind === 'poker') {
+      p.seated = null;
+      if (!silent) this.game.send(p, { type: 'sit-state', seated: false });
+    }
     try {
       db.exec('BEGIN IMMEDIATE');
       CQ.addZ.run(refund, seat.userId);
@@ -793,7 +801,7 @@ const TICK_MS = 500;
 class CasinoSystem {
   constructor(game) {
     this.game = game;
-    this.mapId = 'solstice-bay';
+    this.mapId = 'casino-lounge';
     this.tables = new Map();   // id -> PokerTable
     this.slots = [];           // slot machine defs from the map casino def
     this.slotCd = new Map();   // userId -> timestamp (spin cooldown)
@@ -943,6 +951,8 @@ class CasinoSystem {
    * phantom seats — committed pot chips stay in the pot by design.
    */
   handlePlayerGone(userId) {
+    const gp = this.game.getPlayer(userId);
+    if (gp && gp.seated && gp.seated.kind === 'poker') gp.seated = null;
     for (const t of this.tables.values()) {
       const found = t.findSeat(userId);
       if (!found) continue;
