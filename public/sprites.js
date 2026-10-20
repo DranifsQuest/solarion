@@ -488,6 +488,79 @@ const SIDE_LEGS = [
   '.....OOOOO..........',
 ];
 
+// Seated legs (Phase B — sitting). Front/back view: thighs reach
+// forward (wide row), knees bend, shins drop, shoes land apart in
+// front. Keyed by bottom style; both genders share the shapes (the
+// torso/head carry the gender read, as with SIDE_LEGS).
+const SEATED_LEGS = {
+  pants: [
+    '....PPPPPPPPPPPP....',
+    '...PPPPPPPPPPPPPP...',
+    '...PPPPP....PPPPP...',
+    '...PPPP......PPPP...',
+    '...PPP........PPP...',
+    '..OOOO........OOOO..',
+  ],
+  jeans: [
+    '....PPPPPPPPPPPP....',
+    '...PPPPPPPPPPPPPP...',
+    '...PPdPP....PPdPP...',
+    '...PPPP......PPPP...',
+    '...dddd......dddd...',
+    '..OOOO........OOOO..',
+  ],
+  cargo: [
+    '....PPPPPPPPPPPP....',
+    '...PPPPPPPPPPPPPP...',
+    '...ddPPP....PPPdd...',
+    '...PPPP......PPPP...',
+    '...PPP........PPP...',
+    '..OOOO........OOOO..',
+  ],
+  joggers: [
+    '....PPPPPPPPPPPP....',
+    '...PPPPPPPPPPPPPP...',
+    '...PPPPP....PPPPP...',
+    '...PPPP......PPPP...',
+    '...dddd......dddd...',
+    '..OOOO........OOOO..',
+  ],
+  leggings: [
+    '....PPPPPPPPPPPP....',
+    '...PPPPPPPPPPPPPP...',
+    '....PPPP....PPPP....',
+    '....PPP......PPP....',
+    '....PPP......PPP....',
+    '..OOOO........OOOO..',
+  ],
+  shorts: [
+    '....PPPPPPPPPPPP....',
+    '...PPPPPPPPPPPPPP...',
+    '...SSSSS....SSSSS...',
+    '...SSSS......SSSS...',
+    '...SSS........SSS...',
+    '..OOOO........OOOO..',
+  ],
+  skirt: [
+    '...PPPPPPPPPPPPPP...',
+    '..PPPPPPPPPPPPPPPP..',
+    '....SSSS....SSSS....',
+    '....SSS......SSS....',
+    '....SSS......SSS....',
+    '..OOOO........OOOO..',
+  ],
+};
+// Seated side view: the sprite faces left, so the thigh reaches
+// LEFT (forward) from the hip and the shin drops at the knee.
+const SEATED_SIDE_LEGS = [
+  '......PPPPPP........',
+  '...PPPPPPPPPP.......',
+  '...PPPP.............',
+  '...PPPP.............',
+  '...PPPP.............',
+  '..OOOOOO............',
+];
+
 // Style detail overlays for the torso, as [col, row, char] stamps.
 const TOP_DETAILS_FRONT = {
   hoodie: [
@@ -599,7 +672,7 @@ function headSpans(gender, face, dir) {
   return prof;
 }
 
-function buildBodyGrid(cfg, dir) {
+function buildBodyGrid(cfg, dir, seated) {
   const grid = Array.from({ length: SPR_H }, () => Array(SPR_W).fill('.'));
   const gender = cfg.gender === 'F' ? 'F' : 'M';
   const topStyle = cfg.top_style || 'tee';
@@ -647,15 +720,22 @@ function buildBodyGrid(cfg, dir) {
   // legs
   let legs;
   if (dir === 'side') {
-    legs = SIDE_LEGS.slice();
+    legs = (seated ? SEATED_SIDE_LEGS : SIDE_LEGS).slice();
     if (bottomStyle === 'shorts' || bottomStyle === 'skirt') {
       legs[3] = legs[3].split('P').join('S');
       legs[4] = legs[4].split('P').join('S');
     }
     if (bottomStyle === 'skirt') {
-      legs[1] = '.....PPPPPPPP.......';
-      legs[2] = '....PPPPPPPPPP......';
+      if (seated) {
+        legs[1] = '..PPPPPPPPPPPP......';
+        legs[2] = '..PPPP..............';
+      } else {
+        legs[1] = '.....PPPPPPPP.......';
+        legs[2] = '....PPPPPPPPPP......';
+      }
     }
+  } else if (seated) {
+    legs = (SEATED_LEGS[bottomStyle] || SEATED_LEGS.pants).slice();
   } else {
     legs = (LEGS[gender][bottomStyle] || LEGS[gender].pants).slice();
   }
@@ -713,12 +793,14 @@ function buildFaceGrid(cfg, grid, dir) {
  */
 const spriteCache = new Map();
 
-function makeSprite(cfg, dir) {
+function makeSprite(cfg, dir, opts) {
   cfg = cfg || {};
+  const seated = Boolean(opts && opts.seated);
   const gender = cfg.gender === 'F' ? 'F' : 'M';
   const key = [dir, gender, cfg.face, cfg.eyes, cfg.eye_color, cfg.nose, cfg.lips,
     cfg.skin_tone, cfg.hair_style, cfg.hair_color, cfg.top_style, cfg.body_color,
-    cfg.bottom_style, cfg.accent_color, cfg.shoe_color, cfg.accessory].join('|');
+    cfg.bottom_style, cfg.accent_color, cfg.shoe_color, cfg.accessory,
+    seated ? 'sit' : 'stand'].join('|');
   let cv = spriteCache.get(key);
   if (cv) return cv;
   cv = document.createElement('canvas');
@@ -726,7 +808,7 @@ function makeSprite(cfg, dir) {
   cv.height = SPR_H * PX;
   const g = cv.getContext('2d');
 
-  const grid = buildBodyGrid(cfg, dir);
+  const grid = buildBodyGrid(cfg, dir, seated);
   buildFaceGrid(cfg, grid, dir);
   const lipTint = grid._lipTint || '#b3543f';
 
@@ -770,7 +852,7 @@ const API = {
   makeSprite, spriteCache, SPR_W, SPR_H, PX,
   FACE_PROFILES, SIDE_BASE, EYE_PATTERNS, NOSE_PATTERNS, LIP_PATTERNS,
   HAIR_DOWN, HAIR_UP, HAIR_SIDE, TORSO_TEMPLATES, TANK_TEMPLATES,
-  SIDE_TORSO, SIDE_TANK, LEGS, SIDE_LEGS, ACCESSORY_COLORS,
+  SIDE_TORSO, SIDE_TANK, LEGS, SIDE_LEGS, SEATED_LEGS, SEATED_SIDE_LEGS, ACCESSORY_COLORS,
 };
 if (typeof window !== 'undefined') window.SolarionSprites = API;
 if (typeof module !== 'undefined' && module.exports) module.exports = API;

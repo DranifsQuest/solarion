@@ -84,7 +84,7 @@ html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; ba
   transition: opacity .3s; pointer-events: none; }
 #toast.show { opacity: 1; }
 
-#loadScreen { position: absolute; inset: 0; background: rgba(8,10,18,.88); z-index: 30;
+#loadScreen { position: absolute; inset: 0; background: #080a12; z-index: 30;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; }
 #loadScreen .spin { width: 44px; height: 44px; border-radius: 50%;
   border: 5px solid #33415c; border-top-color: #ffd23f; animation: sp 0.8s linear infinite; }

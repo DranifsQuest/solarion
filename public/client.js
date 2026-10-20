@@ -140,6 +140,42 @@ function showGame() {
   resize();
 }
 
+// ------------------------------------------------------------------ transfers
+// Phase B: EVERY scene transfer runs a fixed ~3s load screen. The
+// server switches the scene immediately and locks movement for the
+// same window (transferMs in the map message); the client applies
+// the new map at once (hidden behind the screen) and only lifts the
+// screen when BOTH the window has elapsed AND the new scene's first
+// full snapshot has arrived — the player appears already placed.
+let transfer = null; // { startedAt, ms, snapshotSeen }
+
+function beginTransfer(m) {
+  transfer = { startedAt: performance.now(), ms: m.transferMs || 3000, snapshotSeen: false };
+  keys = { up: false, down: false, left: false, right: false };
+  lastSentKeys = JSON.stringify(keys);
+  send({ type: 'input', keys });
+  $('loadText').textContent = `Traveling to ${m.map.name}…`;
+  $('loadScreen').classList.remove('hidden');
+  sceneFurniture = m.furniture || (m.studio && m.studio.furniture) || [];
+  setMap(m.map, m.you, m.chat || []);
+  players = m.players;
+  chatLine(`<span class="sys">You arrived in ${esc(m.map.name)}.</span>`);
+  // Fallback: never trap the player behind the screen if snapshots stall.
+  const mine = transfer;
+  setTimeout(() => { if (transfer === mine) finishTransfer(); }, transfer.ms + 5000);
+}
+
+function finishTransfer() {
+  transfer = null;
+  $('loadScreen').classList.add('hidden');
+}
+
+setInterval(() => {
+  if (transfer && transfer.snapshotSeen && performance.now() - transfer.startedAt >= transfer.ms) {
+    finishTransfer();
+  }
+}, 100);
+
 function setMap(m, you, chat) {
   mapDef = m;
   $('mapName').textContent = m.name;
@@ -173,6 +209,7 @@ function handle(m) {
     }
     case 'snapshot': {
       players = m.players;
+      if (transfer) transfer.snapshotSeen = true;
       for (const p of players) {
         if (!renderPos.has(p.id)) renderPos.set(p.id, { x: p.x, y: p.y, moving: false });
       }
@@ -181,15 +218,11 @@ function handle(m) {
       break;
     }
     case 'map': {
-      $('loadText').textContent = `Traveling to ${m.map.name}…`;
-      $('loadScreen').classList.remove('hidden');
-      sceneFurniture = m.furniture || (m.studio && m.studio.furniture) || [];
-      setTimeout(() => {
-        setMap(m.map, m.you, m.chat || []);
-        players = m.players;
-        chatLine(`<span class="sys">You arrived in ${esc(m.map.name)}.</span>`);
-        $('loadScreen').classList.add('hidden');
-      }, 650);
+      beginTransfer(m);
+      break;
+    }
+    case 'sit-state': {
+      $('sitBtn').textContent = m.seated ? '🧍 Stand' : '🪑 Sit';
       break;
     }
     case 'studio-furniture': {
@@ -226,6 +259,8 @@ const KEYMAP = {
 };
 addEventListener('keydown', (e) => {
   if (document.activeElement === $('chatInput')) return;
+  if (transfer) return; // input locked behind the load screen
+  if (e.code === 'KeyE') { send({ type: 'interact' }); return; }
   const k = KEYMAP[e.code];
   if (k) { keys[k] = true; e.preventDefault(); }
 });
@@ -234,9 +269,12 @@ addEventListener('keyup', (e) => {
   if (k) keys[k] = false;
 });
 setInterval(() => {
+  if (transfer) return; // input locked during transfer
   const s = JSON.stringify(keys);
   if (s !== lastSentKeys) { lastSentKeys = s; send({ type: 'input', keys }); }
 }, 50);
+
+$('sitBtn').onclick = () => { if (!transfer) send({ type: 'interact' }); };
 
 $('chatForm').addEventListener('submit', (e) => {
   e.preventDefault();
@@ -251,6 +289,7 @@ $('chatForm').addEventListener('submit', (e) => {
   const joy = $('joystick'), stick = $('stick');
   let active = false;
   const setFromEvent = (e) => {
+    if (transfer) return; // input locked behind the load screen
     const r = joy.getBoundingClientRect();
     const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
     const t = e.touches[0];
@@ -441,11 +480,7 @@ function draw() {
       ctx.font = '13px system-ui'; ctx.textAlign = 'center';
       ctx.fillText('♠ ♥ ♦ ♣', tx2, ty2 + 3);
     }
-    const [dx2, dy2] = proj(cz.doorway.x + cz.doorway.w / 2, cz.doorway.y + cz.doorway.h / 2);
-    ctx.font = 'bold 13px system-ui'; ctx.textAlign = 'center';
-    ctx.fillStyle = '#ffd23f'; ctx.strokeStyle = 'rgba(0,0,0,.8)'; ctx.lineWidth = 3;
-    ctx.strokeText('🎰 ' + cz.label, dx2, dy2 - 26);
-    ctx.fillText('🎰 ' + cz.label, dx2, dy2 - 26);
+    // (the way out is drawn by the generic doors pass below)
     // tell the casino panel whether we're inside the lounge
     if (window.SolarionCasino && myRp) window.SolarionCasino.updatePresence(myRp.x, myRp.y, mapDef);
   }
@@ -465,6 +500,29 @@ function draw() {
     ctx.restore();
   }
 
+  // sittable furniture (Phase B): benches, chairs, sofas, café
+  // tables baked into the map data. The avatar sprite carries the
+  // seated pose; these props are what everyone sees them sit ON.
+  for (const s of mapDef.seats || []) {
+    const [sx3, sy3] = proj(s.x, s.y);
+    if (s.kind === 'bench') {
+      diamond(sx3, sy3, 30, 10, '#8a5a2b');
+      diamond(sx3, sy3 - 5, 30, 6, '#a5713a');
+    } else if (s.kind === 'sofa') {
+      diamond(sx3, sy3, 34, 13, '#7a3b4f');
+      diamond(sx3, sy3 - 5, 34, 9, '#93536b');
+    } else if (s.kind === 'cafe') {
+      diamond(sx3, sy3, 11, 5.5, '#6e4a26'); // the chair
+      const off = { down: [0, 15], up: [0, -15], left: [-17, 7], right: [17, 7] }[s.dir] || [0, 15];
+      ctx.beginPath(); ctx.ellipse(sx3 + off[0], sy3 + off[1], 11, 5.5, 0, 0, Math.PI * 2);
+      ctx.fillStyle = '#e8e4da'; ctx.fill();
+      ctx.strokeStyle = '#8a5a2b'; ctx.lineWidth = 1; ctx.stroke();
+    } else { // chair
+      diamond(sx3, sy3, 12, 6, '#6e4a26');
+      diamond(sx3, sy3 - 4, 12, 5, '#8a5a2b');
+    }
+  }
+
   // gateway pads
   for (const g of mapDef.gateways) {
     const [cx, cy] = proj(g.x + g.w / 2, g.y + g.h / 2);
@@ -479,6 +537,24 @@ function draw() {
     const label = g.label + (g.active ? '' : ' (soon)');
     ctx.strokeText(label, cx, cy - g.w * ZOOM * 0.36 - 6);
     ctx.fillText(label, cx, cy - g.w * ZOOM * 0.36 - 6);
+  }
+
+  // doors (Phase B): interior sub-areas — the Casino Lounge door in
+  // Solstice Bay, the Gateway Café, and the doors back out of both.
+  for (const d of mapDef.doors || []) {
+    const [cx, cy] = proj(d.x + d.w / 2, d.y + d.h / 2);
+    const hw2 = Math.max(d.w, 32) * ZOOM * 0.62;
+    diamond(cx, cy, hw2, hw2 * 0.5, '#8a5a2b');
+    diamond(cx, cy - 2, hw2 * 0.78, hw2 * 0.39, '#c89b62');
+    ctx.font = 'bold 13px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#fff8ec';
+    ctx.fillText('🚪', cx, cy + 3);
+    ctx.fillStyle = '#fff';
+    ctx.strokeStyle = 'rgba(0,0,0,.7)';
+    ctx.lineWidth = 3;
+    ctx.strokeText(d.label, cx, cy - hw2 * 0.5 - 8);
+    ctx.fillText(d.label, cx, cy - hw2 * 0.5 - 8);
   }
 
   // entities, depth-sorted by x+y
@@ -498,11 +574,12 @@ function draw() {
 
     const dirKey = p.dir === 'up' ? 'up' : p.dir === 'down' ? 'down' : 'side';
     // Phase 6: the snapshot player IS the full appearance object —
-    // pass it straight to the sprite renderer.
-    const spr = Sprites.makeSprite(p, dirKey);
+    // pass it straight to the sprite renderer. Phase B: seated
+    // players get the seated leg variant and sit a touch lower.
+    const spr = Sprites.makeSprite(p, dirKey, p.seated ? { seated: true } : undefined);
     const sw = spr.width, sh = spr.height;
     ctx.save();
-    ctx.translate(sx, sy - bob);
+    ctx.translate(sx, sy - bob + (p.seated ? 3 : 0));
     if (p.dir === 'right') ctx.scale(-1, 1); // side sprite faces left natively; flip for right
     ctx.drawImage(spr, -sw / 2, -sh + 4);
     ctx.restore();
