@@ -258,7 +258,10 @@ const KEYMAP = {
   ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right',
 };
 addEventListener('keydown', (e) => {
-  if (document.activeElement === $('chatInput')) return;
+  // Typing into ANY text-entry element (login/register, creation
+  // name, chat, raise amount, selects…) is never game input: don't
+  // swallow the keystroke, don't move, don't interact. (Phase B fix)
+  if (window.SolarionInput && window.SolarionInput.isTextEntryTarget(e.target)) return;
   if (transfer) return; // input locked behind the load screen
   if (e.code === 'KeyE') { send({ type: 'interact' }); return; }
   const k = KEYMAP[e.code];
