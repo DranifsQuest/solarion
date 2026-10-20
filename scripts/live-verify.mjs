@@ -476,7 +476,7 @@ async function main() {
   // ---- hookah lounge: a fresh visitor C puffs 5z x10, turns hippy
   // for a REAL 20 seconds (server-broadcast override), then reverts.
   try {
-    const NAME_C = NAME_A.replace('vera', 'carl');
+    const NAME_C = NAME_A.slice(0, -1) + 'c'; // vfy<sfx>a -> vfy<sfx>c (A/B end a/b)
     const rc = await api('/api/register', { username: NAME_C, password: PW });
     if (rc.status !== 200 || !rc.json.token) throw new Error(`register C -> ${rc.status}`);
     const cc = await api('/api/create-character', { token: rc.json.token, name: NAME_C, gender: 'M', accessory: 'cap', body_color: '#39b06e' });
