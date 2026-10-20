@@ -68,7 +68,7 @@ function selfPos(client) {
 }
 
 /** Closed-loop steering toward (tx,ty); stops early when stopWhen() is truthy. */
-async function walkTo(client, tx, ty, { timeout = 40000, arrive = 14, stopWhen = null } = {}) {
+async function walkTo(client, tx, ty, { timeout = 40000, arrive = 14, stopWhen = null, deadband = 6, strafeMs = 650 } = {}) {
   const start = Date.now();
   let lastPos = null, lastMove = Date.now(), strafeUntil = 0, strafeDir = 1, strafeAxis = 'right';
   while (Date.now() - start < timeout) {
@@ -82,15 +82,15 @@ async function walkTo(client, tx, ty, { timeout = 40000, arrive = 14, stopWhen =
     const keys = {};
     if (Date.now() < strafeUntil) { keys[strafeAxis] = true; }
     else {
-      if (dx > 6) keys.right = true; else if (dx < -6) keys.left = true;
-      if (dy > 6) keys.down = true; else if (dy < -6) keys.up = true;
+      if (dx > deadband) keys.right = true; else if (dx < -deadband) keys.left = true;
+      if (dy > deadband) keys.down = true; else if (dy < -deadband) keys.up = true;
       if (Date.now() - lastMove > 1600) {
         // Stuck: strafe PERPENDICULAR to the dominant remaining delta —
         // sliding along a wall face is what finds gaps like doorways.
         strafeAxis = Math.abs(dx) >= Math.abs(dy)
           ? (strafeDir > 0 ? 'down' : 'up')
           : (strafeDir > 0 ? 'right' : 'left');
-        strafeUntil = Date.now() + 650; strafeDir *= -1; lastMove = Date.now();
+        strafeUntil = Date.now() + strafeMs; strafeDir *= -1; lastMove = Date.now();
       }
     }
     client.send({ type: 'input', keys });
@@ -276,7 +276,7 @@ async function main() {
   try {
     // A: bay -> casino doorway -> slot 1 standing spot
     await walkTo(A.client, 430, 496);
-    await walkTo(A.client, 360, 496, { timeout: 60000, arrive: 10 });
+    await walkTo(A.client, 368, 496, { timeout: 60000, arrive: 8, deadband: 2, strafeMs: 260 });
     await walkTo(A.client, 144, 560);
     const beforeBal = await balA();
     A.client.msgs.length = 0;
@@ -295,7 +295,7 @@ async function main() {
     const preA = await balA(), preB = await balB();
     await walkTo(A.client, 176, 464);
     await walkTo(B.client, 430, 496);
-    await walkTo(B.client, 360, 496, { timeout: 60000, arrive: 10 });
+    await walkTo(B.client, 368, 496, { timeout: 60000, arrive: 8, deadband: 2, strafeMs: 260 });
     await walkTo(B.client, 176, 464);
     const tbl = (u) => lastOf(u.client, 'poker-state', s => s.id === T1);
     A.client.send({ type: 'poker', action: 'sit', table: T1, chair: 'N' });
