@@ -1,0 +1,17 @@
+name: live-verify
+on:
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+      - name: Run live verification harness against production
+        env:
+          SOLARION_BASE: https://solarion.onrender.com
+        run: node scripts/live-verify.mjs
