@@ -1,7 +1,7 @@
 {
   "name": "solarion",
   "version": "0.1.0",
-  "description": "Solarion — multiplayer browser social game (Phase 7: world expansion — 5x maps, doors, load screen, two casinos, bars, hookah lounge). Re-Launch Studios.",
+  "description": "Solarion — multiplayer browser social game (Phase 8: player homes — 44-item furniture catalog, TVs with fake shows, radios playing loops or the owner's mixes, room invites). Re-Launch Studios.",
   "private": true,
   "license": "UNLICENSED",
   "main": "src/server.js",
@@ -13,6 +13,6 @@
   },
   "scripts": {
     "start": "node src/server.js",
-    "test": "node --test test/test.js test/music.test.js test/casino.test.js test/studios.test.js test/security.test.js test/creation.test.js test/sprites.test.js test/expansion.test.js test/vice.test.js test/input-guard.test.js"
+    "test": "node --test test/test.js test/music.test.js test/casino.test.js test/studios.test.js test/security.test.js test/creation.test.js test/sprites.test.js test/expansion.test.js test/vice.test.js test/input-guard.test.js test/homes.test.js"
   }
 }

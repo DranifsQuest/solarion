@@ -31,6 +31,11 @@
  *   { type: 'studio-buy', itemId }  { type: 'studio-place', instanceItemId, x, y, rot }
  *   { type: 'studio-pickup', instanceItemId }  { type: 'studio-kick', userId }
  *   { type: 'studio-state' }
+ * Phase 8 (player homes) messages:
+ *   { type: 'home-device', instanceId, action, channel?, source? }
+ *       -> room broadcast { type: 'home-device', ownerId, device }
+ *   { type: 'studio-invite', username } -> invitee gets { type: 'studio-invite' }
+ *   { type: 'studio-invite-response', ownerId, accept }
  *
  * Game messages (server -> client):
  *   hello / map / snapshot / chat / notice / bonus / zcoins
@@ -193,7 +198,7 @@ app.get('/health', (req, res) => {
   res.json({
     ok: true,
     game: 'solarion',
-    phase: 7,
+    phase: 8,
     version: require('../package.json').version,
     uptime_s: Math.floor((Date.now() - startedAt) / 1000),
     players_online: total,
@@ -324,6 +329,9 @@ wss.on('connection', (ws, req) => {
       case 'studio-pickup':
       case 'studio-kick':
       case 'studio-state':
+      case 'home-device':
+      case 'studio-invite':
+      case 'studio-invite-response':
         studios.handle(p, msg);
         break;
       case 'avatar-update': {
