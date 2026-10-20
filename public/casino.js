@@ -41,6 +41,9 @@ const Casino = {
       };
     }
     $('slotSpin').onclick = () => this.spin();
+    const drinkBtn = $('drinkBtn');
+    if (drinkBtn) drinkBtn.onclick = () => this.hooks.send({ type: 'buy-drink' });
+    this.el.viceInfo = $('viceInfo');
     $('pokerStand').onclick = () => this.hooks.send({ type: 'poker', action: 'stand' });
     $('pokerRebuy').onclick = () => {
       if (this.mySeat) this.hooks.send({ type: 'poker', action: 'rebuy', table: this.mySeat.tableId });
@@ -161,6 +164,17 @@ const Casino = {
         break;
       case 'slot-result':
         this.animateReels(m);
+        break;
+      case 'vice-state':
+        // Phase B amendment: drink/puff tally for the bar box.
+        if (this.el.viceInfo) {
+          const bits = [];
+          if (m.drinks) bits.push(`🍸 × ${m.drinks}${m.passedOut ? ' — OUT COLD' : ''}`);
+          if (m.puffs) bits.push(`💨 × ${m.puffs}${m.hippy ? ' — 🌈 HIPPY' : ''}`);
+          this.el.viceInfo.textContent = bits.length
+            ? bits.join(' · ')
+            : 'Stand at the bar and order. 10 drinks = lights out!';
+        }
         break;
       default:
         break;

@@ -395,6 +395,20 @@ function draw() {
   ctx.fillStyle = '#0b0e18';
   ctx.fillRect(0, 0, W, H);
 
+  // Phase B amendment — my own vice haze, rendered client-side from
+  // my server-tracked counts: drinks blur the world (progressively),
+  // puffs cycle the hue and saturate (the trip). Fallen = fade out.
+  {
+    const fx = [];
+    if (me && me.drinks > 0) fx.push(`blur(${Math.min(2.4, me.drinks * 0.3).toFixed(2)}px)`);
+    if (me && me.puffs > 0) {
+      fx.push(`hue-rotate(${Math.round((Date.now() / (60 - Math.min(45, me.puffs * 4)) + me.puffs * 40) % 360)}deg)`);
+      fx.push(`saturate(${(1 + me.puffs * 0.14).toFixed(2)})`);
+    }
+    if (me && me.fallen) fx.push('brightness(0.55)');
+    cv.style.filter = fx.join(' ');
+  }
+
   // smooth positions + movement flags
   for (const p of players) {
     const rp = renderPos.get(p.id);
@@ -480,9 +494,43 @@ function draw() {
       ctx.font = '13px system-ui'; ctx.textAlign = 'center';
       ctx.fillText('♠ ♥ ♦ ♣', tx2, ty2 + 3);
     }
+    // Phase B amendment — the bar: counter frontage + the bartender
+    // NPC behind it (a fixed-look layered sprite + name).
+    if (cz.bartender) {
+      const bt = cz.bartender;
+      const [bx, by] = proj(bt.x, bt.y);
+      const bspr = Sprites.makeSprite(bt.look, 'down');
+      ctx.drawImage(bspr, bx - bspr.width / 2, by - bspr.height + 4);
+      ctx.font = 'bold 11px system-ui';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#ffd9a0';
+      ctx.strokeStyle = 'rgba(0,0,0,.65)';
+      ctx.lineWidth = 3;
+      ctx.strokeText(`🍸 ${bt.name}`, bx, by - bspr.height - 4);
+      ctx.fillText(`🍸 ${bt.name}`, bx, by - bspr.height - 4);
+    }
     // (the way out is drawn by the generic doors pass below)
     // tell the casino panel whether we're inside the lounge
     if (window.SolarionCasino && myRp) window.SolarionCasino.updatePresence(myRp.x, myRp.y, mapDef);
+  }
+
+  // hookah stations (Phase B amendment): a brass hookah on a low
+  // table with lazy smoke curls, one per station.
+  for (const h of mapDef.hookahs || []) {
+    const [hx, hy] = proj(h.x, h.y);
+    diamond(hx, hy, 20, 9, '#5d4037');
+    ctx.fillStyle = '#c99700';
+    ctx.beginPath(); ctx.ellipse(hx, hy - 8, 5, 3.4, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillRect(hx - 1, hy - 20, 2, 12);
+    ctx.fillStyle = '#8e24aa';
+    ctx.beginPath(); ctx.arc(hx, hy - 23, 3.4, 0, Math.PI * 2); ctx.fill();
+    for (let i = 0; i < 3; i++) {
+      const ph = ((Date.now() / 1600) + i * 0.37 + (h.x % 5) * 0.11) % 1;
+      ctx.beginPath();
+      ctx.arc(hx + Math.sin(ph * 5 + h.y) * 5, hy - 28 - ph * 22, 2 + ph * 3.4, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(216,196,255,${0.4 * (1 - ph)})`;
+      ctx.fill();
+    }
   }
 
   // studio furniture (Phase 4): simple colored iso blocks with the
@@ -578,10 +626,21 @@ function draw() {
     // players get the seated leg variant and sit a touch lower.
     const spr = Sprites.makeSprite(p, dirKey, p.seated ? { seated: true } : undefined);
     const sw = spr.width, sh = spr.height;
+    // Phase B amendment — drunk sway (render-side mirror of the
+    // server wobble) and the passed-out fallen pose.
+    const sway = (!p.fallen && p.drinks >= 2)
+      ? Math.sin(now / 280 + p.id * 2.1) * Math.min(5, p.drinks * 0.7)
+      : 0;
     ctx.save();
-    ctx.translate(sx, sy - bob + (p.seated ? 3 : 0));
-    if (p.dir === 'right') ctx.scale(-1, 1); // side sprite faces left natively; flip for right
-    ctx.drawImage(spr, -sw / 2, -sh + 4);
+    if (p.fallen) {
+      ctx.translate(sx, sy - 3);
+      ctx.rotate(-1.45); // flat on the floor, visible to everyone
+      ctx.drawImage(spr, -sw / 2, -sh + 8);
+    } else {
+      ctx.translate(sx + sway, sy - bob + (p.seated ? 3 : 0));
+      if (p.dir === 'right') ctx.scale(-1, 1); // side sprite faces left natively; flip for right
+      ctx.drawImage(spr, -sw / 2, -sh + 4);
+    }
     ctx.restore();
 
     // performer holds the mic (soul doc §9.3)
@@ -589,6 +648,26 @@ function draw() {
       ctx.font = '15px system-ui';
       ctx.textAlign = 'center';
       ctx.fillText('🎤', sx + 13, sy - 12 - bob);
+    }
+
+    // Phase B amendment — drink bubbles float up around drinkers
+    // (everyone sees them), and hippies get their peace sign.
+    if (p.drinks > 0 && !p.fallen) {
+      for (let i = 0; i < 3; i++) {
+        const ph = ((now / 950) + i * 0.33 + (p.id % 7) * 0.13) % 1;
+        const bx = sx + Math.sin(ph * 4 + p.id + i * 2) * 9;
+        const by = sy - sh - 2 - ph * 26;
+        ctx.beginPath();
+        ctx.arc(bx, by, 1.8 + ph * 2.6, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(180,220,255,${0.75 * (1 - ph * 0.6)})`;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+    }
+    if (p.hippy) {
+      ctx.font = '14px system-ui';
+      ctx.textAlign = 'center';
+      ctx.fillText('☮️', sx, sy - sh - 20 - bob);
     }
 
     // name
