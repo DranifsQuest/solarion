@@ -39,6 +39,11 @@ class Game {
     this.tickTimer = null;
     this.snapTimer = null;
     this.saveTimer = null;
+    // Optional hook (set by server.js): called when a player disconnects
+    // or changes map, so the stage can dequeue/end their performance.
+    this.onPlayerGone = null;
+    // Optional hook: called right after a player lands in a new map.
+    this.onMapEntered = null;
   }
 
   start() {
@@ -81,6 +86,7 @@ class Game {
       keys: {},
       chatTimes: [],
       lastGatewayAt: 0,
+      performing: false,
     };
     this.players.set(user.id, p);
     return p;
@@ -89,6 +95,8 @@ class Game {
   removePlayer(userId) {
     const p = this.players.get(userId);
     if (!p) return;
+    p.performing = false;
+    if (this.onPlayerGone) this.onPlayerGone(userId);
     this.savePosition(p);
     this.players.delete(userId);
   }
@@ -145,6 +153,7 @@ class Game {
       skin_tone: p.skin_tone,
       hair_style: p.hair_style,
       hair_color: p.hair_color,
+      performing: Boolean(p.performing),
     };
   }
 
@@ -187,6 +196,12 @@ class Game {
     }
     p.chatTimes.push(now);
     const msg = { type: 'chat', from: p.name, fromId: p.userId, text, at: now };
+    // Soul doc §2/§9.4: while performing, the performer's chat is the
+    // room's voice — it broadcasts room-wide in "sing" mode regardless
+    // of anything else. (Phase 1 chat is already per-map; the rate limit
+    // above stays as the abuse guard, and `sing` flags the message so
+    // clients render it as a performance shout.)
+    if (p.performing) msg.sing = true;
     const hist = this.chatHistory.get(p.mapId) || [];
     hist.push({ from: p.name, text, at: now });
     while (hist.length > CHAT_HISTORY) hist.shift();
@@ -244,6 +259,8 @@ class Game {
 
   switchMap(p, target) {
     p.lastGatewayAt = Date.now();
+    p.performing = false; // never carry a performance across maps
+    if (this.onPlayerGone) this.onPlayerGone(p.userId);
     p.mapId = target.id;
     p.x = target.spawn.x;
     p.y = target.spawn.y;
@@ -257,6 +274,7 @@ class Game {
       chat: this.historyFor(target.id),
       you: this.publicPlayer(p),
     });
+    if (this.onMapEntered) this.onMapEntered(p);
   }
 }
 

@@ -47,7 +47,57 @@
     <canvas id="cv"></canvas>
     <div id="hud">
       <div id="coinPill">🪙 <span id="coins">0</span> z</div>
+      <button id="musicBtn" title="Open the mixer">🎵 Mixer</button>
       <div id="mapName"></div>
+    </div>
+    <!-- stage panel (shown only in maps with a stage) -->
+    <div id="stagePanel" class="hidden">
+      <div class="spTitle">🎤 STAGE</div>
+      <div id="queueList"></div>
+      <div class="spRow">
+        <select id="joinMixSel"></select>
+        <button id="stageJoinBtn">Perform</button>
+        <button id="stageLeaveBtn" class="hidden">Leave queue</button>
+      </div>
+    </div>
+    <!-- now playing / voting -->
+    <div id="nowPlaying" class="hidden">
+      <span id="npText"></span>
+      <button id="voteUp">👍</button>
+      <button id="voteDown">👎</button>
+    </div>
+    <div id="perfResult" class="hidden"></div>
+    <!-- mixer panel -->
+    <div id="mixerPanel" class="hidden">
+      <div class="mxHead">
+        <span>🎛️ SOLARION MIXER — five song slots</span>
+        <button id="mixerClose">✕</button>
+      </div>
+      <div id="mixSlots"></div>
+      <div class="mxRow">
+        <input id="mixName" maxlength="40" placeholder="Name your mix…">
+        <label>Tempo <input id="mixBpm" type="range" min="70" max="160" value="112"> <b id="bpmVal">112</b> bpm</label>
+        <label>Length
+          <select id="mixBars">
+            <option value="4">4 bars</option>
+            <option value="8" selected>8 bars</option>
+            <option value="12">12 bars</option>
+            <option value="16">16 bars</option>
+          </select>
+        </label>
+      </div>
+      <div id="editTitle"></div>
+      <div id="mixGrid"></div>
+      <div id="genreRow"></div>
+      <div id="loopBrowser"></div>
+      <div class="mxRow">
+        <button id="mixPlay">▶ Play mix</button>
+        <button id="mixStop">⏹ Stop</button>
+        <button id="mixAddTrackHint">How do I add a loop?</button>
+        <span class="mxSpacer"></span>
+        <button id="mixDelete">🗑 Clear slot</button>
+        <button id="mixSave">💾 Save mix</button>
+      </div>
     </div>
     <div id="bubbles"></div>
     <div id="chatPanel">
@@ -64,5 +114,6 @@
 </div>
 <script src="sprites.js"></script>
 <script src="client.js"></script>
+<script src="mixer.js"></script>
 </body>
 </html>

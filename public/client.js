@@ -132,6 +132,7 @@ function showGame() {
 function setMap(m, you, chat) {
   mapDef = m;
   $('mapName').textContent = m.name;
+  if (window.SolarionMixer) window.SolarionMixer.onMapChanged(m);
   renderPos.clear();
   for (const c of chat || []) chatLine(`<span class="who">${esc(c.from)}:</span> ${esc(c.text)}`);
   if (you) {
@@ -141,6 +142,7 @@ function setMap(m, you, chat) {
 }
 
 function handle(m) {
+  if (window.SolarionMixer) window.SolarionMixer.handle(m);
   switch (m.type) {
     case 'hello': {
       me = { ...m.you };
@@ -174,8 +176,15 @@ function handle(m) {
       break;
     }
     case 'chat': {
-      chatLine(`<span class="who">${esc(m.from)}:</span> ${esc(m.text)}`);
+      chatLine(m.sing
+        ? `<span class="who">🎤 ${esc(m.from)}:</span> <span class="sing">${esc(m.text)}</span>`
+        : `<span class="who">${esc(m.from)}:</span> ${esc(m.text)}`);
       bubbles.set(m.fromId, { text: m.text, until: Date.now() + 5000 });
+      break;
+    }
+    case 'zcoins': {
+      coins = m.zcoins;
+      $('coins').textContent = coins;
       break;
     }
     case 'notice':
@@ -327,6 +336,33 @@ function draw() {
     }
   }
 
+  // stage platform + speakers (speakers pulse while a set is live)
+  if (mapDef.stage) {
+    const st = mapDef.stage;
+    const TS2 = mapDef.tileSize;
+    for (let ty = Math.floor(st.y / TS2); ty < Math.ceil((st.y + st.h) / TS2); ty++) {
+      for (let tx = Math.floor(st.x / TS2); tx < Math.ceil((st.x + st.w) / TS2); tx++) {
+        const [cx2, cy2] = proj((tx + 0.5) * TS2, (ty + 0.5) * TS2);
+        diamond(cx2, cy2 - 5, TS2 * ZOOM, TS2 * ZOOM * 0.5, (tx + ty) % 2 ? '#7a5230' : '#835a34');
+      }
+    }
+    const perf = window.SolarionMixer && window.SolarionMixer.perf;
+    const live = perf && perf.active;
+    const pulse = live ? 1 + Math.abs(Math.sin(Date.now() / 130)) * 0.22 : 1;
+    for (const sp of st.speakers) {
+      const [sx2, sy2] = proj(sp.x, sp.y);
+      ctx.save();
+      ctx.translate(sx2, sy2 - 14);
+      ctx.scale(pulse, pulse);
+      ctx.fillStyle = '#14100c';
+      ctx.fillRect(-11, -16, 22, 32);
+      ctx.fillStyle = live ? '#ffd23f' : '#4a4038';
+      ctx.beginPath(); ctx.arc(0, -6, 6.5, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(0, 8, 4.5, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+  }
+
   // gateway pads
   for (const g of mapDef.gateways) {
     const [cx, cy] = proj(g.x + g.w / 2, g.y + g.h / 2);
@@ -367,6 +403,13 @@ function draw() {
     ctx.drawImage(spr, -sw / 2, -sh + 4);
     ctx.restore();
 
+    // performer holds the mic (soul doc §9.3)
+    if (p.performing) {
+      ctx.font = '15px system-ui';
+      ctx.textAlign = 'center';
+      ctx.fillText('🎤', sx + 13, sy - 12 - bob);
+    }
+
     // name
     ctx.font = 'bold 12px system-ui';
     ctx.textAlign = 'center';
@@ -397,6 +440,17 @@ function draw() {
   ctx.restore();
 }
 requestAnimationFrame(draw);
+
+// wire the Phase 2 mixer/stage module into this client's transport
+if (window.SolarionMixer) {
+  window.SolarionMixer.attach({
+    send,
+    toast,
+    esc,
+    getMe: () => me,
+    getMapDef: () => mapDef,
+  });
+}
 
 // resume an existing session on load
 if (token) {

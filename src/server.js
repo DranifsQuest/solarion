@@ -13,9 +13,19 @@
  *   { type: 'input', keys: { up, down, left, right } }
  *   { type: 'chat', text }
  *   { type: 'debug-teleport', x, y }   (SOLARION_TEST=1 only)
+ * Phase 2 (music/stage) messages:
+ *   { type: 'mix-list' } -> server sends { type: 'mixes', mixes: [...] }
+ *   { type: 'mix-save', slot, name, data } -> { type: 'mix-saved', mix } |
+ *       { type: 'mix-error', error } (followed by a refreshed mix list)
+ *   { type: 'mix-delete', slot }
+ *   { type: 'stage-join', mixId }   (player must be in the stage's map)
+ *   { type: 'stage-leave' }
+ *   { type: 'vote', value: 1 | -1 } (during a performance or the 10s grace)
  *
  * Game messages (server -> client):
- *   hello / map / snapshot / chat / notice / bonus
+ *   hello / map / snapshot / chat / notice / bonus / zcoins
+ *   mixes / mix-saved / mix-error
+ *   stage-queue / performance-start / performance-end / vote-ack
  */
 
 const http = require('http');
@@ -24,9 +34,13 @@ const express = require('express');
 const { WebSocketServer } = require('ws');
 
 const auth = require('./auth');
-const { Game } = require('./game');
+const { Game, localDay } = require('./game');
 const { MAPS, clientMap } = require('./maps');
 const { q } = require('./db');
+const music = require('./music');
+const { StageManager } = require('./stage');
+
+music.init();
 
 const PORT = parseInt(process.env.SOLARION_PORT || process.env.PORT || '3000', 10);
 const TEST_MODE = process.env.SOLARION_TEST === '1';
@@ -37,6 +51,14 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
 
 const game = new Game();
 const startedAt = Date.now();
+
+// Stage per map that has one; performance engine runs on its own timer.
+const stages = new StageManager(game);
+for (const [mapId, map] of Object.entries(MAPS)) {
+  if (map.stage) stages.registerMap(mapId, map.stage);
+}
+game.onPlayerGone = (userId) => stages.handlePlayerGone(userId);
+game.onMapEntered = (p) => stages.syncPlayer(p);
 
 function sendAvatar(res, result) {
   res.json({
@@ -67,13 +89,27 @@ app.post('/api/me', (req, res) => {
   return res.json({ ok: true, avatar: auth.publicAvatar(s.avatar) });
 });
 
+// Public loop catalog for the mixer UI (pattern data the client
+// synthesizes with Web Audio — no audio files exist anywhere).
+app.get('/api/music/loops', (req, res) => {
+  res.json({
+    ok: true,
+    loops: music.LOOPS,
+    bpmMin: music.BPM_MIN,
+    bpmMax: music.BPM_MAX,
+    maxTracks: music.MAX_TRACKS,
+    maxBars: music.MAX_BARS,
+    maxSlots: music.MAX_SLOTS,
+  });
+});
+
 app.get('/health', (req, res) => {
   const counts = game.mapCounts();
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
   res.json({
     ok: true,
     game: 'solarion',
-    phase: 1,
+    phase: 2,
     version: require('../package.json').version,
     uptime_s: Math.floor((Date.now() - startedAt) / 1000),
     players_online: total,
@@ -112,6 +148,8 @@ wss.on('connection', (ws, req) => {
     zcoins: q.avatarByUser.get(session.user.id).zcoins,
     bonusGranted,
   });
+  stages.syncPlayer(p);
+  game.send(p, { type: 'mixes', mixes: music.listMixes(session.user.id) });
 
   ws.on('message', (raw) => {
     let msg;
@@ -124,10 +162,45 @@ wss.on('connection', (ws, req) => {
       case 'chat':
         game.handleChat(p, msg.text);
         break;
+      case 'mix-list':
+        game.send(p, { type: 'mixes', mixes: music.listMixes(p.userId) });
+        break;
+      case 'mix-save': {
+        const r = music.saveMix(p.userId, msg.slot, msg.data);
+        if (!r.ok) {
+          game.send(p, { type: 'mix-error', error: r.error });
+        } else {
+          game.send(p, { type: 'mix-saved', mix: r.mix });
+          game.send(p, { type: 'mixes', mixes: music.listMixes(p.userId) });
+        }
+        break;
+      }
+      case 'mix-delete': {
+        const r = music.deleteMix(p.userId, msg.slot);
+        if (!r.ok) game.send(p, { type: 'mix-error', error: r.error });
+        game.send(p, { type: 'mixes', mixes: music.listMixes(p.userId) });
+        break;
+      }
+      case 'stage-join':
+        stages.handleJoin(p, msg.mixId);
+        break;
+      case 'stage-leave':
+        stages.handleLeave(p);
+        break;
+      case 'vote':
+        stages.handleVote(p, msg.value === -1 ? -1 : 1);
+        break;
       case 'debug-teleport':
         if (TEST_MODE && Number.isFinite(msg.x) && Number.isFinite(msg.y)) {
           p.x = msg.x; p.y = msg.y;
           game.checkGateway(p);
+        }
+        break;
+      case 'debug-seed-perf':
+        // Test-only: seed today's performance-earnings ledger so the
+        // daily-cap branch can be exercised without 70 performances.
+        if (TEST_MODE && Number.isFinite(msg.earned)) {
+          music.setPerfEarned(p.userId, localDay(), msg.earned);
         }
         break;
       default:
@@ -142,9 +215,11 @@ wss.on('connection', (ws, req) => {
 server.listen(PORT, () => {
   console.log(`[solarion] listening on http://localhost:${PORT} (test-mode: ${TEST_MODE})`);
   game.start();
+  stages.start();
 });
 
 function shutdown() {
+  try { stages.stop(); } catch (e) { /* ignore */ }
   try { game.stop(); } catch (e) { /* ignore */ }
   try { server.close(); } catch (e) { /* ignore */ }
   try { wss.close(); } catch (e) { /* ignore */ }

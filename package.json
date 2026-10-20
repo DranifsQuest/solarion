@@ -1,7 +1,7 @@
 {
   "name": "solarion",
   "version": "0.1.0",
-  "description": "Solarion — multiplayer browser social game (Phase 1 foundation). Re-Launch Studios.",
+  "description": "Solarion — multiplayer browser social game (Phase 2: music mixer + stage performances). Re-Launch Studios.",
   "private": true,
   "license": "UNLICENSED",
   "main": "src/server.js",
@@ -13,6 +13,6 @@
   },
   "scripts": {
     "start": "node src/server.js",
-    "test": "node --test test/test.js"
+    "test": "node --test test/test.js test/music.test.js"
   }
 }

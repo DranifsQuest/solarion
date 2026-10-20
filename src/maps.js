@@ -105,6 +105,11 @@ const BAY_TILES = grid([
 ]);
 
 // Water (%) and stalls/trees (#, |) are solid; '.' is walkable sand/boardwalk.
+// The stage (Phase 2) is the room's anchor (soul doc §9.1): a raised
+// platform on the north-center promenade (tiles x13–18, y4–5, facing the
+// audience floor to the south) flanked by two speakers that animate
+// while someone performs. The stage tiles stay walkable — the server
+// walks the performer to centre stage when their set starts.
 const bay = {
   id: 'solstice-bay',
   name: 'Solstice Bay',
@@ -117,6 +122,13 @@ const bay = {
   gateways: [
     { x: 15 * TILE, y: 17 * TILE, w: TILE * 2, h: TILE, target: 'the-gateway', label: 'The Gateway' },
   ],
+  stage: {
+    x: 13 * TILE, y: 4 * TILE, w: 6 * TILE, h: 2 * TILE,
+    speakers: [
+      { x: 12 * TILE + TILE / 2, y: 4 * TILE + TILE / 2 },
+      { x: 19 * TILE + TILE / 2, y: 4 * TILE + TILE / 2 },
+    ],
+  },
 };
 
 const MAPS = {
@@ -179,6 +191,10 @@ function clientMap(map) {
       x: g.x, y: g.y, w: g.w, h: g.h, label: g.label,
       active: Boolean(MAPS[g.target]),
     })),
+    stage: map.stage ? {
+      x: map.stage.x, y: map.stage.y, w: map.stage.w, h: map.stage.h,
+      speakers: map.stage.speakers.map(s => ({ x: s.x, y: s.y })),
+    } : null,
   };
 }
 
