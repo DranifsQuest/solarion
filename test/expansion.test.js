@@ -321,7 +321,8 @@ test('sitting: snapshot pose, chat seated, occupancy, stand both ways', { timeou
   b.client.send({ type: 'interact' });
   await waitFor(() => b.client.msgs.some(m => m.type === 'notice' && /seat is taken/.test(m.text)),
     5000, 'occupied seat refused');
-  assert.equal(selfIn(b.client, b.id).seated, false, 'second sitter stayed standing');
+  const bSnap = await waitFor(() => selfIn(b.client, b.id), 5000, 'snapshot of the second sitter');
+  assert.equal(bSnap.seated, false, 'second sitter stayed standing');
 
   // Re-interact stands.
   a.client.send({ type: 'interact' });
