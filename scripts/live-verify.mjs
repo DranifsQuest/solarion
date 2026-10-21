@@ -315,34 +315,11 @@ async function main() {
     await sleep(1600); // slot cooldown
   } catch (e) { report('casino slots: spin settles with exact balance math', false, e.message); }
 
-  // ---- casino bar: the day's first drink is the Phase 9 treat
-  // (free + 10z tip); drinks after cost exactly 5z; the 10th passes
-  // A out for a REAL 20 seconds, then A wakes with the count reset to 2.
-  try {
-    await walkTo(A.client, 176, 528); // bar patron spot (movement stands A up from the stool)
-    const b0 = await balA();
-    A.client.msgs.length = 0;
-    A.client.send({ type: 'buy-drink' });
-    const vs1 = await waitFor(() => lastOf(A.client, 'vice-state'), 6000, 'vice-state after drink 1');
-    if (vs1.drinks !== 1) throw new Error(`drinks after 1st = ${vs1.drinks}`);
-    if ((await balA()) !== b0 + 10) throw new Error(`first drink of the day was not the free treat +10z tip (${b0} -> ${await balA()})`);
-    report('casino bar: first drink of the day is free + a 10z house tip (Phase 9 ritual)', true, `balance ${b0} -> ${b0 + 10}, drinks=1`);
-    for (let i = 0; i < 9; i++) A.client.send({ type: 'buy-drink' });
-    const vsOut = await waitFor(() => lastOf(A.client, 'vice-state', v => v.passedOut), 8000, 'A passed out at drink 10');
-    if (vsOut.drinks !== 10) throw new Error(`drinks at pass-out = ${vsOut.drinks}`);
-    if ((await balA()) !== b0 + 10 - 45) throw new Error(`ten drinks math wrong (${b0} -> ${await balA()}, want ${b0 - 35}: treat +10, then 9 x 5z)`);
-    const fallen = await waitFor(() => {
-      const s = lastOf(A.client, 'snapshot');
-      const me2 = s && s.players.find(p => p.id === A.id);
-      return me2 && me2.fallen ? me2 : null;
-    }, 6000, 'fallen pose in snapshots');
-    if (!fallen) throw new Error('no fallen snapshot');
-    await sleep(21000); // the real production window
-    const vsWake = await waitFor(() => lastOf(A.client, 'vice-state', v => !v.passedOut), 8000, 'A wakes after 20s');
-    if (vsWake.drinks !== 2) throw new Error(`drinks after waking = ${vsWake.drinks} (want the reset value 2)`);
-    report('casino bar: 10th drink passes A out cold for 20s, wakes at 2 drinks', true, 'fallen broadcast, real 21s wait, count reset to 2');
-  } catch (e) { report('casino bar: 10th drink passes A out cold for 20s, wakes at 2 drinks', false, e.message); }
-
+  // ORDER NOTE (Phase 10): poker runs BEFORE the bar ritual on
+  // purpose — the bar's 45z of drinks would drop A under the
+  // table's 50z minimum buy-in whenever the slot spin loses,
+  // and the sit is then legitimately refused. Up here A holds
+  // 80z+ from the slots step, so the buy-in always clears.
   // ---- casino: poker hand with chip conservation
   try {
     const T1 = 'casino-lounge-poker-1';
@@ -398,6 +375,34 @@ async function main() {
     if (postA + postB !== preA + preB) throw new Error(`conservation: before ${preA}+${preB}=${preA + preB}, after ${postA}+${postB}=${postA + postB}`);
     report('casino poker: full hand to showdown, pot paid in full, chips conserved', true, `pot=${doneState.pot} winners=${doneState.winners.map(w => w.name + ':' + w.amount).join(',')} totals ${preA + preB} -> ${postA + postB}`);
   } catch (e) { report('casino poker: full hand to showdown, pot paid in full, chips conserved', false, e.message); }
+
+  // ---- casino bar: the day's first drink is the Phase 9 treat
+  // (free + 10z tip); drinks after cost exactly 5z; the 10th passes
+  // A out for a REAL 20 seconds, then A wakes with the count reset to 2.
+  try {
+    await walkTo(A.client, 176, 528); // bar patron spot (movement stands A up from the stool)
+    const b0 = await balA();
+    A.client.msgs.length = 0;
+    A.client.send({ type: 'buy-drink' });
+    const vs1 = await waitFor(() => lastOf(A.client, 'vice-state'), 6000, 'vice-state after drink 1');
+    if (vs1.drinks !== 1) throw new Error(`drinks after 1st = ${vs1.drinks}`);
+    if ((await balA()) !== b0 + 10) throw new Error(`first drink of the day was not the free treat +10z tip (${b0} -> ${await balA()})`);
+    report('casino bar: first drink of the day is free + a 10z house tip (Phase 9 ritual)', true, `balance ${b0} -> ${b0 + 10}, drinks=1`);
+    for (let i = 0; i < 9; i++) A.client.send({ type: 'buy-drink' });
+    const vsOut = await waitFor(() => lastOf(A.client, 'vice-state', v => v.passedOut), 8000, 'A passed out at drink 10');
+    if (vsOut.drinks !== 10) throw new Error(`drinks at pass-out = ${vsOut.drinks}`);
+    if ((await balA()) !== b0 + 10 - 45) throw new Error(`ten drinks math wrong (${b0} -> ${await balA()}, want ${b0 - 35}: treat +10, then 9 x 5z)`);
+    const fallen = await waitFor(() => {
+      const s = lastOf(A.client, 'snapshot');
+      const me2 = s && s.players.find(p => p.id === A.id);
+      return me2 && me2.fallen ? me2 : null;
+    }, 6000, 'fallen pose in snapshots');
+    if (!fallen) throw new Error('no fallen snapshot');
+    await sleep(21000); // the real production window
+    const vsWake = await waitFor(() => lastOf(A.client, 'vice-state', v => !v.passedOut), 8000, 'A wakes after 20s');
+    if (vsWake.drinks !== 2) throw new Error(`drinks after waking = ${vsWake.drinks} (want the reset value 2)`);
+    report('casino bar: 10th drink passes A out cold for 20s, wakes at 2 drinks', true, 'fallen broadcast, real 21s wait, count reset to 2');
+  } catch (e) { report('casino bar: 10th drink passes A out cold for 20s, wakes at 2 drinks', false, e.message); }
 
   // ---- studio: buy -> place -> relog persistence
   try {
