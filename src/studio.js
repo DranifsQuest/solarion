@@ -259,6 +259,12 @@ const CATALOG = [
   { id: 'boombox',       name: 'Boombox',          price: 80,  type: 'radio',   cat: 'radios',   color: '#e63946', accent: '#a62633', icon: '📻', footprint: 1 },
   { id: 'retro-radio',   name: 'Retro Radio',      price: 120, type: 'radio',   cat: 'radios',   color: '#8a5a2b', accent: '#6e4520', icon: '📻', footprint: 1 },
   { id: 'hifi-system',   name: 'Hi-Fi System',     price: 200, type: 'radio',   cat: 'radios',   color: '#23262b', accent: '#ffd23f', icon: '🎛️', footprint: 1 },
+  // ---- Phase 10: the Warm Home pass — a working hearth (animated
+  // flame + night glow + crackle), string lights, and a porch lantern
+  // (both join the lamp-glow pass at night).
+  { id: 'hearth-fireplace', name: 'Fireplace',     price: 300, type: 'hearth',  cat: 'decor',   color: '#7a4a2b', accent: '#3a2a1c', icon: '🔥', footprint: 1 },
+  { id: 'string-lights', name: 'String Lights',    price: 65,  type: 'lights',  cat: 'decor',   color: '#ffd9a0', accent: '#e0a92e', icon: '🌟', footprint: 1 },
+  { id: 'porch-lantern', name: 'Porch Lantern',    price: 50,  type: 'lantern', cat: 'decor',   color: '#ffb84d', accent: '#8a5a2b', icon: '🏮', footprint: 1 },
 ];
 const CATALOG_BY_ID = new Map(CATALOG.map(i => [i.id, i]));
 
@@ -580,12 +586,14 @@ class StudioSystem {
    * and invite-accept). Runs through switchScene, so every entry is
    * a standard 3s load-screen transfer.
    */
-  enterStudio(p, owner) {
+  enterStudio(p, owner, opts = {}) {
     const scene = studioMapFor(owner.id, owner.username);
     if (p.mapId === scene.id) { this.sendState(p); return; }
     // Remember where to return to — only from a public map; hopping
-    // studio→studio keeps the original return point.
-    if (!isStudioId(p.mapId)) p.returnTo = { mapId: p.mapId, x: p.x, y: p.y };
+    // studio→studio keeps the original return point. Callers may pin
+    // an exact return spot (the home door lands you back OUTSIDE it).
+    if (opts.returnTo) p.returnTo = opts.returnTo;
+    else if (!isStudioId(p.mapId)) p.returnTo = { mapId: p.mapId, x: p.x, y: p.y };
     const placed = getPlaced(owner.id);
     this.game.switchScene(p, scene, {
       extra: {
@@ -661,6 +669,23 @@ class StudioSystem {
     if (!ownerUser) return;
     unblockVisitor(inv.ownerId, p.userId);
     this.enterStudio(p, ownerUser);
+  }
+
+  /**
+   * Phase 10: the "My Home" door in the Gateway. Stepping through it
+   * takes the walker into their OWN studio; the return point is
+   * pinned one tile south of the door pad so leaving the home lands
+   * you back outside your front door, never on it (no bounce-back).
+   */
+  handleHomeDoor(p) {
+    const owner = q.userById.get(p.userId);
+    if (!owner) return;
+    const { MAPS } = require('./maps');
+    const gwMap = MAPS['the-gateway'];
+    const d = gwMap && (gwMap.doors || []).find(dd => dd.target === 'studio:self');
+    const opts = {};
+    if (d) opts.returnTo = { mapId: 'the-gateway', x: d.x + d.w / 2, y: d.y + d.h + TILE / 2 };
+    this.enterStudio(p, owner, opts);
   }
 
   handleLeave(p) {

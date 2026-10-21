@@ -101,6 +101,7 @@ casino.initFromMaps(MAPS);
 // per-studio registration anywhere: game.js resolves `studio:<id>`
 // scene ids on demand, and this system only handles studio messages.
 const studios = new StudioSystem(game);
+game.studioSystem = studios; // Phase 10: portal routing (home door / studio door exit)
 // Phase 9: friends / navigator / profiles (needs studios for home travel).
 const social = new SocialSystem(game, studios);
 // Phase 9: ambient NPCs ride the snapshot pipeline via npcProvider.

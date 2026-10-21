@@ -74,6 +74,15 @@ function stageDef(tx, ty) {
 function seat(mapId, n, tx, ty, dir, kind) {
   return { id: `${mapId}-seat-${n}`, x: cx(tx), y: cy(ty), dir, kind };
 }
+/**
+ * A static dressing prop (Phase 10, the Warm Home pass): hearths,
+ * lamps, lanterns, string lights and rugs baked into public maps.
+ * Purely visual (the client renders them; hearths/lamps/lights join
+ * the night-glow pass) — sittable nook furniture is real `seats`.
+ */
+function prop(kind, tx, ty) {
+  return { kind, x: cx(tx), y: cy(ty) };
+}
 /** A named area (Phase 9): entering one raises a place nameplate. */
 function area(name, tx, ty, tw, th) {
   return { name, x: px(tx), y: px(ty), w: px(tw), h: px(th) };
@@ -112,10 +121,24 @@ function buildGateway() {
     ],
     doors: [
       door(62, 32, 'gateway-cafe', { x: cx(10), y: cy(10) }, 'Gateway Café'),
+      // Phase 10: your own front door in the world — a real door on
+      // the west block's east face. Stepping through takes you home
+      // (game.js routes the 'studio:self' target to the studio system).
+      door(7, 22, 'studio:self', null, 'My Home'),
+    ],
+    props: [
+      // Homes Corner dressing: lanterns flank the home-door walkway.
+      prop('lantern', 8, 20), prop('lantern', 8, 24),
+      // A fountain-side nook: rug + lamps + a string of warm bulbs.
+      prop('rug', 36, 31), prop('lamp', 34, 31), prop('lamp', 38, 31),
+      prop('stringlights', 36, 30),
+      // Café Corner dressing.
+      prop('lamp', 59, 31), prop('stringlights', 62, 31),
     ],
     areas: [
       area('The Arches', 2, 0, 68, 4),
       area('Fountain Plaza', 28, 15, 16, 14),
+      area('Homes Corner', 0, 16, 13, 12),
       area('Café Corner', 54, 28, 16, 15),
       area('South Market', 6, 32, 20, 10),
     ],
@@ -145,6 +168,7 @@ function buildCafe() {
   setBorder(g, W, H, '#');
   setRect(g, 2, 2, 16, 1, '#');   // serving counter
   g[10][2] = '|'; g[10][17] = '|'; // plants
+  g[5][1] = '#';                   // Phase 10: the hearth niche (west wall)
   const id = 'gateway-cafe';
   // Tables at tiles (4,5) (9,5) (14,5) (6,9) (12,9); chairs flank them.
   const chairPairs = [
@@ -160,8 +184,19 @@ function buildCafe() {
     doors: [
       door(9, 11, 'the-gateway', { x: cx(62), y: cy(31) }, 'The Gateway', 2),
     ],
-    areas: [area('The Café', 1, 1, 18, 11)],
-    seats: chairPairs.map(([x, y, dir], i) => seat(id, i + 1, x, y, dir, 'cafe')),
+    props: [
+      prop('hearth', 1, 5),
+      prop('stringlights', 10, 3),
+      prop('lantern', 18, 4),
+    ],
+    areas: [area('The Hearth Corner', 0, 3, 7, 6), area('The Café', 1, 1, 18, 11)],
+    seats: [
+      ...chairPairs.map(([x, y, dir], i) => seat(id, i + 1, x, y, dir, 'cafe')),
+      // Phase 10: hearth-side seats, facing the fire (west).
+      seat(id, 11, 2, 4, 'left', 'chair'),
+      seat(id, 12, 2, 5, 'left', 'sofa'),
+      seat(id, 13, 2, 6, 'left', 'chair'),
+    ],
   };
 }
 
@@ -193,6 +228,11 @@ function buildSolsticeBay() {
     gateways: [arch(35, 43, 'the-gateway', 'The Gateway')],
     doors: [
       door(15, 37, 'casino-lounge', { x: cx(15), y: cy(16) }, 'Casino Lounge'),
+    ],
+    props: [
+      prop('lantern', 16, 36), prop('lantern', 16, 38),
+      // A boardwalk nook: rug, a lamp, and a string of bulbs.
+      prop('rug', 36, 15), prop('lamp', 33, 15), prop('stringlights', 36, 13),
     ],
     stage: stageDef(33, 6),
     areas: [
@@ -289,6 +329,8 @@ function buildCasino({ id, name, hostId, hostLabel, hostSpawn, floor, floorAlt, 
     doors: [
       door(14, 18, hostId, hostSpawn, hostLabel, 2),
     ],
+    // Phase 10: lanterns flank the entryway door inside.
+    props: [prop('lantern', 12, 17), prop('lantern', 17, 17)],
     seats,
     areas: [
       area('Poker Floor', 1, 1, 14, 17),
@@ -356,6 +398,7 @@ function buildHookahLounge() {
   const g = makeGrid(W, H, '.');
   setBorder(g, W, H, '#');
   g[2][2] = '|'; g[2][17] = '|'; g[11][2] = '|'; g[11][17] = '|'; // plants
+  g[1][10] = '#'; // Phase 10: the hearth niche (north wall, centre)
   const id = 'hookah-lounge';
   const stations = [[5, 4], [14, 4], [5, 9], [14, 9]];
   const seats = [];
@@ -371,8 +414,17 @@ function buildHookahLounge() {
     doors: [
       door(9, 12, 'cinder-mesa', { x: cx(30), y: cy(30) }, 'Cinder Mesa', 2),
     ],
-    seats,
-    areas: [area('The Lounge', 1, 1, 18, 12)],
+    props: [
+      prop('hearth', 10, 1),
+      prop('stringlights', 10, 6),
+    ],
+    seats: [
+      ...seats,
+      // Phase 10: hearth-side seats facing the fire (north).
+      seat(id, 9, 9, 2, 'up', 'chair'),
+      seat(id, 10, 11, 2, 'up', 'sofa'),
+    ],
+    areas: [area('The Hearth Corner', 6, 0, 8, 4), area('The Lounge', 1, 1, 18, 12)],
     hookahs: stations.map(([tx, ty]) => ({ x: cx(tx), y: cy(ty) })),
   };
 }
@@ -411,6 +463,11 @@ function buildNeonDistrict() {
       // its door sits on the block's north face.
       door(61, 29, 'neon-casino', { x: cx(15), y: cy(16) }, 'Neon Casino'),
     ],
+    props: [
+      prop('lantern', 60, 28),
+      // A market-square nook: rug + lamp + string lights over the stalls.
+      prop('rug', 36, 22), prop('lamp', 32, 22), prop('stringlights', 36, 20),
+    ],
     stage: stageDef(33, 3),
     areas: [
       area('Stage Grounds', 29, 1, 14, 9),
@@ -423,6 +480,9 @@ function buildNeonDistrict() {
       seat(id, 3, 34, 20, 'down', 'cafe'),
       seat(id, 4, 38, 24, 'up', 'cafe'),
       seat(id, 5, 24, 22, 'right', 'chair'),
+      // Phase 10: the market nook sofas, facing each other.
+      seat(id, 6, 33, 22, 'right', 'sofa'),
+      seat(id, 7, 39, 22, 'left', 'sofa'),
     ],
   };
 }
@@ -449,6 +509,11 @@ function buildCinderMesa() {
     doors: [
       door(30, 31, 'hookah-lounge', { x: cx(10), y: cy(11) }, 'Hookah Lounge'),
     ],
+    props: [
+      prop('lantern', 29, 30),
+      // A forge-plaza nook: rug + lamp to sit by.
+      prop('rug', 28, 22), prop('lamp', 26, 21),
+    ],
     stage: stageDef(63, 21),
     areas: [
       area('Forge Plaza', 20, 15, 16, 14),
@@ -460,6 +525,7 @@ function buildCinderMesa() {
       seat(id, 2, 58, 24, 'right', 'bench'),
       seat(id, 3, 24, 24, 'down', 'chair'),
       seat(id, 4, 26, 27, 'up', 'cafe'),
+      seat(id, 5, 27, 22, 'down', 'sofa'),
     ],
   };
 }
@@ -484,6 +550,11 @@ function buildFrosthaven() {
     spawn: { x: cx(36), y: cy(4) },
     gateways: [arch(35, 1, 'the-gateway', 'The Gateway')],
     doors: [],
+    props: [
+      // A pond-shore nook: rug, lamp, and string lights in the cold.
+      prop('rug', 24, 13), prop('lamp', 23, 13), prop('stringlights', 24, 12),
+      prop('lantern', 34, 32),
+    ],
     stage: stageDef(33, 37),
     areas: [
       area('The Frozen Pond', 2, 2, 20, 10),
@@ -494,6 +565,7 @@ function buildFrosthaven() {
       seat(id, 2, 42, 34, 'down', 'bench'),
       seat(id, 3, 22, 8, 'left', 'chair'),
       seat(id, 4, 48, 34, 'down', 'cafe'),
+      seat(id, 5, 24, 14, 'up', 'sofa'),
     ],
   };
 }
@@ -518,6 +590,10 @@ function buildVerdantHollow() {
     spawn: { x: cx(67), y: cy(41) },
     gateways: [arch(66, 43, 'the-gateway', 'The Gateway')],
     doors: [],
+    props: [
+      // A grove nook south of the stage: rug, lamp, firefly bulbs.
+      prop('rug', 36, 28), prop('lamp', 33, 28), prop('stringlights', 36, 19),
+    ],
     stage: stageDef(33, 21),
     areas: [
       area('The Clearing', 29, 17, 14, 12),
@@ -529,6 +605,7 @@ function buildVerdantHollow() {
       seat(id, 3, 12, 12, 'down', 'chair'),
       seat(id, 4, 58, 12, 'down', 'chair'),
       seat(id, 5, 36, 27, 'up', 'cafe'),
+      seat(id, 6, 34, 28, 'up', 'sofa'),
     ],
   };
 }
@@ -608,7 +685,9 @@ function clientMap(map) {
     })),
     doors: (map.doors || []).map(d => ({
       x: d.x, y: d.y, w: d.w, h: d.h, label: d.label,
+      home: d.target === 'studio:self',
     })),
+    props: (map.props || []).map(p => ({ kind: p.kind, x: p.x, y: p.y })),
     seats: (map.seats || []).map(s => ({ id: s.id, x: s.x, y: s.y, dir: s.dir, kind: s.kind })),
     areas: (map.areas || []).map(a => ({ ...a })),
     hookahs: (map.hookahs || []).map(h => ({ x: h.x, y: h.y })),

@@ -502,6 +502,18 @@ class Game {
   checkPortals(p) {
     const map = this.sceneFor(p.mapId);
     if (!map) return;
+    // Phase 10: inside a home, the door is a REAL door — stepping
+    // onto its tile walks you out (the studio system handles the
+    // return trip). Studio scenes have no other portals.
+    if (map.isStudio) {
+      const d = map.studio && map.studio.door;
+      if (d && p.x >= d.x && p.x < d.x + d.w && p.y >= d.y && p.y < d.y + d.h) {
+        if (Date.now() - p.lastGatewayAt >= 1500 && this.studioSystem) {
+          this.studioSystem.handleLeave(p);
+        }
+      }
+      return;
+    }
     const gw = gatewayAt(map, p.x, p.y);
     const dr = gw ? null : doorAt(map, p.x, p.y);
     if (!gw && !dr) return;
@@ -515,6 +527,12 @@ class Game {
         return;
       }
       this.switchMap(p, target);
+      return;
+    }
+    // Phase 10: the Gateway's "My Home" door — its target is the
+    // walker's OWN studio, resolved by the studio system.
+    if (dr.target === 'studio:self') {
+      if (this.studioSystem) this.studioSystem.handleHomeDoor(p);
       return;
     }
     const target = MAPS[dr.target];
