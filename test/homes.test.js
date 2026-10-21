@@ -158,16 +158,16 @@ before(async () => { await startServer(PORT, DB); });
 after(async () => { for (const c of [...children]) await stopServer(c).catch(() => {}); });
 
 // ------------------------------------------------------------------ (a)
-test('catalog: 44 items, category counts, representative buys debit exactly and place', { timeout: 90000 }, async () => {
+test('catalog: 46 items, category counts, representative buys debit exactly and place', { timeout: 90000 }, async () => {
   const owner = await makeUser('catalog_p8');
   await fund(owner, 100000);
   const { state } = await enterOwnStudio(owner);
   const catalog = state.catalog;
-  assert.equal(catalog.length, 44, `catalog has 44 items, got ${catalog.length}`);
+  assert.equal(catalog.length, 46, `catalog has 46 items (44 + Phase 9 platinum record + chart poster), got ${catalog.length}`);
   const byCat = {};
   for (const i of catalog) byCat[i.cat] = (byCat[i.cat] || 0) + 1;
-  assert.deepEqual(byCat, { chairs: 9, decor: 14, rugs: 6, shelves: 5, beds: 4, tvs: 3, radios: 3 },
-    'per-category counts: beds 4, chairs 9, shelves 5, rugs 6, tvs 3, radios 3, decor 14');
+  assert.deepEqual(byCat, { chairs: 9, decor: 16, rugs: 6, shelves: 5, beds: 4, tvs: 3, radios: 3 },
+    'per-category counts: beds 4, chairs 9, shelves 5, rugs 6, tvs 3, radios 3, decor 16');
   // Every item carries the fields the client renders from.
   for (const i of catalog) {
     assert.ok(i.id && i.name && i.price > 0 && i.type && i.color && i.accent && i.icon && i.footprint === 1,
