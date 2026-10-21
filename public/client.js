@@ -30,14 +30,30 @@ let coins = 0;
 let dayCycle = null; // Phase 9: { periodMs, anchor } — world clock
 let lastDarkness = -1;
 
+/** Phase within the world clock: 0.0 = sunrise, 0.5 = sunset. */
+function dayPhase() {
+  if (!dayCycle) return 0.25;
+  return (((Date.now() - dayCycle.anchor) % dayCycle.periodMs) + dayCycle.periodMs) % dayCycle.periodMs / dayCycle.periodMs;
+}
+
 /** Phase 9: 0 (full day) → ~0.42 (deep night) from the world clock. */
 function darknessNow() {
-  if (!dayCycle) return 0;
-  const ph = (((Date.now() - dayCycle.anchor) % dayCycle.periodMs) + dayCycle.periodMs) % dayCycle.periodMs / dayCycle.periodMs;
+  const ph = dayPhase();
   if (ph < 0.46 || ph > 0.97) return 0;                    // day (soft edges)
   if (ph < 0.54) return (ph - 0.46) / 0.08 * 0.42;         // dusk falls
   if (ph < 0.90) return 0.42;                              // night
   return Math.max(0, 0.42 * (1 - (ph - 0.90) / 0.07));     // dawn
+}
+
+/**
+ * Cozy pass (Zan's standing aesthetic — warm, golden, welcoming):
+ * a golden-hour wash that peaks at sunrise and sunset and fades as
+ * full day / full night take over. Pure client-side tint.
+ */
+function goldenNow() {
+  const ph = dayPhase();
+  const edge = Math.min(Math.abs(ph - 0.5), Math.min(ph, 1 - ph)); // 0 at rise/set
+  return Math.max(0, 1 - edge / 0.09) * 0.13;
 }
 let camState = { x: 0, y: 0, init: false, map: null }; // Phase 9 eased camera
 let curArea = null; // Phase 9: named-area nameplate state
@@ -1109,10 +1125,21 @@ function draw() {
 
   // Phase 9 — day/night: lay the darkness over the world, then let
   // the lamps punch back through it (arches, doors, stage rig).
+  // Cozy pass: the night tint is warm plum, not cold navy, and
+  // golden hour washes the world amber at sunrise/sunset.
   const dark = darknessNow();
+  const gold = goldenNow();
+  if (dark > 0.01 || gold > 0.005) {
+    if (dark > 0.01) {
+      ctx.fillStyle = `rgba(32,18,36,${dark})`;
+      ctx.fillRect(camX, camY, W, H);
+    }
+    if (gold > 0.005) {
+      ctx.fillStyle = `rgba(255,146,60,${gold})`;
+      ctx.fillRect(camX, camY, W, H);
+    }
+  }
   if (dark > 0.01) {
-    ctx.fillStyle = `rgba(8,12,40,${dark})`;
-    ctx.fillRect(camX, camY, W, H);
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     const glow = (wx, wy, r, a) => {

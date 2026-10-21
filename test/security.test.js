@@ -358,7 +358,7 @@ test('vote race: hammered duplicate votes count once per voter, payout exact', {
   assert.equal(end.earned, 10, 'payout is exactly 2 votes x 5z');
   assert.equal(v1.client.msgs.filter(m => m.type === 'vote-ack').length, 1, 'v1 got exactly one vote-ack');
   assert.equal(v2.client.msgs.filter(m => m.type === 'vote-ack').length, 1, 'v2 got exactly one vote-ack');
-  assert.equal(await balanceOf(perf.token), 110, 'performer balance 100 + 10 exactly');
+  assert.equal(await balanceOf(perf.token), 90, 'performer balance 100 - 20 (CD pack) + 10 exactly');
   perf.client.ws.close(); v1.client.ws.close(); v2.client.ws.close();
 });
 

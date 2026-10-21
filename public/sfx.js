@@ -137,10 +137,10 @@ const Sfx = {
     if (!kind || this.muted || typeof AE === 'undefined' || !AE.ctx || AE.ctx.state !== 'running') return;
     const ctx = AE.ctx;
     const prof = {
-      casino: { freq: 1000, q: 0.6, gain: 0.016 },
+      casino: { freq: 760, q: 0.6, gain: 0.016 },
       waves: { freq: 420, q: 0.4, gain: 0.026 },
-      warm: { freq: 520, q: 0.5, gain: 0.014 },
-      room: { freq: 480, q: 0.5, gain: 0.008 },
+      warm: { freq: 450, q: 0.5, gain: 0.014 },
+      room: { freq: 420, q: 0.5, gain: 0.008 },
       air: { freq: 700, q: 0.4, gain: 0.010 },
     }[kind];
     if (!prof) return;

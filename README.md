@@ -674,7 +674,12 @@ usual 5z; the vice system is untouched.
   snapshot pipeline and can't be friended/profiled.
 - **Day/night**: a server-anchored **12-minute cycle**; nights get a
   world tint with lamp glow at arches, doors, and the stage rig.
-  Water and fountain tiles shimmer.
+  Water and fountain tiles shimmer. Per Zan's standing aesthetic —
+  **cozy, warm, golden** — the night tint is warm plum rather than
+  cold navy, golden hour washes the world amber at sunrise/sunset,
+  and the indoor ambience beds are filtered low and warm. A fuller
+  cozy pass (fireplaces, seating nooks, warm UI accents) is scoped
+  as the next phase's headline, not snuck in here.
 - **Sound**: synthesized UI clicks, a door chime on arrival,
   per-zone ambient beds (surf at the Bay, casino hush, café warmth),
   applause — all on the shared engine, with **volume + mute
