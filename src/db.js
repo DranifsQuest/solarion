@@ -156,6 +156,12 @@ const q = {
   claimDailyBonus: db.prepare(
     'UPDATE avatars SET zcoins = zcoins + 100, last_bonus_day = ? WHERE user_id = ? AND (last_bonus_day IS NULL OR last_bonus_day <> ?)'
   ),
+
+  // Owner top-up (Zan, 2026-10-21): floors the owner's balance at the
+  // given amount on connect. Only ever raises, never lowers.
+  ownerTopUp: db.prepare(
+    'UPDATE avatars SET zcoins = ? WHERE user_id = ? AND zcoins < ?'
+  ),
 };
 
 module.exports = { db, q, DB_PATH, SCHEMA_VERSION };
