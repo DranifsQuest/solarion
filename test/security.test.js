@@ -238,7 +238,7 @@ test('WS fuzz: malformed/null/absurd frames never crash the server', { timeout: 
   assert.equal(mainChild.exitCode, null, 'server process still alive after fuzz');
   const h = await health(PORT);
   assert.equal(h.status, 200);
-  assert.equal(h.json.phase, 9, '/health reports phase 9');
+  assert.equal(h.json.phase, 10, '/health reports phase 10');
   // the fuzzed client is still fully functional
   u.client.msgs.length = 0;
   u.client.send({ type: 'chat', text: 'still here' });
