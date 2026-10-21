@@ -136,6 +136,11 @@ test('stage audibility: performer + 2 audience receive identical performance-sta
   const fan2 = await makeUser('audio_fan2');
   const elsewhere = await makeUser('audio_far');
   const mix = await saveMix(perf, 1, MIX);
+  // Phase 9 ritual: a burned CD is the price of the stage.
+  perf.client.send({ type: 'buy-blanks' });
+  await waitFor(() => perf.client.msgs.filter(m => m.type === 'cds' && m.blanks >= 10).pop(), 5000, 'blanks bought');
+  perf.client.send({ type: 'burn-cd', mixId: mix.id });
+  await waitFor(() => perf.client.msgs.filter(m => m.type === 'cds' && m.cds.some(c => c.mixId === mix.id)).pop(), 5000, 'CD burned');
   await toBay(perf); await toBay(fan1); await toBay(fan2);
   // `elsewhere` stays in the Gateway.
   await sleep(300);

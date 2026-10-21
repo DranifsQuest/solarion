@@ -125,6 +125,14 @@ const SHORT_MIX = {
   ],
 };
 
+/** Phase 9 ritual: performing needs a burned CD — buy a pack + burn. */
+async function prepCd(user, mixId) {
+  user.client.send({ type: 'buy-blanks' });
+  await waitFor(() => user.client.msgs.filter(m => m.type === 'cds' && m.blanks >= 10).pop(), 5000, 'blanks bought');
+  user.client.send({ type: 'burn-cd', mixId });
+  await waitFor(() => user.client.msgs.filter(m => m.type === 'cds' && m.cds.some(c => c.mixId === mixId)).pop(), 5000, 'CD burned');
+}
+
 /** Save a mix and return the server's stored row (from mix-saved). */
 async function saveMix(user, slot, data) {
   user.client.msgs.length = 0;
@@ -214,6 +222,7 @@ test('stage: queue, synchronized performance, voting pays +5z, anti-farm rules, 
   const c = await makeUser('faraway_p2');     // stays in the Gateway
   const mixA = await saveMix(a, 1, SHORT_MIX);
   assert.equal(a.client.hello.zcoins, 100, 'A starts at 100z (daily bonus)');
+  await prepCd(a, mixA.id); // Phase 9: −20z for the blank pack
 
   await toBay(a);
   await toBay(b);
@@ -272,7 +281,7 @@ test('stage: queue, synchronized performance, voting pays +5z, anti-farm rules, 
     { up: endB.up, down: endB.down, earned: endB.earned },
     'results broadcast matches for performer and audience');
   const zMsg = await waitFor(() => a.client.msgs.filter(m => m.type === 'zcoins').pop(), 5000, 'A zcoins update');
-  assert.equal(zMsg.zcoins, 105, 'A balance 100 + 5 = 105');
+  assert.equal(zMsg.zcoins, 85, 'A balance 100 − 20 (blank pack) + 5 = 85');
 
   // performer cooldown: immediate rejoin is refused
   a.client.msgs.length = 0;
@@ -288,6 +297,7 @@ test('stage: daily performance-earnings cap of 350z is enforced', { timeout: 900
   const d = await makeUser('capped_p2');
   const e = await makeUser('capfan_p2');
   const mixD = await saveMix(d, 1, SHORT_MIX);
+  await prepCd(d, mixD.id);
   await toBay(d);
   await toBay(e);
   // Seed D at 348z earned today (test-only hook): a +5z vote may only pay 2z.
@@ -300,6 +310,6 @@ test('stage: daily performance-earnings cap of 350z is enforced', { timeout: 900
   assert.equal(end.up, 1);
   assert.equal(end.earned, 2, 'cap clamps the +5z vote pay to the remaining 2z of the 350z daily cap');
   const zMsg = await waitFor(() => d.client.msgs.filter(m => m.type === 'zcoins').pop(), 5000, 'D zcoins update');
-  assert.equal(zMsg.zcoins, 102, 'D balance 100 + 2 = 102');
+  assert.equal(zMsg.zcoins, 82, 'D balance 100 − 20 (blank pack) + 2 = 82');
   d.client.ws.close(); e.client.ws.close();
 });

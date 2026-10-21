@@ -294,3 +294,7 @@ html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; ba
   #chatPanel { width: calc(100vw - 150px); }
   #hud { flex-wrap: wrap; }
 }
+#stageFloats { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 24; }
+#cdBox button, #chartBtn { padding: 3px 8px; border-radius: 6px; border: 1px solid #4a5f8a;
+  background: #22304a; color: #eef; cursor: pointer; font-size: 11px; margin-left: 6px; }
+#cdBox button:hover, #chartBtn:hover { border-color: #ffd23f; color: #ffd23f; }

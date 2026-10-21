@@ -192,6 +192,11 @@ test('stage performance works in Neon District (Phase 2 protocol, new city)', { 
   perf.client.send({ type: 'mix-save', slot: 1, data: SHORT_MIX });
   const saved = await waitFor(() => perf.client.msgs.filter(m => m.type === 'mix-saved').pop(), 5000, 'mix saved');
   const mixId = saved.mix.id;
+  // Phase 9 ritual: buy blanks + burn a CD before the stage will take you.
+  perf.client.send({ type: 'buy-blanks' });
+  await waitFor(() => perf.client.msgs.filter(m => m.type === 'cds' && m.blanks >= 10).pop(), 5000, 'blanks bought');
+  perf.client.send({ type: 'burn-cd', mixId });
+  await waitFor(() => perf.client.msgs.filter(m => m.type === 'cds' && m.cds.some(c => c.mixId === mixId)).pop(), 5000, 'CD burned');
 
   await travelViaArch(perf, 6, 'neon-district');
   await travelViaArch(fan, 6, 'neon-district');
@@ -209,7 +214,7 @@ test('stage performance works in Neon District (Phase 2 protocol, new city)', { 
   assert.equal(end.up, 1);
   assert.equal(end.earned, 5, 'performer paid +5z in a new city');
   const zMsg = await waitFor(() => perf.client.msgs.filter(m => m.type === 'zcoins').pop(), 5000, 'perf zcoins update');
-  assert.equal(zMsg.zcoins, 105);
+  assert.equal(zMsg.zcoins, 85, '100 − 20 (blank pack) + 5 earned = 85');
   perf.client.ws.close(); fan.client.ws.close();
 });
 

@@ -62,11 +62,13 @@ const studioModule = require('./studio');
 const { StudioSystem } = studioModule;
 const socialModule = require('./social');
 const { SocialSystem } = socialModule;
+const recordsModule = require('./records');
 
 music.init();
 casinoModule.initLedger();
 studioModule.init();
 socialModule.init();
+recordsModule.init();
 
 const PORT = parseInt(process.env.SOLARION_PORT || process.env.PORT || '3000', 10);
 const TEST_MODE = process.env.SOLARION_TEST === '1';
@@ -101,6 +103,17 @@ casino.initFromMaps(MAPS);
 const studios = new StudioSystem(game);
 // Phase 9: friends / navigator / profiles (needs studios for home travel).
 const social = new SocialSystem(game, studios);
+// Phase 9: trophy fanfare — the record lands in the performer's home
+// inventory; tell them (and refresh the inventory if they're home).
+stages.onTrophy = (userId, kind, mixName) => {
+  const label = kind === 'platinum-record' ? '💿 PLATINUM RECORD' : '🏆 GOLD RECORD';
+  const target = game.getPlayer(userId);
+  if (target) {
+    game.send(target, { type: 'notice', text: `${label}! "${mixName}" earned it — find the trophy in your home's items and hang it on the wall!` });
+    game.broadcastToMap(target.mapId, { type: 'chat', userId: 0, name: '📣', text: `${target.name}'s "${mixName}" just went ${kind === 'platinum-record' ? 'PLATINUM' : 'GOLD'}! ${label}`, system: true });
+    if (target.mapId.startsWith('studio:')) studios.sendState(target);
+  }
+};
 game.onPlayerGone = (userId) => { stages.handlePlayerGone(userId); casino.handlePlayerGone(userId); };
 game.onMapEntered = (p) => { stages.syncPlayer(p); casino.syncPlayer(p); };
 
@@ -381,11 +394,19 @@ wss.on('connection', (ws, req) => {
         break;
       }
       case 'mix-delete': {
+        const before = music.listMixes(p.userId).find(m => m.slot === msg.slot);
         const r = music.deleteMix(p.userId, msg.slot);
         if (!r.ok) game.send(p, { type: 'mix-error', error: r.error });
+        else if (before) recordsModule.onMixDeleted(p.userId, before.id); // its CDs go with it
         game.send(p, { type: 'mixes', mixes: music.listMixes(p.userId) });
         break;
       }
+      case 'buy-blanks':
+      case 'burn-cd':
+      case 'cds':
+      case 'chart':
+        stages.handle(p, msg);
+        break;
       case 'stage-join':
         stages.handleJoin(p, msg.mixId);
         break;

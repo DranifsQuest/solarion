@@ -205,6 +205,8 @@ const Mixer = {
   perf: { active: false, performerId: null, performerName: null, endsAt: 0 },
   queueState: { queue: [], current: null },
   myVote: 0,
+  cds: { blanks: 0, cds: [] },   // Phase 9: CD wallet (server-owned)
+  chart: null,                   // Phase 9: last Top-40 payload
 
   attach(hooks) {
     this.hooks = hooks; // { send, toast, esc, getMe, getMapDef }
@@ -238,6 +240,7 @@ const Mixer = {
       stagePanel: $('stagePanel'), queueList: $('queueList'),
       joinSel: $('joinMixSel'), nowPlaying: $('nowPlaying'),
       npText: $('npText'), result: $('perfResult'),
+      cdBox: $('cdBox'), chartBox: $('chartBox'),
     };
     $('musicBtn').onclick = () => { AE.ensure(); this.openPanel(); };
     $('mixerClose').onclick = () => this.closePanel();
@@ -255,6 +258,7 @@ const Mixer = {
     $('stageLeaveBtn').onclick = () => this.hooks.send({ type: 'stage-leave' });
     $('voteUp').onclick = () => this.vote(1);
     $('voteDown').onclick = () => this.vote(-1);
+    $('chartBtn').onclick = () => this.hooks.send({ type: 'chart' });
     this.el.bpm.oninput = () => { if (this.draft) { this.draft.bpm = Number(this.el.bpm.value); $('bpmVal').textContent = this.el.bpm.value; } };
     this.el.bars.onchange = () => { if (this.draft) { this.draft.bars = Number(this.el.bars.value); this.draft.tracks = this.draft.tracks.filter(t => t.startBar < this.draft.bars); this.renderGrid(); } };
     this.el.name.oninput = () => { if (this.draft) this.draft.name = this.el.name.value; };
@@ -447,6 +451,48 @@ const Mixer = {
     if (!hasStage) { AE.stop(); this.perf.active = false; this.renderNowPlaying(); }
   },
 
+  // ---------------------------------------------------------- Phase 9: CDs + chart + vote juice
+
+  renderCds() {
+    if (!this.el.cdBox) return;
+    const esc = this.hooks.esc;
+    const cdFor = new Set(this.cds.cds.map(c => c.mixId));
+    const rows = this.myMixes.map(m => cdFor.has(m.id)
+      ? `<div class="qItem">💿 <b>${esc(m.name)}</b> — CD ready to perform</div>`
+      : `<div class="qItem">🎵 <b>${esc(m.name)}</b> <button data-burn="${m.id}">🔥 Burn CD</button></div>`).join('');
+    this.el.cdBox.innerHTML = `
+      <div class="qDim" style="margin-top:8px">💿 Blank CDs: <b>${this.cds.blanks}</b>
+        <button data-buyblanks="1">Buy pack of 10 — 20z</button></div>
+      ${rows || '<div class="qDim">Save a mix, burn it to a CD, then perform it.</div>'}`;
+    for (const b of this.el.cdBox.querySelectorAll('[data-burn]')) {
+      b.onclick = () => { AE.ensure(); this.hooks.send({ type: 'burn-cd', mixId: Number(b.dataset.burn) }); };
+    }
+    const buy = this.el.cdBox.querySelector('[data-buyblanks]');
+    if (buy) buy.onclick = () => this.hooks.send({ type: 'buy-blanks' });
+  },
+
+  renderChart() {
+    if (!this.chart || !this.el.chartBox) return;
+    const esc = this.hooks.esc;
+    const rows = this.chart.entries.map(e =>
+      `<div class="qItem">#${e.rank} <b>${esc(e.title)}</b> — ${esc(e.performer)} · 👍 ${e.ups}</div>`).join('');
+    this.el.chartBox.innerHTML = `<div class="qDim" style="margin-top:6px">🏆 TOP 40 — last ${this.chart.windowDays} days</div>` +
+      (rows || '<div class="qDim">No performances charted yet this week.</div>');
+  },
+
+  /** Floating 👍/👎 over the stage area (item 9). */
+  voteFloat(value) {
+    const host = document.getElementById('stageFloats');
+    if (!host) return;
+    const s = document.createElement('span');
+    s.className = 'voteFloat';
+    s.textContent = value > 0 ? '👍' : '👎';
+    s.style.left = `${42 + Math.random() * 16}%`;
+    s.style.bottom = '120px';
+    host.appendChild(s);
+    setTimeout(() => s.remove(), 1700);
+  },
+
   // ---------------------------------------------------------- messages
 
   handle(m) {
@@ -454,7 +500,20 @@ const Mixer = {
       case 'mixes':
         this.myMixes = m.mixes || [];
         this.renderSlots();
+        this.renderCds();
         if (this.editSlot != null && !this.el.panel.classList.contains('hidden')) this.renderGrid();
+        break;
+      case 'cds':
+        this.cds = { blanks: m.blanks || 0, cds: m.cds || [] };
+        this.renderCds();
+        break;
+      case 'chart':
+        this.chart = m;
+        this.renderChart();
+        break;
+      case 'vote-fx':
+        // Someone in the room voted — float it for everyone (item 9).
+        if (!this.perf.active || m.performerId === this.perf.performerId) this.voteFloat(m.value);
         break;
       case 'mix-saved':
         this.hooks.toast(`💾 Saved "${m.mix.name}" to slot ${m.mix.slot}`);
@@ -490,6 +549,16 @@ const Mixer = {
         this.el.result.classList.remove('hidden');
         clearTimeout(this._resultTimer);
         this._resultTimer = setTimeout(() => this.el.result.classList.add('hidden'), 12000);
+        // Item 9: a strong set gets the crowd — applause + a burst
+        // of thumbs. A rough set gets a sympathetic groan.
+        if (window.SolarionSfx) {
+          if (m.up >= 3 && m.up > m.down * 2) {
+            window.SolarionSfx.play('applause');
+            for (let i = 0; i < 6; i++) setTimeout(() => this.voteFloat(1), i * 130);
+          } else if (m.down >= 3 && m.down > m.up) {
+            window.SolarionSfx.play('boo');
+          }
+        }
         break;
       }
       default:

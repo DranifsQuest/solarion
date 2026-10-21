@@ -67,6 +67,11 @@
         <button id="stageJoinBtn">Perform</button>
         <button id="stageLeaveBtn" class="hidden">Leave queue</button>
       </div>
+      <div id="cdBox"></div>
+      <div class="spRow">
+        <button id="chartBtn">🏆 Top 40 Chart</button>
+      </div>
+      <div id="chartBox"></div>
     </div>
     <!-- casino panel (shown only inside the Casino Lounge) -->
     <div id="casinoPanel" class="hidden">
@@ -202,6 +207,16 @@
         <button id="friendAddGo">Add</button>
       </div>
     </div>
+    <!-- sound settings (Phase 9) -->
+    <div id="soundPanel" class="sidePanel hidden">
+      <div class="spTitle">🔊 SOUND</div>
+      <div class="spRow">
+        <span>Volume</span>
+        <input id="volSlider" type="range" min="0" max="100" value="90" style="flex:1">
+        <button id="muteBtn">Mute</button>
+      </div>
+      <div class="pkDim">Applies to music, radios, effects and ambience. Saved on this device.</div>
+    </div>
     <!-- profile card (Phase 9) -->
     <div id="profileCard" class="hidden"><div id="profileBody"></div></div>
     <!-- emote bar (Phase 9) -->
@@ -212,6 +227,7 @@
       <button data-emote="thumbsup" title="Thumbs up">👍</button>
     </div>
     <div id="bubbles"></div>
+    <div id="stageFloats"></div>
     <div id="areaPlate" class="hidden"></div>
     <div id="chatPanel">
       <div id="chatLog"></div>
@@ -242,5 +258,6 @@
 <script src="casino.js"></script>
 <script src="studio.js"></script>
 <script src="social.js"></script>
+<script src="sfx.js"></script>
 </body>
 </html>

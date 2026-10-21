@@ -204,7 +204,7 @@ test('catalog: 44 items, category counts, representative buys debit exactly and 
   assert.equal(tv.channelId, 'news');
   assert.equal(radio.playing, false);
   assert.equal(radio.source, 'loops');
-  assert.equal(radio.loopCount, 48, 'radio sees the full 48-loop library');
+  assert.equal(radio.loopCount, 72, 'radio sees the full 72-loop library (Phase 9 added 24)');
   owner.client.ws.close();
 });
 

@@ -148,6 +148,11 @@ const CATALOG = [
   { id: 'speaker',       name: 'Stage Speaker',    price: 90,  type: 'machine', cat: 'decor',   color: '#23262b', accent: '#ffd23f', icon: '🔊', footprint: 1 },
   { id: 'poster',        name: 'Sunset Poster',    price: 25,  type: 'wall',    cat: 'decor',   color: '#ff8c42', accent: '#c25e1e', icon: '🖼️', footprint: 1 },
   { id: 'gold-record',   name: 'Gold Record',      price: 300, type: 'wall',    cat: 'decor',   color: '#ffd700', accent: '#b8960f', icon: '🏆', footprint: 1 },
+  // Phase 9 — ritual furniture: trophies are EARNED (25 / 100 lifetime
+  // up-votes on one mix, src/records.js), never sold; the chart
+  // poster is a normal purchase that opens the Top-40 in your home.
+  { id: 'platinum-record', name: 'Platinum Record', price: 0,  type: 'wall',    cat: 'decor',   color: '#e5e4e2', accent: '#9aa5b1', icon: '💿', footprint: 1, awardOnly: true },
+  { id: 'chart-poster',  name: 'Top-40 Chart Poster', price: 60, type: 'wall',   cat: 'decor',   color: '#22304a', accent: '#ffd23f', icon: '📊', footprint: 1 },
   { id: 'neon-sign',     name: 'Neon Sign',        price: 180, type: 'wall',    cat: 'decor',   color: '#ff2e88', accent: '#22d3ee', icon: '✨', footprint: 1 },
   { id: 'dispenser',     name: 'Drink Dispenser',  price: 150, type: 'machine', cat: 'decor',   color: '#e63946', accent: '#a62633', icon: '🥤', footprint: 1 },
   { id: 'bookshelf',     name: 'Bookshelf',        price: 80,  type: 'storage', cat: 'shelves', color: '#6b4226', accent: '#4e2f1a', icon: '📚', footprint: 1 },
@@ -600,6 +605,11 @@ class StudioSystem {
       ? CATALOG_BY_ID.get(msg.itemId) : undefined;
     if (!item) {
       this.game.send(p, { type: 'notice', text: 'That item is not in the catalog.' });
+      return;
+    }
+    // Phase 9: record trophies are earned on stage, never bought.
+    if (item.awardOnly || item.id === 'gold-record') {
+      this.game.send(p, { type: 'notice', text: `🏆 The ${item.name} is earned on stage — 25 lifetime 👍 on one mix for Gold, 100 for Platinum — not bought.` });
       return;
     }
     // Atomic debit + insert: the WHERE guard is the funds check, and

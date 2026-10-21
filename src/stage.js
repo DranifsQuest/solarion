@@ -26,6 +26,7 @@
  */
 
 const music = require('./music');
+const records = require('./records');
 const { localDay } = require('./game');
 
 const START_DELAY_MS = 1200;      // clients get this long to schedule playback
@@ -90,7 +91,17 @@ class Stage {
       this.game.send(p, { type: 'notice', text: 'Pick one of your saved mixes to perform.' });
       return;
     }
-    this.queue.push({ userId: p.userId, name: p.name, mixId: mix.id, mixName: mix.name, mixData: mix.data });
+    // Phase 9 ritual: no CD, no stage. The CD is checked here and
+    // CONSUMED when the set actually starts (startPerformance).
+    const cd = records.findCd(p.userId, mix.id);
+    if (!cd) {
+      this.game.send(p, {
+        type: 'notice',
+        text: `🔥 Burn "${mix.name}" to a CD first — blanks come in packs of ${records.BLANK_PACK_COUNT} for ${records.BLANK_PACK_PRICE}z (Stage panel), then burn and take the stage.`,
+      });
+      return;
+    }
+    this.queue.push({ userId: p.userId, name: p.name, mixId: mix.id, mixName: mix.name, mixData: mix.data, cdId: cd.id });
     this.game.send(p, { type: 'notice', text: `You're in the queue to perform "${mix.name}" 🎤` });
     this.broadcastQueue();
   }
@@ -133,6 +144,8 @@ class Stage {
     }
     cur.votes.set(p.userId, value === -1 ? -1 : 1);
     this.game.send(p, { type: 'vote-ack', performanceId: cur.id, value: cur.votes.get(p.userId) });
+    // Phase 9 (voting juice): the room SEES each vote float by.
+    this.game.broadcastToMap(this.mapId, { type: 'vote-fx', performanceId: cur.id, performerId: cur.performerId, value: cur.votes.get(p.userId) });
   }
 
   // ------------------------------------------------------------- engine
@@ -168,6 +181,15 @@ class Stage {
   }
 
   startPerformance(p, entry) {
+    // Phase 9: the CD is spent as the set starts. If it vanished
+    // since queueing (mix deleted), the slot is skipped quietly.
+    const cd = records.findCd(p.userId, entry.mixId);
+    if (!cd || cd.id !== entry.cdId) {
+      this.game.send(p, { type: 'notice', text: '💿 Your CD is gone — burn the mix again to perform.' });
+      return;
+    }
+    records.consumeCd(cd.id);
+    if (this.onCdsChanged) this.onCdsChanged(p);
     const now = Date.now();
     const durationMs = music.mixDurationMs(entry.mixData);
     const startAt = now + START_DELAY_MS;
@@ -238,6 +260,12 @@ class Stage {
       up, down, earned,
       early: Boolean(early),
     });
+    // Phase 9: the set goes on the record — lifetime up-votes on
+    // this mix earn Gold (25) / Platinum (100) wall trophies.
+    const awards = records.recordPerformance(cur.mixId, cur.performerId, up, down);
+    if (awards.length && this.onTrophy) {
+      for (const kind of awards) this.onTrophy(cur.performerId, kind, cur.mixName);
+    }
     this.broadcastQueue();
   }
 }
@@ -247,10 +275,16 @@ class StageManager {
     this.game = game;
     this.stages = new Map(); // mapId -> Stage
     this.timer = null;
+    // Phase 9 hooks, wired by server.js: trophy fanfare + CD wallet
+    // refreshes after consumption.
+    this.onTrophy = null;      // (userId, kind, mixName)
   }
 
   registerMap(mapId, stageDef) {
-    this.stages.set(mapId, new Stage(this.game, mapId, stageDef));
+    const s = new Stage(this.game, mapId, stageDef);
+    s.onTrophy = (userId, kind, mixName) => { if (this.onTrophy) this.onTrophy(userId, kind, mixName); };
+    s.onCdsChanged = (p) => this.sendCds(p);
+    this.stages.set(mapId, s);
   }
 
   stageFor(p) {
@@ -295,6 +329,49 @@ class StageManager {
   syncPlayer(p) {
     const s = this.stageFor(p);
     if (s) s.sendQueueTo(p);
+    this.sendCds(p);
+  }
+
+  // ------------------------------------------------- Phase 9: CD economy + chart
+
+  /** The player's CD wallet: blank count + burned CDs with titles. */
+  sendCds(p) {
+    const names = new Map(music.listMixes(p.userId).map(m => [m.id, m.name]));
+    this.game.send(p, {
+      type: 'cds',
+      blanks: records.blankCount(p.userId),
+      cds: records.listCds(p.userId).map(c => ({ id: c.id, mixId: c.mixId, name: names.get(c.mixId) || '(deleted mix)' })),
+    });
+  }
+
+  handle(p, msg) {
+    switch (msg.type) {
+      case 'buy-blanks': {
+        const r = records.buyBlanks(p.userId);
+        if (!r.ok) { this.game.send(p, { type: 'notice', text: r.error }); return; }
+        this.game.send(p, { type: 'zcoins', zcoins: r.balance });
+        this.game.send(p, { type: 'notice', text: `💿 Bought a pack of ${records.BLANK_PACK_COUNT} blank CDs (${records.BLANK_PACK_PRICE}z). Burn a mix from the Stage panel!` });
+        this.sendCds(p);
+        break;
+      }
+      case 'burn-cd': {
+        const mix = music.getMix(p.userId, msg.mixId);
+        if (!mix) { this.game.send(p, { type: 'notice', text: 'You can only burn your own mixes.' }); return; }
+        const r = records.burnCd(p.userId, mix.id);
+        if (!r.ok) { this.game.send(p, { type: 'notice', text: r.error }); return; }
+        this.game.send(p, { type: 'notice', text: `🔥 Burned "${mix.name}" to a CD — take it to a stage!` });
+        this.sendCds(p);
+        break;
+      }
+      case 'cds':
+        this.sendCds(p);
+        break;
+      case 'chart':
+        this.game.send(p, { type: 'chart', windowDays: 7, entries: records.chart() });
+        break;
+      default:
+        break;
+    }
   }
 }
 

@@ -200,6 +200,7 @@ function beginTransfer(m) {
 function finishTransfer() {
   transfer = null;
   $('loadScreen').classList.add('hidden');
+  if (window.SolarionSfx) window.SolarionSfx.play('chime'); // door chime (Phase 9)
 }
 
 setInterval(() => {
@@ -212,6 +213,7 @@ function setMap(m, you, chat) {
   mapDef = m;
   curArea = null;
   camState.init = false;
+  if (window.SolarionSfx) window.SolarionSfx.ambience(m.id, Boolean(m.casino));
   $('mapName').textContent = m.name;
   if (window.SolarionMixer) window.SolarionMixer.onMapChanged(m);
   if (window.SolarionCasino) window.SolarionCasino.onMapChanged(m);
@@ -369,6 +371,25 @@ $('runBtn').onclick = () => {
   send({ type: 'run', on: runOn });
 };
 $('chatBtn').onclick = () => { $('chatInput').focus(); };
+
+// Phase 9 — sound settings + UI click sounds + door chime.
+$('soundBtn').onclick = () => {
+  const p = $('soundPanel');
+  p.classList.toggle('hidden');
+  if (window.SolarionSfx) {
+    $('volSlider').value = String(Math.round(window.SolarionSfx.volume * 100));
+    $('muteBtn').textContent = window.SolarionSfx.muted ? 'Unmute' : 'Mute';
+  }
+};
+$('volSlider').oninput = () => { if (window.SolarionSfx) window.SolarionSfx.setVolume(Number($('volSlider').value) / 100); };
+$('muteBtn').onclick = () => {
+  if (!window.SolarionSfx) return;
+  const muted = window.SolarionSfx.toggleMute();
+  $('muteBtn').textContent = muted ? 'Unmute' : 'Mute';
+};
+document.addEventListener('click', (e) => {
+  if (e.target && e.target.tagName === 'BUTTON' && window.SolarionSfx) window.SolarionSfx.play('click');
+});
 
 $('chatForm').addEventListener('submit', (e) => {
   e.preventDefault();

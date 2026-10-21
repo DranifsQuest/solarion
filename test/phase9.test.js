@@ -130,7 +130,148 @@ async function toBay(user) {
     5000, `${user.name} arrives in solstice-bay`);
 }
 
-// ------------------------------------------------------------ items 6/4/7
+// ------------------------------------------------------------ item 5: ritual
+
+test('burn-to-CD: stage refuses without a CD; burning works; the CD is spent at set start', { timeout: 90000 }, async () => {
+  const u = await makeUser('ritual_p9');
+  const other = await makeUser('ritual_other_p9');
+  const mix = await saveMix(u, 1, SHORT_MIX);
+  const otherMix = await saveMix(other, 1, { ...SHORT_MIX, name: 'Not Yours' });
+  await toBay(u);
+
+  // No CD → the stage refuses with the ritual explanation.
+  u.client.send({ type: 'stage-join', mixId: mix.id });
+  const refuse = await waitFor(() => u.client.msgs.filter(m => m.type === 'notice' && /Burn .* to a CD first/.test(m.text)).pop(),
+    5000, 'stage refuses without CD');
+  assert.ok(refuse);
+  await sleep(400);
+  assert.equal(u.client.msgs.filter(m => m.type === 'performance-start').length, 0, 'no performance without a CD');
+
+  // Can't burn someone else's mix.
+  u.client.send({ type: 'buy-blanks' });
+  const wallet = await waitFor(() => u.client.msgs.filter(m => m.type === 'cds' && m.blanks === 10).pop(), 5000, 'pack of 10 blanks');
+  assert.equal(wallet.blanks, 10);
+  u.client.send({ type: 'burn-cd', mixId: otherMix.id });
+  const ownErr = await waitFor(() => u.client.msgs.filter(m => m.type === 'notice' && /only burn your own/.test(m.text)).pop(),
+    5000, 'burn refuses foreign mix');
+  assert.ok(ownErr);
+
+  // Burn own → 9 blanks, 1 CD carrying the mix TITLE.
+  u.client.send({ type: 'burn-cd', mixId: mix.id });
+  const burned = await waitFor(() => u.client.msgs.filter(m => m.type === 'cds' && m.cds.length === 1).pop(), 5000, 'CD burned');
+  assert.equal(burned.blanks, 9);
+  assert.equal(burned.cds[0].name, 'P9 Banger', 'CD carries the mix title');
+
+  // Now the stage takes us; when the set starts the CD is consumed.
+  u.client.send({ type: 'stage-join', mixId: mix.id });
+  await waitFor(() => u.client.msgs.filter(m => m.type === 'performance-start').pop(), 8000, 'performance starts with CD');
+  const after = await waitFor(() => u.client.msgs.filter(m => m.type === 'cds' && m.cds.length === 0).pop(), 5000, 'CD consumed at set start');
+  assert.equal(after.blanks, 9);
+  u.client.ws.close(); other.client.ws.close();
+});
+
+test('gold trophy at 25 lifetime up-votes + Top-40 chart ranks the set', { timeout: 180000 }, async () => {
+  // 9 fans × 3 cities (stage cooldowns are per-map) = 27 lifetime
+  // up-votes on one mix — crosses the Gold threshold of 25 without
+  // tripping the per-IP account-creation rate limit with 25 fans.
+  const perf = await makeUser('gold_p9');
+  const mix = await saveMix(perf, 1, SHORT_MIX);
+  perf.client.send({ type: 'buy-blanks' });
+  await waitFor(() => perf.client.msgs.filter(m => m.type === 'cds' && m.blanks === 10).pop(), 5000, 'blanks');
+  for (let i = 0; i < 3; i++) perf.client.send({ type: 'burn-cd', mixId: mix.id });
+  await waitFor(() => perf.client.msgs.filter(m => m.type === 'cds' && m.cds.length === 3).pop(), 5000, '3 CDs burned');
+  const archFor = (user, label) => user.client.hello.map.gateways.find(g => g.label === label);
+  const lastMapId = (u) => {
+    const m = [...u.client.msgs].reverse().find(x => x.type === 'map');
+    return m ? m.map.id : (u.client.hello ? u.client.hello.map.id : null);
+  };
+  async function hopOnto(u, x, y) {
+    // Portal checks run on movement/teleport and are debounced for
+    // 1.5s after each scene switch: step off, wait out the debounce,
+    // step back on.
+    u.client.send({ type: 'debug-teleport', x, y: y + 72 });
+    await sleep(1750);
+    u.client.send({ type: 'debug-teleport', x, y });
+  }
+  async function travelTo(u, label, cityId) {
+    if (lastMapId(u) !== 'the-gateway') {
+      const lastMap = [...u.client.msgs].reverse().find(x => x.type === 'map');
+      const back = lastMap.map.gateways[0]; // the return arch
+      await hopOnto(u, back.x + 32, back.y + 16);
+      await waitFor(() => lastMapId(u) === 'the-gateway', 8000, `${u.name} back to the Gateway`);
+    }
+    const arch = archFor(u, label);
+    await hopOnto(u, arch.x + 32, arch.y + 16);
+    await waitFor(() => lastMapId(u) === cityId, 8000, `${u.name} reaches ${cityId}`);
+  }
+  const fans = [];
+  for (let i = 0; i < 9; i++) fans.push(await makeUser(`goldfan${i}_p9`));
+  let totalUps = 0;
+  for (const [city, label] of [['solstice-bay', 'Solstice Bay'], ['neon-district', 'Neon District'], ['cinder-mesa', 'Cinder Mesa']]) {
+    for (const u of [perf, ...fans]) await travelTo(u, label, city);
+    await sleep(300);
+    const endsBefore = perf.client.msgs.filter(m => m.type === 'performance-end').length;
+    const startsBefore = perf.client.msgs.filter(m => m.type === 'performance-start').length;
+    perf.client.send({ type: 'stage-join', mixId: mix.id });
+    await waitFor(() => {
+      const starts = perf.client.msgs.filter(m => m.type === 'performance-start');
+      return starts.length > startsBefore ? starts[starts.length - 1] : null;
+    }, 10000, `set starts in ${city}`);
+    for (const f of fans) f.client.send({ type: 'vote', value: 1 });
+    const end = await waitFor(() => {
+      const ends = perf.client.msgs.filter(m => m.type === 'performance-end');
+      return ends.length > endsBefore ? ends[ends.length - 1] : null;
+    }, 40000, `set ends in ${city}`);
+    assert.equal(end.up, 9, `9 fans vote in ${city}`);
+    totalUps += end.up;
+  }
+  assert.equal(totalUps, 27);
+  // Item 9: the room saw the votes float by (vote-fx broadcasts).
+  assert.ok(perf.client.msgs.filter(m => m.type === 'vote-fx' && m.value === 1).length >= 9,
+    'vote-fx broadcasts reached the room');
+  const fanfare = await waitFor(() => perf.client.msgs.filter(m => m.type === 'notice' && /GOLD RECORD/.test(m.text)).pop(),
+    5000, 'gold record fanfare');
+  assert.ok(fanfare);
+
+  perf.client.send({ type: 'chart' });
+  const chart = await waitFor(() => perf.client.msgs.filter(m => m.type === 'chart').pop(), 5000, 'chart payload');
+  assert.equal(chart.windowDays, 7);
+  assert.equal(chart.entries[0].mixId, mix.id, 'the gold mix tops the chart');
+  assert.equal(chart.entries[0].title, 'P9 Banger');
+  assert.equal(chart.entries[0].ups, 27);
+  assert.equal(chart.entries[0].performer, perf.name);
+  perf.client.ws.close();
+  for (const f of fans) f.client.ws.close();
+});
+
+test('records unit: platinum at 100 lifetime ups (once each), chart window excludes old sets', { timeout: 30000 }, async () => {
+  process.env.SOLARION_DB_PATH = path.join(ROOT, 'data', `p9-unit-run-${RUN}.db`);
+  for (const f of [process.env.SOLARION_DB_PATH]) { try { fs.unlinkSync(f); } catch (e) { /* fresh */ } }
+  const { db, q } = require('../src/db');
+  require('../src/studio').init();
+  require('../src/music').init();
+  const records = require('../src/records');
+  records.init();
+  const u = q.insertUser.run('unit_p9', 'x', 0);
+  const uid = Number(u.lastInsertRowid);
+  q.insertAvatar.run(uid, 'unit_p9', '#3aa7e0', '#2b3a55', '#f1c27d', 'short', '#3a2a1c', 'the-gateway', 0, 0, 0);
+  const mx = db.prepare("INSERT INTO mixes (user_id, slot, name, data, updated_at) VALUES (?, 1, 'Unit Song', '{}', 0)").run(uid);
+  const mixId = Number(mx.lastInsertRowid);
+
+  assert.deepEqual(records.recordPerformance(mixId, uid, 60, 0), ['gold-record'], 'gold at ≥25');
+  assert.deepEqual(records.recordPerformance(mixId, uid, 39, 0), [], 'nothing new at 99');
+  assert.deepEqual(records.recordPerformance(mixId, uid, 1, 0), ['platinum-record'], 'platinum at 100');
+  assert.deepEqual(records.recordPerformance(mixId, uid, 50, 0), [], 'trophies are awarded once each');
+  const trophies = db.prepare("SELECT item_id FROM studio_items WHERE owner_id = ? ORDER BY item_id").all(uid);
+  assert.deepEqual(trophies.map(t => t.item_id), ['gold-record', 'platinum-record'], 'both trophies in home inventory');
+
+  // Chart window: an 8-day-old monster set must NOT chart.
+  db.prepare('INSERT INTO perf_history (mix_id, performer_id, up, down, ts) VALUES (?, ?, 500, 0, ?)')
+    .run(mixId, uid, Date.now() - 8 * 24 * 3600 * 1000);
+  const entries = records.chart();
+  const mine = entries.find(e => e.mixId === mixId);
+  assert.equal(mine.ups, 150, 'chart counts only the trailing 7 days (60+39+1+50)');
+});
 
 test('friends: request → accept, presence + locations, join-friend travel, remove', { timeout: 60000 }, async () => {
   const a = await makeUser('pal_a_p9');

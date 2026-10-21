@@ -156,6 +156,67 @@ const LOOPS = [
     chords: [[0, 3, 7, 10], [-4, 0, 3, 7], [3, 7, 10, 14], [-2, 2, 5, 10]] },
   { id: 'chill-fx-1', name: 'Vinyl Rain', genre: 'Chill', role: 'fx', bars: 2,
     fx: [{ step: 0, kind: 'rain' }] },
+
+  // ---------------------------------------------------------- Phase 9: +24 loops (72 total)
+  // ---------------------------------------------------------- POP II
+  { id: 'pop-drums-3', name: 'Half-Time Pop', genre: 'Pop', role: 'drums', bars: 2,
+    drums: { kick: 'x.......x.......x.......x.......', snare: '........x...............x.......', hat: 'x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.xx' } },
+  { id: 'pop-bass-3', name: 'Disco Octaves', genre: 'Pop', role: 'bass', bars: 2, wave: 'triangle', root: 55,
+    notes: [[0, 0, 1], [2, 12, 1], [4, 0, 1], [6, 12, 1], [8, 0, 1], [10, 12, 1], [12, 0, 1], [14, 12, 1], [16, -4, 1], [18, 8, 1], [20, -4, 1], [22, 8, 1], [24, 3, 1], [26, 15, 1], [28, 3, 1], [30, 15, 1]] },
+  { id: 'pop-mel-3', name: 'Candy Arp', genre: 'Pop', role: 'melody', bars: 2, wave: 'square', root: 220,
+    notes: [...arp(range(0, 15), [12, 19, 15, 19]), ...arp(range(16, 31), [10, 17, 14, 17])] },
+  { id: 'pop-pad-2', name: 'String Glow', genre: 'Pop', role: 'pad', bars: 4, wave: 'triangle', root: 110,
+    chords: [[0, 4, 7], [0, 5, 9], [-4, 0, 4], [3, 7, 11]] },
+
+  // ---------------------------------------------------------- DANCE II
+  { id: 'dance-drums-3', name: 'Warehouse Kick', genre: 'Dance', role: 'drums', bars: 2,
+    drums: { kick: 'x...x...x...x...x...x...x...x.x.', snare: '....x.......x.......x.......x...', hat: 'x.xxx.x.x.x.xxx.x.xxx.x.x.x.xxx.', perc: '....x.......x.......x.......x...' } },
+  { id: 'dance-bass-3', name: 'Acid Line', genre: 'Dance', role: 'bass', bars: 2, wave: 'sawtooth', root: 55,
+    notes: [[0, 0, 1], [3, 0, 1], [6, 12, 1], [8, 0, 1], [11, 3, 1], [14, 0, 1], [16, -2, 1], [19, -2, 1], [22, 10, 1], [24, -2, 1], [27, 5, 1], [30, 3, 1]] },
+  { id: 'dance-mel-3', name: 'Supersaw Hook', genre: 'Dance', role: 'melody', bars: 2, wave: 'sawtooth', root: 220,
+    notes: [[0, 12, 3], [4, 15, 1], [6, 19, 2], [8, 15, 2], [12, 12, 4], [16, 8, 3], [20, 12, 1], [22, 15, 2], [24, 19, 2], [28, 15, 4]] },
+  { id: 'dance-fx-2', name: 'Impact Pack', genre: 'Dance', role: 'fx', bars: 2,
+    fx: [{ step: 0, kind: 'crash' }, { step: 8, kind: 'blip', note: 31 }, { step: 16, kind: 'riser' }, { step: 28, kind: 'crash' }] },
+
+  // ---------------------------------------------------------- HIP-HOP II
+  { id: 'hh-drums-3', name: 'Swing Kit', genre: 'Hip-Hop', role: 'drums', bars: 2,
+    drums: { kick: 'x....x......x...x....x......x...', snare: '....x.......x.......x.......x...', hat: 'x..x..x.x..x..x.x..x..x.x..x..x.' } },
+  { id: 'hh-bass-3', name: '808 Glide', genre: 'Hip-Hop', role: 'bass', bars: 2, wave: 'sine', root: 55,
+    notes: [[0, 0, 8], [12, 3, 2], [16, -4, 6], [26, 0, 2], [30, 7, 2]] },
+  { id: 'hh-mel-3', name: 'Soul Chop', genre: 'Hip-Hop', role: 'melody', bars: 2, wave: 'triangle', root: 220,
+    notes: [[0, 15, 2], [3, 12, 1], [6, 19, 3], [12, 15, 2], [16, 10, 2], [19, 15, 1], [22, 22, 3], [28, 19, 2]] },
+  { id: 'hh-pad-2', name: 'Velvet Rhodes', genre: 'Hip-Hop', role: 'pad', bars: 4, wave: 'triangle', root: 110,
+    chords: [[0, 3, 7, 10], [-2, 2, 5, 9], [-4, 0, 3, 7], [3, 7, 10, 14]] },
+
+  // ---------------------------------------------------------- ROCK II
+  { id: 'rock-drums-3', name: 'Stadium Stomp', genre: 'Rock', role: 'drums', bars: 2,
+    drums: { kick: 'x.....x.x.......x.....x.x.......', snare: '....x.......x.......x.......x...', hat: 'x...x...x...x...x...x...x...x...', perc: 'x.......x.......x.......x.......' } },
+  { id: 'rock-bass-3', name: 'Gallop Bass', genre: 'Rock', role: 'bass', bars: 2, wave: 'sawtooth', root: 55,
+    notes: [[0, 0, 1], [2, 0, 1], [3, 0, 1], [4, 0, 1], [6, 0, 1], [7, 0, 1], [8, 0, 1], [10, 3, 1], [11, 3, 1], [12, 0, 1], [14, 0, 1], [15, 0, 1], [16, -4, 1], [18, -4, 1], [19, -4, 1], [20, -4, 1], [22, 0, 1], [23, 0, 1], [24, 5, 1], [26, 3, 1], [27, 3, 1], [28, 0, 2]] },
+  { id: 'rock-mel-3', name: 'Arena Solo', genre: 'Rock', role: 'melody', bars: 2, wave: 'sawtooth', root: 220,
+    notes: [[0, 24, 3], [4, 22, 1], [6, 19, 2], [8, 22, 2], [12, 24, 4], [16, 19, 2], [18, 22, 1], [20, 24, 2], [22, 26, 1], [24, 24, 2], [28, 19, 3]] },
+  { id: 'rock-pad-2', name: 'Organ Swell', genre: 'Rock', role: 'pad', bars: 4, wave: 'triangle', root: 110,
+    chords: [[0, 7, 12], [-4, 3, 8], [3, 10, 15], [-2, 5, 10]] },
+
+  // ---------------------------------------------------------- LATIN II
+  { id: 'latin-drums-3', name: 'Reggaeton Dembow', genre: 'Latin', role: 'drums', bars: 2,
+    drums: { kick: 'x.....x...x.....x.....x...x.....', snare: '...x......x.....x......x....', hat: 'x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.', perc: '..x...x...x...x...x...x...x...x.' } },
+  { id: 'latin-bass-3', name: 'Bachata Bass', genre: 'Latin', role: 'bass', bars: 2, wave: 'triangle', root: 55,
+    notes: [[0, 0, 2], [4, 7, 2], [8, 0, 2], [12, 3, 2], [16, -4, 2], [20, 3, 2], [24, -4, 2], [28, 0, 2]] },
+  { id: 'latin-mel-3', name: 'Brass Hits', genre: 'Latin', role: 'melody', bars: 2, wave: 'square', root: 220,
+    notes: [[0, 12, 1], [2, 12, 1], [4, 19, 3], [8, 12, 1], [10, 12, 1], [12, 17, 3], [16, 8, 1], [18, 8, 1], [20, 15, 3], [24, 8, 1], [26, 12, 1], [28, 12, 3]] },
+  { id: 'latin-fx-2', name: 'Guiro & Whistle', genre: 'Latin', role: 'fx', bars: 2,
+    fx: [{ step: 0, kind: 'shaker' }, { step: 8, kind: 'blip', note: 26 }, { step: 16, kind: 'shaker' }, { step: 24, kind: 'blip', note: 31 }] },
+
+  // ---------------------------------------------------------- CHILL II
+  { id: 'chill-drums-3', name: 'Tape Hiss Kit', genre: 'Chill', role: 'drums', bars: 2,
+    drums: { kick: 'x.....x.......x.....x.......', snare: '....x.......x.......x.......x...', hat: '..x...x...x...x...x...x...x...x.', perc: 'x...............x...............' } },
+  { id: 'chill-bass-3', name: 'Warm Sub Dub', genre: 'Chill', role: 'bass', bars: 2, wave: 'sine', root: 55,
+    notes: [[0, 0, 6], [8, 0, 2], [16, 3, 6], [26, 7, 2]] },
+  { id: 'chill-mel-3', name: 'Night Pluck', genre: 'Chill', role: 'melody', bars: 2, wave: 'triangle', root: 220,
+    notes: [[0, 15, 2], [6, 19, 2], [12, 22, 3], [18, 19, 2], [24, 15, 2], [30, 12, 2]] },
+  { id: 'chill-pad-2', name: 'Ocean Swell', genre: 'Chill', role: 'pad', bars: 4, wave: 'triangle', root: 110,
+    chords: [[0, 3, 7], [3, 7, 10], [-4, 0, 3], [-2, 2, 5]] },
 ];
 
 const LOOP_BY_ID = new Map(LOOPS.map(l => [l.id, l]));
