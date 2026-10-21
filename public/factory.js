@@ -324,9 +324,12 @@ function makeSign(ctx, cx, cy, opts = {}) {
   return { w: bw + 6, h: 47 };
 }
 
-const API = {
+/* NOTE: not named `API` — sprites.js already declares a top-level
+ * `const API`, and classic scripts share one lexical scope, so a
+ * second `const API` would be a SyntaxError that kills the file. */
+const FACTORY = {
   ZOOM, PALETTE, proj, shade, diamond,
   makeBuilding, makeCabinet, makeTree, makeLamp, makePlanter, makeSign,
 };
-if (typeof window !== 'undefined') window.SolarionFactory = API;
-if (typeof module !== 'undefined' && module.exports) module.exports = API;
+if (typeof window !== 'undefined') window.SolarionFactory = FACTORY;
+if (typeof module !== 'undefined' && module.exports) module.exports = FACTORY;

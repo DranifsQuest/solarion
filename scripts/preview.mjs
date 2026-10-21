@@ -5,10 +5,23 @@
  *
  * Boots the game server in test mode (SOLARION_TEST=1) on a scratch
  * port + throwaway DB, then screenshots maps through the REAL client
- * (headless Chromium loads /preview/:mapId, which drives the actual
- * public/client.js render path — see public/preview.js). Output:
- * previews/<map>-day.png and previews/<map>-night.png for every map,
- * so a build agent can SEE its own art instead of drawing blind.
+ * in headless Chromium: public/preview.js feeds a synthetic hello
+ * (from the server's test-only /preview-data route, built with the
+ * real clientMap serializer) through the client's own message
+ * handler, so public/client.js's draw() paints the frame. Output:
+ * previews/<map>-day.png and previews/<map>-night.png — a build
+ * agent can SEE its own art instead of drawing blind.
+ *
+ * Two environment lessons are baked in (both cost real time):
+ *  - `chrome --screenshot` (one-shot) hangs forever in this VM, in
+ *    every GPU mode. A daemonized chrome driven over CDP (via the
+ *    repo's existing `ws` dependency) answers in ~2s. No new deps.
+ *  - Chrome's Local Network Access checks block navigations to
+ *    http://localhost here (ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_
+ *    CHECKS — the initiator is classified "public"). So the preview
+ *    page is generated to a temp file and loaded from file:// (a
+ *    LOCAL initiator); only the JSON hello crosses http, as a
+ *    local->local fetch the test-only route CORS-allows.
  *
  * Usage:
  *   npm run preview                  # all maps, day + night
@@ -18,7 +31,7 @@
  *
  * Chrome binary: $SOLARION_CHROME, else the first of the known
  * locations / PATH names below. Exit 1 if the server won't boot, a
- * page errors, or a screenshot comes out implausibly small.
+ * page reports an error, or a screenshot is implausibly small.
  */
 
 import { spawn, spawnSync } from 'node:child_process';
@@ -27,6 +40,10 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const WebSocket = require('ws');
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const OUT_DIR = path.join(ROOT, 'previews');
@@ -65,66 +82,171 @@ async function waitHealth(port, tries = 60) {
   throw new Error('server did not answer /health in 30s');
 }
 
-function shoot(chrome, url, out) {
-  const args = [
-    '--headless=new', '--no-sandbox', '--disable-gpu', '--hide-scrollbars',
-    '--force-device-scale-factor=1', '--autoplay-policy=no-user-gesture-required',
-    `--window-size=${VIEW.w},${VIEW.h}`, '--virtual-time-budget=12000',
-    `--screenshot=${out}`, url,
-  ];
-  const r = spawnSync(chrome, args, { encoding: 'utf8', timeout: 90000 });
-  if (r.status !== 0) throw new Error(`chrome failed (${r.status}): ${(r.stderr || '').slice(-400)}`);
-  const sz = fs.existsSync(out) ? fs.statSync(out).size : 0;
+/** Minimal CDP client over the repo's ws: one page target, reused. */
+class Cdp {
+  constructor(ws) {
+    this.ws = ws;
+    this.seq = 0;
+    this.pending = new Map();
+    ws.on('message', (data) => {
+      const m = JSON.parse(String(data));
+      if (m.id && this.pending.has(m.id)) {
+        const { resolve, reject } = this.pending.get(m.id);
+        this.pending.delete(m.id);
+        if (m.error) reject(new Error(`CDP ${m.error.message}`));
+        else resolve(m.result);
+      }
+    });
+  }
+  send(method, params = {}) {
+    const id = ++this.seq;
+    return new Promise((resolve, reject) => {
+      this.pending.set(id, { resolve, reject });
+      this.ws.send(JSON.stringify({ id, method, params }));
+    });
+  }
+  static async connect(url) {
+    const ws = new WebSocket(url, { perMessageDeflate: false });
+    await new Promise((resolve, reject) => {
+      ws.once('open', resolve);
+      ws.once('error', reject);
+    });
+    return new Cdp(ws);
+  }
+  close() { try { this.ws.close(); } catch (e) { /* gone */ } }
+}
+
+async function shootOverCdp(cdp, fileUrl, out, expectTitle) {
+  await cdp.send('Page.navigate', { url: fileUrl });
+  // Wait until THIS page says it's ready — the exact title match
+  // (preview.js sets `preview:<map>:<phase>`) guards against reading
+  // the previous page's ready flag mid-navigation; the factory demo
+  // instead ends its script by setting a 'ready' title. Then give
+  // the rAF draw loop a few frames to paint.
+  const deadline = Date.now() + 25000;
+  for (;;) {
+    const r = await cdp.send('Runtime.evaluate', {
+      expression: `({ title: document.title, ready: !!window.__PREVIEW_READY__, err: window.__PREVIEW_ERROR__ || null })`,
+      returnByValue: true,
+    });
+    const v = r && r.result && r.result.value;
+    if (v && v.err) throw new Error(`page reported error: ${v.err}`);
+    const titleOk = expectTitle ? (v && v.title === expectTitle) : (v && v.title.endsWith('ready'));
+    if (v && titleOk && (v.ready || !expectTitle)) break;
+    if (Date.now() > deadline) throw new Error(`page never became ready: ${fileUrl}`);
+    await new Promise(r2 => setTimeout(r2, 250));
+  }
+  await new Promise(r => setTimeout(r, 700));
+  const shot = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+  fs.writeFileSync(out, Buffer.from(shot.data, 'base64'));
+  const sz = fs.statSync(out).size;
   if (sz < 20000) throw new Error(`screenshot suspiciously small (${sz} bytes): ${out}`);
   return sz;
 }
 
+/** Build a preview page (the real index.html + injected config) in
+ *  dir; its assets resolve against public/ via a file:// <base>. */
+function writePreviewPage(dir, apiBase, mapId, phase) {
+  const pub = path.join(ROOT, 'public');
+  let html = fs.readFileSync(path.join(pub, 'index.html'), 'utf8');
+  html = html.replace('<head>', `<head>\n<base href="file://${pub}/">`);
+  const inject = `<script>window.__PREVIEW_CFG__ = ${JSON.stringify({ mapId, phase, apiBase })};</script>\n<script src="preview.js"></script>\n</body>`;
+  const file = path.join(dir, `${mapId}-${phase}.html`);
+  fs.writeFileSync(file, html.replace('</body>', inject));
+  return `file://${file}`;
+}
+
+function writeFactoryPage(dir) {
+  const pub = path.join(ROOT, 'public');
+  let html = fs.readFileSync(path.join(ROOT, 'scripts', 'factory-demo.html'), 'utf8');
+  html = html.replace('<head>', `<head>\n<base href="file://${pub}/">`);
+  const file = path.join(dir, 'factory-demo.html');
+  fs.writeFileSync(file, html);
+  return `file://${file}`;
+}
+
 async function main() {
   const argv = process.argv.slice(2);
-  const phases = argv.includes('--phase')
-    ? [argv[argv.indexOf('--phase') + 1]]
-    : ['day', 'night'];
+  const phaseIdx = argv.indexOf('--phase');
+  const phases = phaseIdx >= 0 ? [argv[phaseIdx + 1]] : ['day', 'night'];
   const wantFactory = argv.includes('--factory');
-  const named = argv.filter(a => !a.startsWith('--') && a !== phases[0]);
+  const named = [];
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === '--phase') { i++; continue; }
+    if (argv[i].startsWith('--')) continue;
+    named.push(argv[i]);
+  }
 
   const chrome = findChrome();
   if (!chrome) { console.error('No Chromium found (set SOLARION_CHROME).'); process.exit(1); }
   console.log(`chrome: ${chrome}`);
 
   const port = await freePort();
+  const cdpPort = await freePort();
   const dbPath = path.join(os.tmpdir(), `solarion-preview-${process.pid}.db`);
+  const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'solarion-preview-chrome-'));
+  const pageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'solarion-preview-pages-'));
   const env = { ...process.env, SOLARION_TEST: '1', SOLARION_PORT: String(port), SOLARION_DB_PATH: dbPath };
   const server = spawn('node', ['src/server.js'], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
   server.stderr.on('data', d => process.stderr.write(`[server] ${d}`));
-  const cleanup = () => { try { server.kill('SIGTERM'); } catch (e) { /* gone */ } };
+  const browser = spawn(chrome, [
+    '--headless=new', '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage',
+    '--no-first-run', '--disable-component-update', '--disable-background-networking',
+    // This VM exports http_proxy env vars; localhost must go direct.
+    '--no-proxy-server',
+    `--user-data-dir=${profileDir}`, `--remote-debugging-port=${cdpPort}`,
+    `--window-size=${VIEW.w},${VIEW.h}`, 'about:blank',
+  ], { stdio: 'ignore' });
+  const cleanup = () => {
+    try { server.kill('SIGTERM'); } catch (e) { /* gone */ }
+    try { browser.kill('SIGTERM'); } catch (e) { /* gone */ }
+  };
   process.on('exit', cleanup);
 
+  let cdp = null;
   try {
     const health = await waitHealth(port);
+    // Attach to chrome's initial page target over CDP.
+    let pageTarget = null;
+    for (let i = 0; i < 40 && !pageTarget; i++) {
+      try {
+        const list = await (await fetch(`http://127.0.0.1:${cdpPort}/json/list`)).json();
+        pageTarget = list.find(t => t.type === 'page');
+      } catch (e) { /* not up yet */ }
+      if (!pageTarget) await new Promise(r => setTimeout(r, 500));
+    }
+    if (!pageTarget) throw new Error('chrome CDP endpoint never came up');
+    cdp = await Cdp.connect(pageTarget.webSocketDebuggerUrl);
+    await cdp.send('Page.enable');
+
     const allMaps = Object.keys(health.maps || {});
     const maps = named.length ? named : allMaps;
     for (const m of maps) {
       if (!allMaps.includes(m)) { console.error(`unknown map: ${m}`); process.exitCode = 1; return; }
     }
     fs.mkdirSync(OUT_DIR, { recursive: true });
+    const apiBase = `http://127.0.0.1:${port}`;
     const rows = [];
     for (const m of maps) {
       for (const ph of phases) {
         const out = path.join(OUT_DIR, `${m}-${ph}.png`);
-        const sz = shoot(chrome, `http://127.0.0.1:${port}/preview/${m}?phase=${ph}`, out);
+        const sz = await shootOverCdp(cdp, writePreviewPage(pageDir, apiBase, m, ph), out, `preview:${m}:${ph}`);
         rows.push(`  ${m} (${ph}) -> previews/${m}-${ph}.png (${Math.round(sz / 1024)} KB)`);
       }
     }
     if (wantFactory) {
       const out = path.join(OUT_DIR, 'factory-demo.png');
-      const sz = shoot(chrome, `http://127.0.0.1:${port}/factory-demo`, out);
+      const sz = await shootOverCdp(cdp, writeFactoryPage(pageDir), out);
       rows.push(`  factory demo -> previews/factory-demo.png (${Math.round(sz / 1024)} KB)`);
     }
     console.log(`previews written to ${OUT_DIR}:`);
     console.log(rows.join('\n'));
   } finally {
+    if (cdp) cdp.close();
     cleanup();
     for (const suf of ['', '-wal', '-shm']) { try { fs.unlinkSync(dbPath + suf); } catch (e) { /* absent */ } }
+    try { fs.rmSync(profileDir, { recursive: true, force: true }); } catch (e) { /* chrome may hold files */ }
+    try { fs.rmSync(pageDir, { recursive: true, force: true }); } catch (e) { /* absent */ }
   }
 }
 

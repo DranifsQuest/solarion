@@ -32,7 +32,8 @@
 
   async function boot() {
     try {
-      const r = await fetch(`/preview-data/${encodeURIComponent(cfg.mapId)}?phase=${encodeURIComponent(cfg.phase)}`);
+      const base = cfg.apiBase || '';
+      const r = await fetch(`${base}/preview-data/${encodeURIComponent(cfg.mapId)}?phase=${encodeURIComponent(cfg.phase)}`);
       const hello = await r.json();
       // The client's real handlers: hello places us + the map,
       // snapshot registers the sample companions' render positions.

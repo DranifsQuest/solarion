@@ -275,6 +275,11 @@ if (TEST_MODE) {
   app.get('/preview-data/:mapId', (req, res) => {
     const map = MAPS[req.params.mapId];
     if (!map) return res.status(404).json({ ok: false, error: 'unknown map' });
+    // The Bake Shop preview page is loaded from file:// (Chrome's
+    // Local Network Access rules block http://localhost pages in
+    // this environment); its origin is "null", so let it read this
+    // synthetic, test-only payload cross-origin.
+    res.set('Access-Control-Allow-Origin', '*');
     // Force the world clock: 0.25 = full day, 0.70 = deep night.
     const phase = req.query.phase === 'night' ? 0.70 : 0.25;
     const dayCycle = { periodMs: DAY_CYCLE.periodMs, anchor: Date.now() - phase * DAY_CYCLE.periodMs };
@@ -303,11 +308,6 @@ if (TEST_MODE) {
     const phase = req.query.phase === 'night' ? 'night' : 'day';
     const inject = `<script>window.__PREVIEW_CFG__ = ${JSON.stringify({ mapId: req.params.mapId, phase })};</script>\n<script src="/preview.js"></script>\n</body>`;
     res.type('html').send(html.replace('</body>', inject));
-  });
-
-  app.get('/factory-demo', (req, res) => {
-    const html = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'factory-demo.html'), 'utf8');
-    res.type('html').send(html);
   });
 }
 // Phase 5: cap inbound WS frames at 64 KB. The `ws` library default is
