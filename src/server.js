@@ -293,7 +293,7 @@ if (TEST_MODE) {
     ];
     res.json({
       type: 'hello', you, map: clientMap(map), players,
-      chat: [], zcoins: 0, bonusGranted: false, dayCycle,
+      chat: [], zcoins: 0, bonusGranted: false, bonusAmount: 0, dayCycle,
     });
   });
 
@@ -337,8 +337,10 @@ wss.on('connection', (ws, req) => {
     if (fresh) session.avatar.zcoins = fresh.zcoins;
   }
 
-  // Daily login bonus: atomic one-claim-per-day in the DB.
-  const bonusGranted = game.claimDailyBonus(session.user.id);
+  // Daily login bonus: atomic one-claim-per-day in the DB (5,000z
+  // welcome bonus on a brand-new account's first-ever claim).
+  const bonusAmount = game.claimDailyBonus(session.user.id);
+  const bonusGranted = bonusAmount > 0;
   if (bonusGranted) {
     const fresh = q.avatarByUser.get(session.user.id);
     if (fresh) session.avatar.zcoins = fresh.zcoins;
@@ -366,6 +368,7 @@ wss.on('connection', (ws, req) => {
     chat: game.historyFor(p.mapId),
     zcoins: q.avatarByUser.get(session.user.id).zcoins,
     bonusGranted,
+    bonusAmount,
     dayCycle: DAY_CYCLE,
   });
   stages.syncPlayer(p);
@@ -456,6 +459,17 @@ wss.on('connection', (ws, req) => {
           else if (msg.op === 'unhippy') p.hippyUntil = 1; // tick clears + resyncs
           else if (msg.op === 'set-drinks' && Number.isFinite(msg.count)) p.vice.drinks = { count: Math.max(0, Math.min(99, Math.round(msg.count))), at: now };
           else if (msg.op === 'set-puffs' && Number.isFinite(msg.count)) p.vice.puffs = { count: Math.max(0, Math.min(99, Math.round(msg.count))), at: now };
+          // v1.1: simulate time passing for ALL vice clocks at once
+          // (the 30s window, pass-out, hippy) so the suite can assert
+          // the window model without real 30s waits.
+          else if (msg.op === 'age' && Number.isFinite(msg.ms)) {
+            const ms = Math.max(0, Math.round(msg.ms));
+            for (const k of ['drinks', 'puffs']) {
+              if (p.vice[k] && p.vice[k].at) p.vice[k] = { count: p.vice[k].count, at: p.vice[k].at - ms };
+            }
+            if (p.passedOutUntil) p.passedOutUntil -= ms;
+            if (p.hippyUntil) p.hippyUntil -= ms;
+          }
         }
         break;
       case 'enter-studio':
@@ -502,9 +516,13 @@ wss.on('connection', (ws, req) => {
       }
       case 'buy-blanks':
       case 'burn-cd':
+      case 'delete-cd':
       case 'cds':
       case 'chart':
         stages.handle(p, msg);
+        break;
+      case 'tip':
+        stages.handleTip(p, msg.amount);
         break;
       case 'stage-join':
         stages.handleJoin(p, msg.mixId);
@@ -529,6 +547,14 @@ wss.on('connection', (ws, req) => {
         // daily-cap branch can be exercised without 70 performances.
         if (TEST_MODE && Number.isFinite(msg.earned)) {
           music.setPerfEarned(p.userId, localDay(), Math.min(100000, Math.max(0, msg.earned)));
+        }
+        break;
+      case 'debug-bonus':
+        // Test-only (SOLARION_TEST=1): rewind the caller's last
+        // bonus day so the next connect exercises the next-day
+        // (+100z, not the 5,000z welcome) claim path.
+        if (TEST_MODE && msg.op === 'rewind-day') {
+          q.setLastBonusDay.run('2000-01-01', p.userId);
         }
         break;
       case 'debug-casino':

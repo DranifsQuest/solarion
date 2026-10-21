@@ -14,6 +14,10 @@
 
 const { MAPS, TILE, collides, gatewayAt, doorAt } = require('./maps');
 const { db, q } = require('./db');
+// The screen<->world direction mapping lives in the shared client
+// module (single source for the input + facing rules; it is written
+// require-able for exactly this).
+const { screenFacing } = require('../public/input-guard');
 
 // Phase B amendment — vice money moves (atomic debit, same pattern
 // as the casino's ledger: the WHERE guard makes overspend impossible).
@@ -49,16 +53,19 @@ const SIT_RADIUS = 52;          // px: how close to a seat `interact` must be
 
 // Phase B amendment — vices (bar drinks + hookah puffs). All state
 // is server-tracked per player; clients only render the effects.
-// Decay: one point wears off per minute (re-anchored on each drink /
-// puff). 10 drinks = pass out cold for 20s, wake at 2 drinks.
-// 10 puffs = hippy transformation for 20s; the trip burns the puff
-// count back to 0 when it starts.
+// v1.1 model (Zan, 2026-10-21): the ENTIRE drunk / high state lives
+// in a 30-second window from the LAST drink / puff — haze, wobble,
+// level, pass-out, hippy, all of it. Each new drink/puff refreshes
+// the window and stacks the level toward THRESHOLD. When the window
+// lapses the player is simply sober (level 0, effects off) — the old
+// −1-per-minute decay and wake-at-2 are gone. Pass-out (20s at 10
+// drinks) and hippy (20s at 10 puffs) fit inside the window; waking
+// from either leaves the player sober, no residual level.
 const VICE = {
   DRINK_COST: 5, PUFF_COST: 5,
-  DECAY_MS: 60e3,
+  WINDOW_MS: 30e3,
   THRESHOLD: 10,
   PASSOUT_MS: 20e3,
-  PASSOUT_RESET: 2,
   HIPPY_MS: 20e3,
   BAR_RADIUS: 90,        // px from the bar's patron spot to buy a drink
 };
@@ -231,11 +238,19 @@ class Game {
 
   // ---------------------------------------------------------- daily bonus
 
-  /** Claim today's +100z. Returns true exactly once per account per day. */
+  /**
+   * Claim today's bonus. Returns the amount granted (0 = not today):
+   * 5,000z for a brand-new account's first-ever claim, else 100z.
+   * The first-claim read and the atomic UPDATE run back-to-back in
+   * this synchronous process, so the amount can't race the claim.
+   */
   claimDailyBonus(userId) {
     const today = localDay();
+    const before = q.avatarByUser.get(userId);
+    const firstClaim = Boolean(before && before.last_bonus_day == null);
     const r = q.claimDailyBonus.run(today, userId, today);
-    return r.changes === 1;
+    if (r.changes !== 1) return 0;
+    return firstClaim ? 5000 : 100;
   }
 
   // ---------------------------------------------------------- messaging
@@ -417,14 +432,30 @@ class Game {
       // holds the player exactly where the transfer placed them —
       // movement input is ignored until the window ends.
       if (p.transferUntil && now < p.transferUntil) continue;
+      // v1.1: vice windows lapse in-zone — when the 30s window from
+      // the last drink/puff closes, the stored level clears and the
+      // client hears about it right here (vice-state + snapshots),
+      // no zone change involved. A lapse during pass-out wakes the
+      // player sober on the spot (pass-out can never outlive it).
+      for (const kind of ['drinks', 'puffs']) {
+        const v = p.vice[kind];
+        if (v && v.count > 0 && now - v.at >= VICE.WINDOW_MS) {
+          p.vice[kind] = { count: 0, at: 0 };
+          if (kind === 'drinks' && p.passedOutUntil) {
+            p.passedOutUntil = 0;
+            this.send(p, { type: 'notice', text: 'You wake up on the floor — stone sober.' });
+          }
+          this.sendVice(p);
+        }
+      }
       // Phase B amendment — passed out cold: no movement at all until
       // the window ends (chat is handled outside the tick and still
-      // works). Waking up resets the count to PASSOUT_RESET.
+      // works). Waking up = sober: the level clears with the window.
       if (p.passedOutUntil) {
         if (now >= p.passedOutUntil) {
           p.passedOutUntil = 0;
-          p.vice.drinks = { count: VICE.PASSOUT_RESET, at: now };
-          this.send(p, { type: 'notice', text: 'You wake up on the floor, still a little wobbly.' });
+          p.vice.drinks = { count: 0, at: 0 };
+          this.send(p, { type: 'notice', text: 'You wake up on the floor — stone sober.' });
           this.sendVice(p);
         } else {
           continue;
@@ -483,8 +514,23 @@ class Game {
       const ny = p.y + dy;
       if (!collides(map, p.x, ny, PLAYER_RADIUS)) p.y = ny;
 
-      if (Math.abs(dx) > Math.abs(dy)) p.dir = dx > 0 ? 'right' : 'left';
-      else p.dir = dy > 0 ? 'down' : 'up';
+      // v1.1 facing (Zan: "walk right, face right"): dir names the
+      // SCREEN direction of travel. dx/dy here are world axes; the
+      // shared mapping projects them through the iso transform and
+      // takes the dominant screen axis. (The old world-axis read was
+      // the Lane B quirk: screen-right is world (+1,-1) — a tie the
+      // old code fell through to 'up'.)
+      p.dir = screenFacing(dx, dy);
+
+      // v1.1: while performing, the artist stays ON the platform —
+      // movement clamps to the stage rect instead of walking off,
+      // and never cancels the set (it ends at mix end / scene change
+      // / disconnect, as the stage module already handles).
+      if (p.performing && map.stage) {
+        const st = map.stage;
+        p.x = Math.max(st.x + PLAYER_RADIUS, Math.min(st.x + st.w - PLAYER_RADIUS, p.x));
+        p.y = Math.max(st.y + PLAYER_RADIUS, Math.min(st.y + st.h - PLAYER_RADIUS, p.y));
+      }
 
       this.checkPortals(p);
     }
@@ -618,16 +664,21 @@ class Game {
 
   // ---------------------------------------------------------- vices
   // Phase B amendment: drinks (casino bars) + puffs (hookah lounge).
-  // Counts decay one point per VICE.DECAY_MS, re-anchored at each
-  // consumption; everything money-shaped is server-side and atomic.
+  // Counts live in the 30s window from the last consumption (see the
+  // VICE block); everything money-shaped is server-side and atomic.
 
-  /** Effective (decayed) count for 'drinks' or 'puffs'. */
+  /**
+   * Effective count for 'drinks' or 'puffs' under the v1.1 window
+   * model: the stacked level while the 30s window from the last
+   * drink/puff is open, else 0 (sober). No per-minute decay.
+   */
   viceCount(p, kind, now = Date.now()) {
     const v = p.vice[kind];
     if (!v || !v.count) return 0;
-    return Math.max(0, v.count - Math.floor((now - v.at) / VICE.DECAY_MS));
+    return now - v.at < VICE.WINDOW_MS ? v.count : 0;
   }
 
+  /** Add one drink/puff: refreshes the 30s window, stacks the level. */
   viceAdd(p, kind, now = Date.now()) {
     const next = this.viceCount(p, kind, now) + 1;
     p.vice[kind] = { count: next, at: now };

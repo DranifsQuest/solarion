@@ -202,22 +202,22 @@ async function main() {
     A.id = A.client.hello.you.id;
     const h = A.client.hello;
     if (h.map.id !== 'the-gateway') throw new Error(`spawn map ${h.map.id}`);
-    if (h.bonusGranted !== true || h.zcoins !== 100) throw new Error(`bonus=${h.bonusGranted} z=${h.zcoins}`);
+    if (h.bonusGranted !== true || h.bonusAmount !== 5000 || h.zcoins !== 5000) throw new Error(`bonus=${h.bonusGranted} amount=${h.bonusAmount} z=${h.zcoins}`);
     if (h.you.gender !== 'F' || h.you.face !== 'heart' || h.you.hair_style !== 'ponytail' || h.you.bottom_style !== 'skirt') {
       throw new Error(`hello appearance mismatch: ${JSON.stringify({ g: h.you.gender, f: h.you.face, hair: h.you.hair_style, b: h.you.bottom_style })}`);
     }
-    report('ws connect A: hello in The Gateway, +100z daily bonus granted', true, `zcoins=${h.zcoins}, appearance F/heart/ponytail/skirt in hello`);
-  } catch (e) { report('ws connect A: hello in The Gateway, +100z daily bonus granted', false, e.message); return finish(); }
+    report('ws connect A: hello in The Gateway, +5,000z welcome bonus granted', true, `zcoins=${h.zcoins}, appearance F/heart/ponytail/skirt in hello`);
+  } catch (e) { report('ws connect A: hello in The Gateway, +5,000z welcome bonus granted', false, e.message); return finish(); }
 
   try {
     B.client = await connectClient(B.token);
     B.id = B.client.hello.you.id;
-    if (B.client.hello.zcoins !== 100) throw new Error(`B z=${B.client.hello.zcoins}`);
+    if (B.client.hello.zcoins !== 5000) throw new Error(`B z=${B.client.hello.zcoins}`);
     if (B.client.hello.you.gender !== 'M' || B.client.hello.you.face !== 'square' || B.client.hello.you.hair_style !== 'mohawk') {
       throw new Error('B hello appearance mismatch');
     }
-    report('ws connect B: hello received, +100z daily bonus granted', true, `zcoins=${B.client.hello.zcoins}, appearance M/square/mohawk in hello`);
-  } catch (e) { report('ws connect B: hello received, +100z daily bonus granted', false, e.message); return finish(); }
+    report('ws connect B: hello received, +5,000z welcome bonus granted', true, `zcoins=${B.client.hello.zcoins}, appearance M/square/mohawk in hello`);
+  } catch (e) { report('ws connect B: hello received, +5,000z welcome bonus granted', false, e.message); return finish(); }
 
   // ---- presence + chat + movement
   try {
@@ -247,9 +247,9 @@ async function main() {
     await sleep(500);
     A.client = await connectClient(A.token);
     const h = A.client.hello;
-    if (h.bonusGranted !== false || h.zcoins !== 100) throw new Error(`relog bonus=${h.bonusGranted} z=${h.zcoins}`);
-    report('daily bonus exactly once: relog grants no second bonus, balance stays 100z', true, `bonusGranted=false zcoins=${h.zcoins}`);
-  } catch (e) { report('daily bonus exactly once: relog grants no second bonus, balance stays 100z', false, e.message); }
+    if (h.bonusGranted !== false || h.zcoins !== 5000) throw new Error(`relog bonus=${h.bonusGranted} z=${h.zcoins}`);
+    report('welcome bonus exactly once: relog grants no second bonus, balance stays 5,000z', true, `bonusGranted=false zcoins=${h.zcoins}`);
+  } catch (e) { report('welcome bonus exactly once: relog grants no second bonus, balance stays 5,000z', false, e.message); }
 
   // ---- travel to Solstice Bay (both)
   try {
@@ -283,8 +283,8 @@ async function main() {
     await waitFor(() => lastOf(B.client, 'vote-ack'), 6000, 'vote ack');
     const end = await waitFor(() => lastOf(B.client, 'performance-end'), 35000, 'performance end');
     if (end.up !== 1 || end.earned !== 5) throw new Error(`end up=${end.up} earned=${end.earned}`);
-    const z = await waitFor(() => lastOf(A.client, 'zcoins', z => z.zcoins === 85), 6000, 'A paid');
-    report('music: save -> burn CD -> stage perform -> audience vote -> +5z payout', true, `earned=${end.earned} A balance=100-20(pack)+5=${z.zcoins}`);
+    const z = await waitFor(() => lastOf(A.client, 'zcoins', z => z.zcoins === 4985), 6000, 'A paid');
+    report('music: save -> burn CD -> stage perform -> audience vote -> +5z payout', true, `earned=${end.earned} A balance=5000-20(pack)+5=${z.zcoins}`);
   } catch (e) { report('music: save -> burn CD -> stage perform -> audience vote -> +5z payout', false, e.message); }
 
   // ---- casino: slots

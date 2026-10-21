@@ -953,6 +953,7 @@ function setMap(m, you, chat) {
   curArea = null;
   camState.init = false;
   if (window.SolarionSfx) window.SolarionSfx.ambience(m.id, Boolean(m.casino));
+  if (window.SolarionZoneMusic) window.SolarionZoneMusic.setMap(m.id, Boolean(m.casino));
   $('mapName').textContent = m.name;
   if (window.SolarionMixer) window.SolarionMixer.onMapChanged(m);
   if (window.SolarionCasino) window.SolarionCasino.onMapChanged(m);
@@ -964,6 +965,10 @@ function setMap(m, you, chat) {
     renderPos.set(me.id, { x: you.x, y: you.y, moving: false });
   }
 }
+
+// v1.1: when my latest drink / puff landed (client-observed from
+// snapshots) — drives the haze fade across the 30s vice window.
+const myViceAt = { drinks: 0, puffs: 0 };
 
 function handle(m) {
   if (window.SolarionMixer) window.SolarionMixer.handle(m);
@@ -982,11 +987,35 @@ function handle(m) {
       showGame();
       setMap(m.map, m.you, m.chat);
       chatLine(`<span class="sys">Welcome to ${esc(m.map.name)}.</span>`);
-      if (m.bonusGranted) toast('☀️ Daily bonus: +100 z coins!');
+      if (m.bonusGranted) {
+        toast(m.bonusAmount >= 5000
+          ? '🎉 Welcome bonus: +5,000 z coins!'
+          : '☀️ Daily bonus: +100 z coins!');
+      }
+      if (me.drinks > 0) myViceAt.drinks = Date.now();
+      if (me.puffs > 0) myViceAt.puffs = Date.now();
       break;
     }
     case 'snapshot': {
       players = m.players;
+      // v1.1 (Items 11/12 — the in-zone haze bug): `me` used to be
+      // refreshed ONLY on hello / map loads, so everything the
+      // canvas reads from `me` — the drunk haze, the psychedelic
+      // haze, fallen/hippy — went stale until a zone change, while
+      // the vice BUBBLES (drawn from this snapshot list) updated
+      // live. Merge my own snapshot entry into `me` every tick, and
+      // timestamp each fresh drink/puff landing so the hazes can
+      // fade across the server's 30s window.
+      if (me) {
+        const mine = m.players.find(p => p.id === me.id);
+        if (mine) {
+          if ((mine.drinks || 0) > (me.drinks || 0)) myViceAt.drinks = Date.now();
+          if ((mine.puffs || 0) > (me.puffs || 0)) myViceAt.puffs = Date.now();
+          me = { ...me, ...mine };
+          if (me.drinks > 0 && !myViceAt.drinks) myViceAt.drinks = Date.now();
+          if (me.puffs > 0 && !myViceAt.puffs) myViceAt.puffs = Date.now();
+        }
+      }
       checkArea();
       if (transfer) transfer.snapshotSeen = true;
       for (const p of players) {
@@ -1069,6 +1098,17 @@ addEventListener('keydown', (e) => {
   // swallow the keystroke, don't move, don't interact. (Phase B fix)
   if (window.SolarionInput && window.SolarionInput.isTextEntryTarget(e.target)) return;
   if (transfer) return; // input locked behind the load screen
+  // v1.1 chat contract (Item 15): Enter with the chat box inactive
+  // activates it. (Enter while it IS active submits the form — the
+  // form handler sends and blurs, handing keys back to movement.)
+  if (e.code === 'Enter') {
+    const inGame = !$('game').classList.contains('hidden');
+    if (inGame && window.SolarionInput && window.SolarionInput.enterAction(document.activeElement === $('chatInput')) === 'focus') {
+      e.preventDefault();
+      $('chatInput').focus();
+    }
+    return;
+  }
   if (e.code === 'KeyE') { send({ type: 'interact' }); return; }
   const k = KEYMAP[e.code];
   if (k) { keys[k] = true; e.preventDefault(); }
@@ -1133,12 +1173,21 @@ $('soundBtn').onclick = () => {
     $('volSlider').value = String(Math.round(window.SolarionSfx.volume * 100));
     $('muteBtn').textContent = window.SolarionSfx.muted ? 'Unmute' : 'Mute';
   }
+  if (window.SolarionZoneMusic) {
+    $('musicToggleBtn').textContent = window.SolarionZoneMusic.enabled ? '🎵 Music: On' : '🎵 Music: Off';
+  }
 };
 $('volSlider').oninput = () => { if (window.SolarionSfx) window.SolarionSfx.setVolume(Number($('volSlider').value) / 100); };
 $('muteBtn').onclick = () => {
   if (!window.SolarionSfx) return;
   const muted = window.SolarionSfx.toggleMute();
   $('muteBtn').textContent = muted ? 'Unmute' : 'Mute';
+};
+// v1.1: the zone-music toggle (music only; volume/mute untouched).
+$('musicToggleBtn').onclick = () => {
+  if (!window.SolarionZoneMusic) return;
+  const on = window.SolarionZoneMusic.setEnabled(!window.SolarionZoneMusic.enabled);
+  $('musicToggleBtn').textContent = on ? '🎵 Music: On' : '🎵 Music: Off';
 };
 document.addEventListener('click', (e) => {
   if (e.target && e.target.tagName === 'BUTTON' && window.SolarionSfx) window.SolarionSfx.play('click');
@@ -1545,6 +1594,61 @@ function drawTvScene(channelId, x, y, w, h, t) {
   }
 }
 
+// ------------------------------------------------------------------
+// v1.1 furniture art (Items 2/3): chairs and tables drawn at
+// CHARACTER scale. A chair is a silhouette — legs, a seat cushion,
+// and a slatted BACKREST on the side away from its facing — never
+// the old 12px diamond "dot". Warm wood throughout (Phase 10).
+function drawChairAt(x, y, dir) {
+  ctx.strokeStyle = '#5a3d1f';
+  ctx.lineWidth = 2.4;
+  ctx.beginPath();
+  ctx.moveTo(x - 14, y); ctx.lineTo(x - 16, y + 10);
+  ctx.moveTo(x + 14, y); ctx.lineTo(x + 16, y + 10);
+  ctx.stroke();
+  const back = { down: [0, -13], up: [0, 10], left: [21, -7], right: [-21, -7] }[dir] || [0, -13];
+  ctx.save();
+  ctx.translate(x + back[0], y + back[1]);
+  diamond(0, 0, 40, 12, '#8a5a2b');
+  diamond(0, -2, 40, 8, '#a5713a');
+  ctx.fillStyle = 'rgba(46,26,10,.55)';
+  ctx.fillRect(-13, -3, 3, 7);
+  ctx.fillRect(10, -3, 3, 7);
+  ctx.restore();
+  diamond(x, y - 2, 40, 15, '#9c6b35');
+  diamond(x, y - 4, 34, 11, '#b98347');
+}
+
+/** A round café/home table on a pedestal, wide enough to sit AT. */
+function drawTableAt(x, y) {
+  ctx.fillStyle = '#5a3d1f';
+  ctx.beginPath(); ctx.ellipse(x, y + 9, 7, 3.6, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillRect(x - 2.5, y - 2, 5, 11);
+  ctx.beginPath(); ctx.ellipse(x, y - 3, 32, 16, 0, 0, Math.PI * 2);
+  ctx.fillStyle = '#8a5a2b'; ctx.fill();
+  ctx.beginPath(); ctx.ellipse(x, y - 5, 32, 16, 0, 0, Math.PI * 2);
+  ctx.fillStyle = '#caa06a'; ctx.fill();
+  ctx.strokeStyle = '#7a5a2b'; ctx.lineWidth = 1.2; ctx.stroke();
+}
+
+// v1.1 stage pyrotechnics: bounded spark particles, spawned on the
+// performing mix's bar grid at the platform's front corners.
+const pyro = [];
+let pyroBar = -1;
+function spawnPyro(wx, wy) {
+  const [sx, sy] = proj(wx, wy);
+  const cols = ['#ffd23f', '#fff3c4', '#ff9d5c', '#ff6b81'];
+  for (let i = 0; i < 22 && pyro.length < 260; i++) {
+    const a = -Math.PI / 2 + (Math.random() - 0.5) * 1.5;
+    const sp = 1.4 + Math.random() * 2.4;
+    pyro.push({
+      x: sx, y: sy - 8, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+      life: 1, decay: 0.014 + Math.random() * 0.012,
+      col: cols[(Math.random() * cols.length) | 0], r: 1.4 + Math.random() * 1.8,
+    });
+  }
+}
+
 function draw() {
   requestAnimationFrame(draw);
   if (!mapDef) return;
@@ -1552,15 +1656,29 @@ function draw() {
   ctx.fillStyle = '#0b0e18';
   ctx.fillRect(0, 0, W, H);
 
-  // Phase B amendment — my own vice haze, rendered client-side from
-  // my server-tracked counts: drinks blur the world (progressively),
-  // puffs cycle the hue and saturate (the trip). Fallen = fade out.
+  // Phase B amendment — my own vice hazes, rendered from my live
+  // server-tracked state (kept fresh in-zone by the snapshot merge
+  // in handle()). v1.1: both hazes live in the 30s window from the
+  // last drink/puff and FADE OUT across its final seconds — drinks
+  // blur the world; puffs run an unmistakably psychedelic treatment
+  // (fast hue cycle + saturation swell, including the hippy trip,
+  // when the count itself has burned off). Fallen = fade out.
   {
     const fx = [];
-    if (me && me.drinks > 0) fx.push(`blur(${Math.min(2.4, me.drinks * 0.3).toFixed(2)}px)`);
-    if (me && me.puffs > 0) {
-      fx.push(`hue-rotate(${Math.round((Date.now() / (60 - Math.min(45, me.puffs * 4)) + me.puffs * 40) % 360)}deg)`);
-      fx.push(`saturate(${(1 + me.puffs * 0.14).toFixed(2)})`);
+    const IG = window.SolarionInput;
+    const nowF = Date.now();
+    const fade = (at) => (IG && at ? IG.viceFade(nowF - at) : 1);
+    if (me && me.drinks > 0) {
+      const f = fade(myViceAt.drinks);
+      if (f > 0) fx.push(`blur(${(Math.min(2.4, me.drinks * 0.3) * f).toFixed(2)}px)`);
+    }
+    const trip = me ? (me.puffs > 0 ? me.puffs : (me.hippy ? 6 : 0)) : 0;
+    if (me && trip > 0) {
+      const f = fade(myViceAt.puffs);
+      if (f > 0) {
+        fx.push(`hue-rotate(${Math.round((nowF / (60 - Math.min(45, trip * 4)) + trip * 40) % 360)}deg)`);
+        fx.push(`saturate(${(1 + trip * 0.14 * f).toFixed(2)})`);
+      }
     }
     if (me && me.fallen) fx.push('brightness(0.55)');
     cv.style.filter = fx.join(' ');
@@ -1625,6 +1743,61 @@ function draw() {
         diamond(cx2, cy2 - 5, TS2 * ZOOM, TS2 * ZOOM * 0.5, (tx + ty) % 2 ? '#7a5230' : '#835a34');
       }
     }
+    // v1.1: the PIT — a roped standing floor on the audience side —
+    // and the stage BACKDROP (posts + draped swag) on the back edge.
+    if (st.pit) {
+      const pit = st.pit;
+      const south = pit.y > st.y, west = pit.x < st.x;
+      for (let ty = Math.floor(pit.y / TS2); ty < Math.ceil((pit.y + pit.h) / TS2); ty++) {
+        for (let tx = Math.floor(pit.x / TS2); tx < Math.ceil((pit.x + pit.w) / TS2); tx++) {
+          const [px2, py2] = proj((tx + 0.5) * TS2, (ty + 0.5) * TS2);
+          diamond(px2, py2, TS2 * ZOOM, TS2 * ZOOM * 0.5, (tx + ty) % 2 ? '#3d2440' : '#34203a');
+        }
+      }
+      // gold trim along the platform's front lip
+      const lip = [];
+      if (west) { for (let i = 0; i <= 3; i++) lip.push(proj(st.x + 2, st.y + (st.h / 3) * i)); }
+      else if (south) { for (let i = 0; i <= 10; i++) lip.push(proj(st.x + (st.w / 10) * i, st.y + st.h - 2)); }
+      else { for (let i = 0; i <= 10; i++) lip.push(proj(st.x + (st.w / 10) * i, st.y + 2)); }
+      ctx.strokeStyle = 'rgba(255,210,63,.55)'; ctx.lineWidth = 2;
+      ctx.beginPath();
+      lip.forEach(([lx, ly], i) => { if (i === 0) ctx.moveTo(lx, ly - 4); else ctx.lineTo(lx, ly - 4); });
+      ctx.stroke();
+      // rope line along the pit's far edge: brass posts + sagging rope
+      const edge = [];
+      if (west) { for (let i = 0; i <= 3; i++) edge.push([pit.x + 4, pit.y + (pit.h / 3) * i]); }
+      else if (south) { for (let i = 0; i <= 5; i++) edge.push([pit.x + (pit.w / 5) * i, pit.y + pit.h - 4]); }
+      else { for (let i = 0; i <= 5; i++) edge.push([pit.x + (pit.w / 5) * i, pit.y + 4]); }
+      const pts = edge.map(([wx, wy]) => proj(wx, wy));
+      ctx.strokeStyle = '#b03a48'; ctx.lineWidth = 2.4;
+      ctx.beginPath();
+      pts.forEach(([rx, ry], i) => {
+        if (i === 0) ctx.moveTo(rx, ry - 12);
+        else { const [qx, qy] = pts[i - 1]; ctx.quadraticCurveTo((qx + rx) / 2, Math.max(qy, ry) - 3, rx, ry - 12); }
+      });
+      ctx.stroke();
+      for (const [rx, ry] of pts) {
+        ctx.fillStyle = '#c99700';
+        ctx.fillRect(rx - 1.6, ry - 15, 3.2, 15);
+        ctx.beginPath(); ctx.arc(rx, ry - 16, 2.6, 0, Math.PI * 2); ctx.fill();
+      }
+      // backdrop posts + swag along the back edge
+      let b1, b2;
+      if (west) { b1 = [st.x + st.w - 8, st.y + 14]; b2 = [st.x + st.w - 8, st.y + st.h - 14]; }
+      else if (south) { b1 = [st.x + 14, st.y + 8]; b2 = [st.x + st.w - 14, st.y + 8]; }
+      else { b1 = [st.x + 14, st.y + st.h - 8]; b2 = [st.x + st.w - 14, st.y + st.h - 8]; }
+      const ba = proj(b1[0], b1[1]), bb = proj(b2[0], b2[1]);
+      ctx.strokeStyle = '#4a2c17'; ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(ba[0], ba[1]); ctx.lineTo(ba[0], ba[1] - 56);
+      ctx.moveTo(bb[0], bb[1]); ctx.lineTo(bb[0], bb[1] - 56);
+      ctx.stroke();
+      ctx.strokeStyle = '#b03a48'; ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(ba[0], ba[1] - 56);
+      ctx.quadraticCurveTo((ba[0] + bb[0]) / 2, Math.max(ba[1], bb[1]) - 28, bb[0], bb[1] - 56);
+      ctx.stroke();
+    }
     const perf = window.SolarionMixer && window.SolarionMixer.perf;
     const live = perf && perf.active;
     const pulse = live ? 1 + Math.abs(Math.sin(Date.now() / 130)) * 0.22 : 1;
@@ -1640,6 +1813,55 @@ function draw() {
       ctx.beginPath(); ctx.arc(0, 8, 4.5, 0, Math.PI * 2); ctx.fill();
       ctx.restore();
     }
+    // v1.1 show dressing: while a set is LIVE the stage washes in
+    // colored light (day/night aware via darknessNow) and pyro
+    // bursts fire on the mix's bar grid at the front corners. Idle
+    // stage = no lights, no pyro.
+    if (live) {
+      const [ccx, ccy] = proj(st.x + st.w / 2, st.y + st.h / 2);
+      const boost = 0.55 + darknessNow();
+      const tNow = Date.now();
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const washes = ['255,190,80', '255,110,150', '140,170,255'];
+      for (let i = 0; i < 3; i++) {
+        const a = 0.11 * boost * (0.75 + 0.25 * Math.sin(tNow / 700 + i * 2.1));
+        const gx = ccx + (i - 1) * 74, gy = ccy - 12, r = 200 - i * 26;
+        const grd = ctx.createRadialGradient(gx, gy, 8, gx, gy, r);
+        grd.addColorStop(0, `rgba(${washes[i]},${a.toFixed(3)})`);
+        grd.addColorStop(1, `rgba(${washes[i]},0)`);
+        ctx.fillStyle = grd;
+        ctx.beginPath(); ctx.arc(gx, gy, r, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.restore();
+      const startAt = perf.startAt || 0, bpm = perf.bpm || 112;
+      const barIdx = startAt ? Math.floor((tNow - startAt) / ((60000 / bpm) * 4)) : -1;
+      if (barIdx >= 0 && barIdx !== pyroBar) {
+        pyroBar = barIdx;
+        const pit2 = st.pit;
+        const west2 = pit2 && pit2.x < st.x, south2 = pit2 && pit2.y > st.y;
+        const corners = west2
+          ? [[st.x + 6, st.y + 10], [st.x + 6, st.y + st.h - 10], [st.x + 6, st.y + st.h / 2]]
+          : south2
+            ? [[st.x + 10, st.y + st.h - 6], [st.x + st.w - 10, st.y + st.h - 6], [st.x + st.w / 2, st.y + st.h - 6]]
+            : [[st.x + 10, st.y + 6], [st.x + st.w - 10, st.y + 6], [st.x + st.w / 2, st.y + 6]];
+        const [wx, wy] = corners[barIdx % corners.length];
+        spawnPyro(wx, wy);
+      }
+    } else {
+      pyroBar = -1;
+    }
+    if (pyro.length) {
+      for (let i = pyro.length - 1; i >= 0; i--) {
+        const q = pyro[i];
+        q.x += q.vx; q.y += q.vy; q.vy += 0.055; q.vx *= 0.985; q.life -= q.decay;
+        if (q.life <= 0) { pyro.splice(i, 1); continue; }
+        ctx.globalAlpha = Math.max(0, q.life);
+        ctx.fillStyle = q.col;
+        ctx.beginPath(); ctx.arc(q.x, q.y, q.r, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
   }
 
   // casino lounge furniture: poker tables, chairs, slot machines,
@@ -1654,13 +1876,19 @@ function draw() {
       drawSlotCabinet(sx2, sy2, idx, s.ix < s.x - 4 ? 'W' : 'S');
     });
     for (const t of cz.tables) {
+      const [tx2, ty2] = proj(t.x, t.y);
       for (const ch2 of t.chairs) {
         const [chx, chy] = proj(ch2.x, ch2.y);
-        ctx.beginPath(); ctx.ellipse(chx, chy, 10, 5.5, 0, 0, Math.PI * 2);
+        // v1.1: poker chairs read as chairs — a backrest crescent on
+        // the side away from the table + a plush cushion. (Art only:
+        // table geometry and seat positions are untouched.)
+        const away = Math.atan2(chy - ty2, chx - tx2);
+        ctx.beginPath(); ctx.ellipse(chx + Math.cos(away) * 9, chy + Math.sin(away) * 5 - 2, 13, 6.5, 0, 0, Math.PI * 2);
+        ctx.fillStyle = '#571a24'; ctx.fill();
+        ctx.beginPath(); ctx.ellipse(chx, chy, 15, 8, 0, 0, Math.PI * 2);
         ctx.fillStyle = '#6e1f2a'; ctx.fill();
         ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = 1; ctx.stroke();
       }
-      const [tx2, ty2] = proj(t.x, t.y);
       ctx.beginPath(); ctx.ellipse(tx2, ty2, 44, 23, 0, 0, Math.PI * 2);
       ctx.fillStyle = '#7a5a2b'; ctx.fill();
       ctx.beginPath(); ctx.ellipse(tx2, ty2 - 2, 38, 19, 0, 0, Math.PI * 2);
@@ -1746,6 +1974,19 @@ function draw() {
       ctx.restore();
       continue;
     }
+    // v1.1: home seating + tables get the real furniture art (the
+    // catalog's chair and table pieces) instead of the generic block,
+    // facing from the piece's rotation (same rot→dir map as the sim).
+    if (f.type === 'seating') {
+      drawChairAt(fx, fy + 2, ['down', 'left', 'up', 'right'][f.rot & 3] || 'down');
+      ctx.restore();
+      continue;
+    }
+    if (f.type === 'table') {
+      drawTableAt(fx, fy);
+      ctx.restore();
+      continue;
+    }
     diamond(fx, fy - 3, TS3 * ZOOM * 0.92, TS3 * ZOOM * 0.46, f.color || '#888');
     ctx.font = '15px system-ui';
     ctx.textAlign = 'center';
@@ -1779,23 +2020,23 @@ function draw() {
       diamond(sx3, sy3, 34, 13, '#7a3b4f');
       diamond(sx3, sy3 - 5, 34, 9, '#93536b');
     } else if (s.kind === 'cafe') {
-      // Lane C booth seating: a diner bench with a backrest on the
-      // outer side and a wood table toward the facing dir — paired
-      // café seats ring their table booth-style, like poker chairs.
-      const off = { down: [0, 15], up: [0, -15], left: [-17, 7], right: [17, 7] }[s.dir] || [0, 15];
-      diamond(sx3 - off[0] * 0.55, sy3 - off[1] * 0.55 - 2, 26, 8, '#7e2f3c'); // backrest
-      diamond(sx3, sy3, 27, 9, '#b03a48');                                     // bench cushion
-      diamond(sx3, sy3 - 3, 27, 7, '#c4505f');
-      ctx.beginPath(); ctx.ellipse(sx3 + off[0], sy3 + off[1], 12, 6, 0, 0, Math.PI * 2);
+      // Lane C booth seating, v1.1 scale: the table sits at the TRUE
+      // projected midpoint between the facing pair (the old hand-tuned
+      // offsets drifted, worst on 'left'), and everything is sized
+      // for 1.5x characters — a table you sit AT, not a coaster.
+      const off = { down: [0, 23], up: [0, -23], left: [-23, 12], right: [23, 12] }[s.dir] || [0, 23];
+      diamond(sx3 - off[0] * 0.55, sy3 - off[1] * 0.55 - 2, 34, 10, '#7e2f3c'); // backrest
+      diamond(sx3, sy3, 36, 12, '#b03a48');                                     // bench cushion
+      diamond(sx3, sy3 - 3, 36, 9, '#c4505f');
+      ctx.beginPath(); ctx.ellipse(sx3 + off[0], sy3 + off[1], 21, 10.5, 0, 0, Math.PI * 2);
       ctx.fillStyle = '#caa06a'; ctx.fill();
       ctx.strokeStyle = '#7a5a2b'; ctx.lineWidth = 1; ctx.stroke();
     } else if (s.kind === 'hookah') {
       // Lane C: low booth benches flanking the station's low table.
       diamond(sx3, sy3, 30, 10, '#5d3450');
       diamond(sx3, sy3 - 4, 30, 7, '#7a4666');
-    } else { // chair
-      diamond(sx3, sy3, 12, 6, '#6e4a26');
-      diamond(sx3, sy3 - 4, 12, 5, '#8a5a2b');
+    } else { // chair — v1.1: a real chair (legs, cushion, backrest)
+      drawChairAt(sx3, sy3, s.dir);
     }
   }
 
@@ -2045,6 +2286,10 @@ for (const evName of ['pointerdown', 'keydown', 'touchstart']) {
   addEventListener(evName, () => {
     if (window.SolarionMixer) { /* AE lives in mixer.js */ }
     try { if (typeof AE !== 'undefined' && AE.ensure()) AE.ctx.resume(); } catch (e) { /* no audio */ }
+    // v1.1: a real gesture is also what a deferred stage performance
+    // (Item 5) and the zone music (Item 14) are waiting on.
+    try { if (typeof AE !== 'undefined' && AE.notifyGesture) AE.notifyGesture(); } catch (e) { /* no audio */ }
     if (window.SolarionSfx) window.SolarionSfx.unlock();
+    if (window.SolarionZoneMusic) window.SolarionZoneMusic.kick();
   }, { passive: true });
 }

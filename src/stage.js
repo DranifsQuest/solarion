@@ -28,6 +28,13 @@
 const music = require('./music');
 const records = require('./records');
 const { localDay } = require('./game');
+const { db } = require('./db');
+
+// v1.1 tips: the Stage panel's preset drop box. The debit is the
+// casino pattern — a guarded UPDATE that can never overdraw.
+const TIP_AMOUNTS = [5, 10, 25, 50, 100];
+const debitZ = db.prepare('UPDATE avatars SET zcoins = zcoins - ? WHERE user_id = ? AND zcoins >= ?');
+const zOf = db.prepare('SELECT zcoins FROM avatars WHERE user_id = ?');
 
 const START_DELAY_MS = 1200;      // clients get this long to schedule playback
 const GRACE_MS = 10_000;          // voting window after the music stops
@@ -92,7 +99,8 @@ class Stage {
       return;
     }
     // Phase 9 ritual: no CD, no stage. The CD is checked here and
-    // CONSUMED when the set actually starts (startPerformance).
+    // again when the set actually starts (v1.1: never consumed —
+    // a burned CD is a permanent collection piece until deleted).
     const cd = records.findCd(p.userId, mix.id);
     if (!cd) {
       this.game.send(p, {
@@ -138,14 +146,58 @@ class Stage {
       return;
     }
     if (Date.now() > cur.votingEndsAt) return;          // window closed
-    if (cur.votes.has(p.userId)) {                      // one vote per listener
-      this.game.send(p, { type: 'notice', text: 'You already voted on this performance.' });
-      return;
-    }
-    cur.votes.set(p.userId, value === -1 ? -1 : 1);
+    // v1.1: one ACTIVE vote per listener — clicking the opposite
+    // thumb SWITCHES it. Re-clicking the SAME thumb is a silent
+    // no-op (hammering it must not spam acks or recount).
+    const prev = cur.votes.get(p.userId);
+    if (prev === value) return;
+    cur.votes.set(p.userId, value);
     this.game.send(p, { type: 'vote-ack', performanceId: cur.id, value: cur.votes.get(p.userId) });
     // Phase 9 (voting juice): the room SEES each vote float by.
-    this.game.broadcastToMap(this.mapId, { type: 'vote-fx', performanceId: cur.id, performerId: cur.performerId, value: cur.votes.get(p.userId) });
+    // v1.1: the broadcast carries the live tallies so the performer
+    // (and everyone) watches the 👍/👎 counts move in real time.
+    let up = 0, down = 0;
+    for (const v of cur.votes.values()) { if (v > 0) up++; else down++; }
+    this.game.broadcastToMap(this.mapId, { type: 'vote-fx', performanceId: cur.id, performerId: cur.performerId, value: cur.votes.get(p.userId), up, down });
+  }
+
+  // ------------------------------------------------------------- tips
+
+  /**
+   * v1.1 tip drop box: a preset-amount gift from a listener to the
+   * live performer. Server-authoritative and atomic — the guarded
+   * debit can never take the tipper negative; self-tips and tips
+   * with nobody on stage are refused with a notice.
+   */
+  tip(p, amount) {
+    const cur = this.current;
+    if (!cur) {
+      this.game.send(p, { type: 'notice', text: 'Nobody is performing right now — tips land when the stage is live.' });
+      return;
+    }
+    if (!TIP_AMOUNTS.includes(amount)) {
+      this.game.send(p, { type: 'notice', text: 'Pick one of the preset tip amounts.' });
+      return;
+    }
+    if (p.mapId !== this.mapId) return;
+    if (p.userId === cur.performerId) {
+      this.game.send(p, { type: 'notice', text: "You can't tip your own performance." });
+      return;
+    }
+    const debited = debitZ.run(amount, p.userId, amount);
+    if (debited.changes !== 1) {
+      this.game.send(p, { type: 'notice', text: `A ${amount}z tip needs ${amount}z in your pocket.` });
+      return;
+    }
+    const performerBalance = music.addZCoins(cur.performerId, amount);
+    const mine = zOf.get(p.userId);
+    this.game.send(p, { type: 'zcoins', zcoins: mine ? mine.zcoins : 0 });
+    this.game.send(p, { type: 'notice', text: `💸 You tipped ${cur.performerName} ${amount}z!` });
+    const performer = this.game.getPlayer(cur.performerId);
+    if (performer) {
+      this.game.send(performer, { type: 'zcoins', zcoins: performerBalance });
+      this.game.send(performer, { type: 'notice', text: `💰 ${p.name} tipped you ${amount}z!` });
+    }
   }
 
   // ------------------------------------------------------------- engine
@@ -181,24 +233,25 @@ class Stage {
   }
 
   startPerformance(p, entry) {
-    // Phase 9: the CD is spent as the set starts. If it vanished
-    // since queueing (mix deleted), the slot is skipped quietly.
+    // v1.1 (Zan): CDs are REUSABLE — the set checks the CD is still
+    // in the collection (it may have been deleted while queued) but
+    // never consumes it. The Phase 9 consume-on-perform rule is gone.
     const cd = records.findCd(p.userId, entry.mixId);
-    if (!cd || cd.id !== entry.cdId) {
-      this.game.send(p, { type: 'notice', text: '💿 Your CD is gone — burn the mix again to perform.' });
+    if (!cd) {
+      this.game.send(p, { type: 'notice', text: '💿 That CD left your collection — burn the mix again to perform.' });
       return;
     }
-    records.consumeCd(cd.id);
-    if (this.onCdsChanged) this.onCdsChanged(p);
     const now = Date.now();
     const durationMs = music.mixDurationMs(entry.mixData);
     const startAt = now + START_DELAY_MS;
     // Walk the performer up onto the stage (soul doc §9.2 — the
     // procession matters; snapping to centre stage is our version).
+    // v1.1: the artist's held keys are NOT cleared — movement input
+    // keeps flowing and the sim clamps them to the platform, so
+    // playing keys can never desync or cancel the set.
     p.x = this.def.x + this.def.w / 2;
     p.y = this.def.y + this.def.h / 2;
     p.performing = true;
-    p.keys = {};
     this.game.savePosition(p);
     this.current = {
       id: this.nextPerfId++,
@@ -321,6 +374,12 @@ class StageManager {
     if (s) s.vote(p, value);
   }
 
+  handleTip(p, amount) {
+    const s = this.stageFor(p);
+    if (s) s.tip(p, amount);
+    else this.game.send(p, { type: 'notice', text: 'Nobody is performing right now — tips land when the stage is live.' });
+  }
+
   handlePlayerGone(userId) {
     for (const s of this.stages.values()) s.handlePlayerGone(userId);
   }
@@ -340,7 +399,7 @@ class StageManager {
     this.game.send(p, {
       type: 'cds',
       blanks: records.blankCount(p.userId),
-      cds: records.listCds(p.userId).map(c => ({ id: c.id, mixId: c.mixId, name: names.get(c.mixId) || '(deleted mix)' })),
+      cds: records.listCds(p.userId).map(c => ({ id: c.id, mixId: c.mixId, createdAt: c.createdAt, name: names.get(c.mixId) || '(deleted mix)' })),
     });
   }
 
@@ -360,6 +419,15 @@ class StageManager {
         const r = records.burnCd(p.userId, mix.id);
         if (!r.ok) { this.game.send(p, { type: 'notice', text: r.error }); return; }
         this.game.send(p, { type: 'notice', text: `🔥 Burned "${mix.name}" to a CD — take it to a stage!` });
+        this.sendCds(p);
+        break;
+      }
+      case 'delete-cd': {
+        // v1.1 collection management: removes exactly that CD. The
+        // mix itself is untouched (it lives in the mixer/studio).
+        const r = records.deleteCd(p.userId, msg.cdId);
+        if (!r.ok) { this.game.send(p, { type: 'notice', text: r.error }); return; }
+        this.game.send(p, { type: 'notice', text: '🗑 CD removed from your collection.' });
         this.sendCds(p);
         break;
       }

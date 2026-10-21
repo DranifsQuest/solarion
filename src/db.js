@@ -144,6 +144,7 @@ const q = {
      WHERE user_id = ?`
   ),
   setZCoins: db.prepare('UPDATE avatars SET zcoins = ? WHERE user_id = ?'),
+  setLastBonusDay: db.prepare('UPDATE avatars SET last_bonus_day = ? WHERE user_id = ?'),
   setLastBarDay: db.prepare('UPDATE avatars SET last_bar_day = ? WHERE user_id = ?'),
 
   insertSession: db.prepare('INSERT INTO sessions (token, user_id, created_at, expires_at, last_ip) VALUES (?, ?, ?, ?, ?)'),
@@ -153,8 +154,12 @@ const q = {
 
   // Atomic daily-bonus claim: succeeds only when last_bonus_day differs
   // from today. Returns the number of changed rows (1 = bonus granted).
+  // v1.1 (Zan): a brand-new account's FIRST-EVER claim (last_bonus_day
+  // IS NULL at claim time) pays a 5,000z welcome bonus instead of the
+  // usual 100z — the CASE is evaluated against the pre-update row, so
+  // the first-claim detection lives inside the same atomic UPDATE.
   claimDailyBonus: db.prepare(
-    'UPDATE avatars SET zcoins = zcoins + 100, last_bonus_day = ? WHERE user_id = ? AND (last_bonus_day IS NULL OR last_bonus_day <> ?)'
+    'UPDATE avatars SET zcoins = zcoins + CASE WHEN last_bonus_day IS NULL THEN 5000 ELSE 100 END, last_bonus_day = ? WHERE user_id = ? AND (last_bonus_day IS NULL OR last_bonus_day <> ?)'
   ),
 
   // Owner top-up (Zan, 2026-10-21): floors the owner's balance at the

@@ -4,12 +4,17 @@
  * Solarion — Phase B AMENDMENT tests: the second casino (Neon),
  * bartender drinks (5z, haze state, pass out at 10), and the Cinder
  * Mesa hookah lounge (5z puffs, hippy at 10). Numbers under test are
- * the documented production rules: drinks 5z, puffs 5z, decay 1 pt /
- * 60s, pass out 20s at 10 drinks then wake at 2, hippy 20s at 10
- * puffs with the count reset. The 20s windows themselves are
+ * the documented production rules: drinks 5z, puffs 5z, and the v1.1
+ * window model (Zan, 2026-10-21): the ENTIRE drunk / high state —
+ * level, haze, wobble, pass-out, hippy — lives in a 30s window from
+ * the LAST drink / puff; each new one refreshes the window and
+ * stacks the level; when it lapses the player is simply sober.
+ * Pass out is 20s at 10 drinks and hippy 20s at 10 puffs, both
+ * inside the window; waking from either = sober, no residual level
+ * (the old decay 1 pt / 60s and wake-at-2 are gone). Time is
  * fast-forwarded ONLY through the SOLARION_TEST debug-vice hook
- * (dead in production) — the state transitions asserted are the real
- * server code paths.
+ * (dead in production) — the state transitions asserted are the
+ * real server code paths.
  */
 
 const { test, before, after } = require('node:test');
@@ -188,7 +193,7 @@ test('drinks: exactly 5z a round, count tracked + visible, 10th drink passes you
   const noBar = await waitFor(() => g.client.msgs.filter(m => m.type === 'notice' && /no bar here/.test(m.text)).pop(),
     5000, 'buy-drink refused away from a bar');
   assert.ok(noBar);
-  assert.equal(await balanceOf(g.token), 100, 'refused purchase charges nothing');
+  assert.equal(await balanceOf(g.token), 5000, 'refused purchase charges nothing');
   g.client.ws.close();
 
   // At the bar: each drink is exactly -5z and +1 on the counter.
@@ -245,16 +250,16 @@ test('drinks: exactly 5z a round, count tracked + visible, 10th drink passes you
   assert.ok(refused);
   assert.equal(await balanceOf(u.token), 165);
 
-  // Wake (test hook fast-forwards the 20s window): up again, and
-  // the count resets to the documented low value of 2.
+  // Wake (test hook fast-forwards the 20s window): up again — and
+  // v1.1: waking means SOBER. There is no residual level any more.
   u.client.send({ type: 'debug-vice', op: 'wake' });
   const woke = await waitFor(() => u.client.msgs.filter(m => m.type === 'vice-state' && !m.passedOut).pop(),
     5000, 'wakes up after the window');
-  assert.equal(woke.drinks, 2, 'drink count resets to 2 on waking');
+  assert.equal(woke.drinks, 0, 'waking from pass-out = sober (level 0)');
   const upSeen = await waitFor(() => {
     const p = selfIn(watcher.client, u.id);
-    return p && !p.fallen && p.drinks === 2 ? p : null;
-  }, 5000, 'watcher sees her back on her feet at 2 drinks');
+    return p && !p.fallen && p.drinks === 0 ? p : null;
+  }, 5000, 'watcher sees her back on her feet, sober');
   assert.ok(upSeen);
 
   // Insufficient balance: a drink is refused and nothing changes.
@@ -266,7 +271,7 @@ test('drinks: exactly 5z a round, count tracked + visible, 10th drink passes you
   assert.ok(broke);
   assert.equal(await balanceOf(u.token), 4, 'no charge for a refused drink');
   const vsNow = u.client.msgs.filter(m => m.type === 'vice-state').pop();
-  assert.ok(!vsNow || vsNow.drinks === 2, 'count unchanged by refused drink');
+  assert.ok(!vsNow || vsNow.drinks === 0, 'count unchanged by refused drink (still sober)');
   u.client.ws.close(); watcher.client.ws.close();
 });
 
@@ -358,7 +363,100 @@ test('neon casino slots: sit-to-spin on the second casino floor', { timeout: 600
   const res = await waitFor(() => u.client.msgs.filter(m => m.type === 'slot-result').pop(), 5000, 'neon slot result');
   const syms = res.reels.map(id => casino.SLOT_SYMBOLS.find(s => s.id === id));
   assert.equal(res.win, casino.slotPayout(syms, 10), 'win matches the ported paytable');
-  assert.equal(res.zcoins, 100 - 10 + res.win, 'balance math exact');
+  assert.equal(res.zcoins, 5000 - 10 + res.win, 'balance math exact');
   assert.equal(await balanceOf(u.token), res.zcoins);
   u.client.ws.close();
+});
+
+// ------------------------------------------------------------------ 5
+
+test('vice windows (v1.1): drink + smoke states begin AND end in-zone, 30s after last use', { timeout: 120000 }, async () => {
+  // ---- drinks, in the Casino Lounge, never leaving the zone
+  const u = await makeUser('window_wanda');
+  const watcher = await makeUser('window_walt');
+  await toBayCasino(u);
+  await toBayCasino(watcher);
+  await fund(u, 500);
+  teleport(u, 176, 528);
+  await sleep(300);
+  const mapsBefore = u.client.msgs.filter(m => m.type === 'map').length;
+
+  for (let i = 0; i < 3; i++) u.client.send({ type: 'buy-drink' });
+  await waitFor(() => u.client.msgs.filter(m => m.type === 'vice-state' && m.drinks === 3).pop(), 5000, 'drinks live in-zone');
+  const seen3 = await waitFor(() => {
+    const p = selfIn(watcher.client, u.id);
+    return p && p.drinks === 3 ? p : null;
+  }, 5000, 'watcher sees drinks:3 in-zone');
+  assert.ok(seen3);
+
+  // 29s in: still drunk — the window has not lapsed.
+  u.client.send({ type: 'debug-vice', op: 'age', ms: 29000 });
+  await sleep(450);
+  assert.equal(selfIn(watcher.client, u.id).drinks, 3, 'still drunk 29s after the last drink');
+
+  // A 4th drink at 29s refreshes the whole window (+30s more).
+  u.client.send({ type: 'buy-drink' });
+  await waitFor(() => u.client.msgs.filter(m => m.type === 'vice-state' && m.drinks === 4).pop(), 5000, 're-drink stacks to 4');
+  u.client.send({ type: 'debug-vice', op: 'age', ms: 29000 });
+  await sleep(450);
+  assert.equal(selfIn(watcher.client, u.id).drinks, 4, 'refreshed window: still drunk at +29s');
+
+  // Past 30s from the LAST drink: sober, same zone, no map change.
+  u.client.send({ type: 'debug-vice', op: 'age', ms: 2000 });
+  await waitFor(() => u.client.msgs.filter(m => m.type === 'vice-state' && m.drinks === 0).pop(), 5000, 'sober when the window lapses — in-zone');
+  const seen0 = await waitFor(() => {
+    const p = selfIn(watcher.client, u.id);
+    return p && p.drinks === 0 ? p : null;
+  }, 5000, 'watcher sees her sober in-zone');
+  assert.ok(seen0);
+  assert.equal(u.client.msgs.filter(m => m.type === 'map').length, mapsBefore, 'the whole drink lifecycle happened with NO zone change');
+
+  // Pass-out cannot outlive the window: 10th drink, then age past
+  // 30s — the player wakes SOBER (the window governs, not the 20s).
+  u.client.send({ type: 'debug-vice', op: 'set-drinks', count: 9 });
+  u.client.send({ type: 'buy-drink' });
+  await waitFor(() => u.client.msgs.filter(m => m.type === 'vice-state' && m.passedOut).pop(), 8000, 'passed out at 10');
+  u.client.send({ type: 'debug-vice', op: 'age', ms: 31000 });
+  const woke = await waitFor(() => u.client.msgs.filter(m => m.type === 'vice-state' && !m.passedOut && m.drinks === 0).pop(), 5000, 'pass-out ends with the window — sober');
+  assert.ok(woke);
+  u.client.ws.close(); watcher.client.ws.close();
+
+  // ---- puffs mirror the same model in the Hookah Lounge
+  const s = await makeUser('window_sana');
+  const sWatch = await makeUser('window_saul');
+  await toHookah(s);
+  await toHookah(sWatch);
+  await fund(s, 500);
+  await sleep(3400); // outlast the transfer lock from the door hop
+  teleport(s, 176, 160);
+  await sleep(300);
+  s.client.send({ type: 'interact' });
+  await waitFor(() => {
+    const p = selfIn(s.client, s.id);
+    return p && p.seated ? p : null;
+  }, 5000, 'seated at the hookah');
+  const sMaps = s.client.msgs.filter(m => m.type === 'map').length;
+  for (let i = 0; i < 3; i++) s.client.send({ type: 'interact' });
+  await waitFor(() => s.client.msgs.filter(m => m.type === 'vice-state' && m.puffs === 3).pop(), 5000, 'puffs live in-zone');
+  const sSeen3 = await waitFor(() => {
+    const p = selfIn(sWatch.client, s.id);
+    return p && p.puffs === 3 ? p : null;
+  }, 5000, 'watcher sees puffs:3 in-zone (the haze state)');
+  assert.ok(sSeen3);
+
+  // Hippy at 10 — inside the window…
+  s.client.send({ type: 'debug-vice', op: 'set-puffs', count: 9 });
+  s.client.send({ type: 'interact' });
+  await waitFor(() => s.client.msgs.filter(m => m.type === 'vice-state' && m.hippy).pop(), 8000, 'hippy at the 10th puff');
+  // …and the window takes the hippy with it at 30s from the last puff.
+  s.client.send({ type: 'debug-vice', op: 'age', ms: 31000 });
+  const clear = await waitFor(() => s.client.msgs.filter(m => m.type === 'vice-state' && !m.hippy && m.puffs === 0).pop(), 5000, 'smoke state fully clears with the window');
+  assert.ok(clear);
+  const sSeen = await waitFor(() => {
+    const p = selfIn(sWatch.client, s.id);
+    return p && !p.hippy ? p : null;
+  }, 5000, 'watcher sees the hippy gone in-zone');
+  assert.ok(sSeen);
+  assert.equal(s.client.msgs.filter(m => m.type === 'map').length, sMaps, 'the whole smoke lifecycle also stayed in-zone');
+  s.client.ws.close(); sWatch.client.ws.close();
 });

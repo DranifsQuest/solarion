@@ -77,6 +77,19 @@
         <button id="stageLeaveBtn" class="hidden">Leave queue</button>
       </div>
       <div id="cdBox"></div>
+      <div id="tipBox" class="hidden">
+        <div class="spTitle">💸 TIP THE ARTIST</div>
+        <div class="spRow">
+          <select id="tipAmt">
+            <option value="5">5z</option>
+            <option value="10">10z</option>
+            <option value="25" selected>25z</option>
+            <option value="50">50z</option>
+            <option value="100">100z</option>
+          </select>
+          <button id="tipBtn">💰 Tip</button>
+        </div>
+      </div>
       <div class="spRow">
         <button id="chartBtn">🏆 Top 40 Chart</button>
       </div>
@@ -249,6 +262,10 @@
         <input id="volSlider" type="range" min="0" max="100" value="90" style="flex:1">
         <button id="muteBtn">Mute</button>
       </div>
+      <div class="spRow">
+        <span>Zone music</span>
+        <button id="musicToggleBtn">🎵 Music: On</button>
+      </div>
       <div class="pkDim">Applies to music, radios, effects and ambience. Saved on this device.</div>
     </div>
     <!-- profile card (Phase 9) -->
@@ -289,6 +306,7 @@
 <script src="client.js"></script>
 <script src="create.js"></script>
 <script src="mixer.js"></script>
+<script src="zonemusic.js"></script>
 <script src="casino.js"></script>
 <script src="studio.js"></script>
 <script src="social.js"></script>

@@ -297,7 +297,7 @@ test('SOLARION_TEST debug hooks are dead when the env var is unset', { timeout: 
   const cre = await api(PORT_NOTEST, '/api/create-character', { token: reg.json.token, name: 'sec_notest', gender: 'M' });
   assert.equal(cre.status, 200, `create sec_notest: ${JSON.stringify(cre.json)}`);
   const c = await connectClient(PORT_NOTEST, reg.json.token);
-  assert.equal(c.hello.zcoins, 100, 'starts with the daily bonus only');
+  assert.equal(c.hello.zcoins, 5000, 'starts with the welcome bonus only');
   c.send({ type: 'debug-teleport', x: 1120, y: 48 });       // would enter Solstice Bay if live
   c.send({ type: 'debug-casino', op: 'set-balance', zcoins: 999999 });
   c.send({ type: 'debug-seed-perf', earned: 300 });
@@ -306,7 +306,7 @@ test('SOLARION_TEST debug hooks are dead when the env var is unset', { timeout: 
   c.ws.close();
   await sleep(300);
   const c2 = await connectClient(PORT_NOTEST, reg.json.token);
-  assert.equal(c2.hello.zcoins, 100, 'debug-casino ignored: balance untouched');
+  assert.equal(c2.hello.zcoins, 5000, 'debug-casino ignored: balance untouched');
   c2.ws.close();
   await stopServer(child);
 });
@@ -329,8 +329,8 @@ test('daily bonus race: 6 concurrent connects grant the bonus exactly once', { t
   const clients = await Promise.all(Array.from({ length: 6 }, () => connectClient(PORT, u.token)));
   const granted = clients.filter(c => c.hello.bonusGranted === true).length;
   assert.equal(granted, 1, `exactly one bonus grant across racing connects, got ${granted}`);
-  for (const c of clients) assert.equal(c.hello.zcoins, 100, 'every hello sees the single 100z balance');
-  assert.equal(await balanceOf(u.token), 100);
+  for (const c of clients) assert.equal(c.hello.zcoins, 5000, 'every hello sees the single 5,000z balance');
+  assert.equal(await balanceOf(u.token), 5000);
   for (const c of clients) { try { c.ws.close(); } catch (e) {} }
 });
 
@@ -358,7 +358,7 @@ test('vote race: hammered duplicate votes count once per voter, payout exact', {
   assert.equal(end.earned, 10, 'payout is exactly 2 votes x 5z');
   assert.equal(v1.client.msgs.filter(m => m.type === 'vote-ack').length, 1, 'v1 got exactly one vote-ack');
   assert.equal(v2.client.msgs.filter(m => m.type === 'vote-ack').length, 1, 'v2 got exactly one vote-ack');
-  assert.equal(await balanceOf(perf.token), 90, 'performer balance 100 - 20 (CD pack) + 10 exactly');
+  assert.equal(await balanceOf(perf.token), 4990, 'performer balance 5000 - 20 (CD pack) + 10 exactly');
   perf.client.ws.close(); v1.client.ws.close(); v2.client.ws.close();
 });
 
@@ -377,8 +377,8 @@ test('poker: double-sit impossible, no cross-account chip leak, totals conserved
   assert.equal(lastT1.chairs.filter(c => c.name === 'sec_pk_a').length, 1, 'A occupies exactly one chair');
   const lastT2 = allStates.filter(m => m.id === 'casino-lounge-poker-2').pop();
   assert.equal(lastT2.chairs.filter(c => c.name === 'sec_pk_a').length, 0, 'A is not also at table 2');
-  assert.equal(await balanceOf(a.token), 0, 'A debited exactly one 100z buy-in');
-  assert.equal(lastT1.chairs.find(c => c.name === 'sec_pk_a').chips, 100, 'A holds exactly 100 chips');
+  assert.equal(await balanceOf(a.token), 4800, 'A debited exactly one 200z buy-in (the max stack)');
+  assert.equal(lastT1.chairs.find(c => c.name === 'sec_pk_a').chips, 200, 'A holds exactly 200 chips');
   // B sits, then A stands: A's own chips come back, B's are untouched.
   b.client.send({ type: 'debug-teleport', x: T1.x, y: T1.y });
   await sleep(300);
@@ -388,14 +388,14 @@ test('poker: double-sit impossible, no cross-account chip leak, totals conserved
     return s && s.chairs.some(c => c.name === 'sec_pk_b') ? s : null;
   }, 5000, 'B seated');
   a.client.send({ type: 'poker', action: 'stand' });
-  await waitFor(async () => (await balanceOf(a.token)) === 100, 5000, 'A cashed out own chips');
+  await waitFor(async () => (await balanceOf(a.token)) === 5000, 5000, 'A cashed out own chips');
   const stB = b.client.msgs.filter(m => m.type === 'poker-state' && m.id === T1.id).pop();
   const bChips = stB.chairs.find(c => c.name === 'sec_pk_b').chips;
-  assert.equal(bChips, 100, 'B chips untouched by A cash-out');
-  assert.equal(await balanceOf(b.token), 0, 'B balance untouched by A cash-out');
-  assert.equal(100 + 0 + bChips, 200, 'z + chips conserved across both accounts');
+  assert.equal(bChips, 200, 'B chips untouched by A cash-out');
+  assert.equal(await balanceOf(b.token), 4800, 'B balance untouched by A cash-out');
+  assert.equal(5000 + 4800 + bChips, 10000, 'z + chips conserved across both accounts');
   b.client.send({ type: 'poker', action: 'stand' });
-  await waitFor(async () => (await balanceOf(b.token)) === 100, 5000, 'B cashed out');
+  await waitFor(async () => (await balanceOf(b.token)) === 5000, 5000, 'B cashed out');
   a.client.ws.close(); b.client.ws.close();
 });
 
@@ -428,7 +428,7 @@ test('studio ownership + avatar-update whitelist', { timeout: 60000 }, async () 
   owner.client.send({ type: 'studio-buy', itemId: 'poster' });
   const afterBuy = await waitFor(() => owner.client.msgs.filter(m => m.type === 'studio-state' && m.inventory && m.inventory.length === 1).pop(), 5000, 'owner bought poster');
   const itemId = afterBuy.inventory[0].instanceId;
-  assert.equal(await balanceOf(owner.token), 75, 'owner paid exactly 25z');
+  assert.equal(await balanceOf(owner.token), 4975, 'owner paid exactly 25z (5000 - 25)');
   // Guest enters owner's studio and tries everything forbidden.
   guest.client.send({ type: 'enter-studio', owner: 'sec_owner' });
   await waitFor(() => guest.client.msgs.filter(m => m.type === 'map' && String(m.map.id).startsWith('studio:')).pop(), 5000, 'guest inside owner studio');
@@ -440,8 +440,8 @@ test('studio ownership + avatar-update whitelist', { timeout: 60000 }, async () 
   guest.client.send({ type: 'studio-state' });
   const gstate = await waitFor(() => guest.client.msgs.filter(m => m.type === 'studio-state').pop(), 5000, 'guest studio state');
   assert.equal(gstate.furniture.length, 0, 'guest could not place the owner\'s item');
-  assert.equal(await balanceOf(guest.token), 100, 'guest balance untouched (buy in foreign studio rejected)');
-  assert.equal(await balanceOf(owner.token), 75, 'owner balance untouched by guest actions');
+  assert.equal(await balanceOf(guest.token), 5000, 'guest balance untouched (buy in foreign studio rejected)');
+  assert.equal(await balanceOf(owner.token), 4975, 'owner balance untouched by guest actions');
   const ostate2 = await new Promise(async (resolve) => {
     owner.client.msgs.length = 0;
     owner.client.send({ type: 'studio-state' });
@@ -454,7 +454,7 @@ test('studio ownership + avatar-update whitelist', { timeout: 60000 }, async () 
   await waitFor(() => guest.client.msgs.filter(m => m.type === 'notice' && /look saved/.test(m.text)).pop(), 5000, 'look saved notice');
   const me = await api(PORT, '/api/me', { token: guest.token });
   assert.equal(me.json.avatar.hair_style, 'spiky', 'whitelisted field applied');
-  assert.equal(me.json.avatar.zcoins, 100, 'zcoins field NOT settable via avatar-update');
+  assert.equal(me.json.avatar.zcoins, 5000, 'zcoins field NOT settable via avatar-update');
   assert.equal(me.json.avatar.name, 'sec_guest', 'name NOT settable via avatar-update');
   owner.client.ws.close(); guest.client.ws.close();
 });
@@ -462,8 +462,8 @@ test('studio ownership + avatar-update whitelist', { timeout: 60000 }, async () 
 test('z coins are untradeable: transfer-shaped messages move nothing', { timeout: 30000 }, async () => {
   const a = await makeUser('sec_give_a');
   const b = await makeUser('sec_give_b');
-  assert.equal(await balanceOf(a.token), 100);
-  assert.equal(await balanceOf(b.token), 100);
+  assert.equal(await balanceOf(a.token), 5000);
+  assert.equal(await balanceOf(b.token), 5000);
   const attempts = [
     { type: 'transfer', to: 'sec_give_b', amount: 50 },
     { type: 'give', to: b.id, amount: 50 },
@@ -475,8 +475,8 @@ test('z coins are untradeable: transfer-shaped messages move nothing', { timeout
   ];
   for (const m of attempts) a.client.send(m);
   await sleep(800);
-  assert.equal(await balanceOf(a.token), 100, 'sender balance unchanged');
-  assert.equal(await balanceOf(b.token), 100, 'recipient balance unchanged');
+  assert.equal(await balanceOf(a.token), 5000, 'sender balance unchanged');
+  assert.equal(await balanceOf(b.token), 5000, 'recipient balance unchanged');
   a.client.ws.close(); b.client.ws.close();
 });
 

@@ -221,7 +221,7 @@ test('stage: queue, synchronized performance, voting pays +5z, anti-farm rules, 
   const b = await makeUser('fan_p2');         // audience in the bay
   const c = await makeUser('faraway_p2');     // stays in the Gateway
   const mixA = await saveMix(a, 1, SHORT_MIX);
-  assert.equal(a.client.hello.zcoins, 100, 'A starts at 100z (daily bonus)');
+  assert.equal(a.client.hello.zcoins, 5000, 'A starts at 5,000z (welcome bonus)');
   await prepCd(a, mixA.id); // Phase 9: −20z for the blank pack
 
   await toBay(a);
@@ -262,26 +262,35 @@ test('stage: queue, synchronized performance, voting pays +5z, anti-farm rules, 
   assert.equal(c.client.msgs.filter(m => m.type === 'chat' && m.text === 'thank you solstice bay!').length, 0,
     'C in another map does not hear it');
 
-  // (d) anti-farm votes: self-vote, cross-map vote, double vote.
+  // (d) anti-farm votes: self-vote + cross-map vote rejected; and
+  //     the v1.1 switch rule — the opposite thumb MOVES your vote.
   a.client.send({ type: 'vote', value: 1 });            // self-vote → rejected
   c.client.send({ type: 'vote', value: 1 });            // wrong map → rejected
   b.client.send({ type: 'vote', value: 1 });            // the one legit vote
   const ack = await waitFor(() => b.client.msgs.filter(m => m.type === 'vote-ack').pop(), 5000, 'B vote acked');
   assert.equal(ack.value, 1);
-  b.client.send({ type: 'vote', value: -1 });           // double vote → counted once (first wins)
+  b.client.send({ type: 'vote', value: 1 });            // same thumb again → silent no-op
+  await sleep(250);
+  assert.equal(b.client.msgs.filter(m => m.type === 'vote-ack').length, 1, 'same-thumb re-click earns no second ack');
+  b.client.send({ type: 'vote', value: -1 });           // opposite thumb → SWITCH
+  const ack2 = await waitFor(() => b.client.msgs.filter(m => m.type === 'vote-ack' && m.value === -1).pop(), 5000, 'B switch acked');
+  assert.equal(ack2.value, -1);
+  const fx = b.client.msgs.filter(m => m.type === 'vote-fx').pop();
+  assert.deepEqual({ up: fx.up, down: fx.down }, { up: 0, down: 1 }, 'vote-fx carries the live tallies after the switch');
 
-  // (c) performance end: exactly one thumbs-up → A paid exactly +5z.
+  // (c) performance end: the switched vote lands as a DOWN vote →
+  //     no up-votes, no pay.
   const endB = await waitFor(() => b.client.msgs.filter(m => m.type === 'performance-end').pop(), 30000, 'B performance-end');
-  assert.equal(endB.up, 1, 'exactly one thumbs-up counted');
-  assert.equal(endB.down, 0, 'double-vote down not counted');
-  assert.equal(endB.earned, 5, 'performer earned exactly +5z');
+  assert.equal(endB.up, 0, 'the up-vote was switched away');
+  assert.equal(endB.down, 1, 'the switched down-vote counts');
+  assert.equal(endB.earned, 0, 'no up-votes → performer earns 0z');
   const endA = await waitFor(() => a.client.msgs.filter(m => m.type === 'performance-end').pop(), 5000, 'A performance-end');
   assert.deepEqual(
     { up: endA.up, down: endA.down, earned: endA.earned },
     { up: endB.up, down: endB.down, earned: endB.earned },
     'results broadcast matches for performer and audience');
   const zMsg = await waitFor(() => a.client.msgs.filter(m => m.type === 'zcoins').pop(), 5000, 'A zcoins update');
-  assert.equal(zMsg.zcoins, 85, 'A balance 100 − 20 (blank pack) + 5 = 85');
+  assert.equal(zMsg.zcoins, 4980, 'A balance 5000 − 20 (blank pack) + 0 = 4980');
 
   // performer cooldown: immediate rejoin is refused
   a.client.msgs.length = 0;
@@ -310,6 +319,56 @@ test('stage: daily performance-earnings cap of 350z is enforced', { timeout: 900
   assert.equal(end.up, 1);
   assert.equal(end.earned, 2, 'cap clamps the +5z vote pay to the remaining 2z of the 350z daily cap');
   const zMsg = await waitFor(() => d.client.msgs.filter(m => m.type === 'zcoins').pop(), 5000, 'D zcoins update');
-  assert.equal(zMsg.zcoins, 82, 'D balance 100 − 20 (blank pack) + 2 = 82');
+  assert.equal(zMsg.zcoins, 4982, 'D balance 5000 − 20 (blank pack) + 2 = 4982');
   d.client.ws.close(); e.client.ws.close();
+});
+
+test('stage v1.1: tip drop box moves z atomically; self/ghost/invalid tips refused', { timeout: 90000 }, async () => {
+  const perf = await makeUser('tipstar_p2');
+  const fan = await makeUser('tipfan_p2');
+  const mix = await saveMix(perf, 1, SHORT_MIX);
+  await prepCd(perf, mix.id);
+  await toBay(perf);
+  await toBay(fan);
+  await sleep(300);
+
+  // Tip with nobody on stage → refused politely, no money moves.
+  fan.client.send({ type: 'tip', amount: 25 });
+  const ghost = await waitFor(() => fan.client.msgs.filter(m => m.type === 'notice' && /Nobody is performing/.test(m.text)).pop(), 5000, 'ghost tip refused');
+  assert.ok(ghost);
+
+  perf.client.send({ type: 'stage-join', mixId: mix.id });
+  await waitFor(() => fan.client.msgs.filter(m => m.type === 'performance-start').pop(), 8000, 'set starts');
+
+  // Self-tip → refused.
+  perf.client.send({ type: 'tip', amount: 25 });
+  const self = await waitFor(() => perf.client.msgs.filter(m => m.type === 'notice' && /tip your own/.test(m.text)).pop(), 5000, 'self-tip refused');
+  assert.ok(self);
+
+  // Non-preset amount → refused (the drop box only offers presets).
+  fan.client.send({ type: 'tip', amount: 7 });
+  const preset = await waitFor(() => fan.client.msgs.filter(m => m.type === 'notice' && /preset/.test(m.text)).pop(), 5000, 'non-preset tip refused');
+  assert.ok(preset);
+
+  // A real 25z tip: fan 5000 → 4975, performer 4980 → 5005, both told.
+  fan.client.send({ type: 'tip', amount: 25 });
+  const fanZ = await waitFor(() => fan.client.msgs.filter(m => m.type === 'zcoins').pop(), 5000, 'fan debited');
+  assert.equal(fanZ.zcoins, 4975, 'fan paid exactly 25z');
+  const got = await waitFor(() => perf.client.msgs.filter(m => m.type === 'notice' && /tipped you 25z/.test(m.text)).pop(), 5000, 'performer told about the tip');
+  assert.ok(got);
+  const perfZ = await waitFor(() => perf.client.msgs.filter(m => m.type === 'zcoins').pop(), 5000, 'performer credited');
+  assert.equal(perfZ.zcoins, 5005, 'performer 4980 (after CD pack) + 25 tip');
+  const fanNote = await waitFor(() => fan.client.msgs.filter(m => m.type === 'notice' && /You tipped/.test(m.text)).pop(), 5000, 'fan confirmed');
+  assert.ok(fanNote);
+
+  // Insufficient funds: drain the fan (test hook) — the tip must
+  // refuse atomically: balance untouched, no phantom credit.
+  fan.client.send({ type: 'debug-casino', op: 'set-balance', zcoins: 10 });
+  await waitFor(() => fan.client.msgs.filter(m => m.type === 'zcoins' && m.zcoins === 10).pop(), 5000, 'fan drained to 10z');
+  fan.client.send({ type: 'tip', amount: 25 });
+  const poor = await waitFor(() => fan.client.msgs.filter(m => m.type === 'notice' && /needs 25z/.test(m.text)).pop(), 5000, 'insufficient-funds tip refused');
+  assert.ok(poor);
+  await sleep(300);
+  assert.equal(perf.client.msgs.filter(m => m.type === 'notice' && /tipped you/.test(m.text)).length, 1, 'no phantom second tip landed');
+  perf.client.ws.close(); fan.client.ws.close();
 });

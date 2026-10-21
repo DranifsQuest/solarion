@@ -252,3 +252,150 @@ test('radio audibility: owner + visitor both receive the playing state with full
   assert.ok(mix, 'mix saved');
   for (const u of [owner, guest, outsider]) u.client.ws.close();
 });
+
+// ------------------------------------------------------------ v1.1
+
+// Item 5 — the REAL perform path, modeled faithfully: the actual
+// public/mixer.js running in a vm against a fake AudioContext that
+// behaves like a strict browser — created SUSPENDED, and
+// programmatic resume() does NOT un-suspend it (only a user gesture
+// does). The pre-v1.1 client scheduled the set unconditionally onto
+// ctx.currentTime; on a suspended context currentTime is FROZEN, so
+// every source sat at a timestamp on a clock that never advanced —
+// the performer heard silence while the room (whose contexts were
+// warm) heard the show. This test fails on that code: it asserts
+// nothing is scheduled while the context is frozen, and that once
+// the context runs, the deferred set finally schedules.
+test('performer audibility (v1.1): a cold context defers instead of scheduling into silence', { timeout: 30000 }, async () => {
+  const vm = require('node:vm');
+  const musicMod = require('../src/music.js');
+
+  const starts = [];
+  class FakeParam {
+    constructor(v = 0) { this.value = v; }
+    setValueAtTime() {} linearRampToValueAtTime() {} exponentialRampToValueAtTime() {} setTargetAtTime() {} cancelScheduledValues() {}
+  }
+  class FakeNode {
+    constructor(kind) { this._kind = kind; this.gain = new FakeParam(1); this.frequency = new FakeParam(440); this.detune = new FakeParam(0); this.Q = new FakeParam(1); this.type = ''; this.buffer = null; }
+    connect() {} disconnect() {}
+    start(when) { starts.push({ when, wall: Date.now() }); }
+    stop() {}
+  }
+  class FakeCtx {
+    static instances = [];
+    constructor() { this.state = 'suspended'; this.currentTime = 0; this.sampleRate = 44100; this.destination = {}; this._ls = {}; FakeCtx.instances.push(this); }
+    createGain() { return new FakeNode('gain'); }
+    createOscillator() { return new FakeNode('osc'); }
+    createBiquadFilter() { return new FakeNode('filter'); }
+    createBufferSource() { return new FakeNode('src'); }
+    createBuffer(ch, len) { return { getChannelData: () => new Float32Array(len) }; }
+    addEventListener(ev, fn) { (this._ls[ev] ||= []).push(fn); }
+    removeEventListener(ev, fn) { this._ls[ev] = (this._ls[ev] || []).filter(f => f !== fn); }
+    emit(ev) { for (const f of this._ls[ev] || []) f(); }
+    resume() { return Promise.resolve(); } // strict browser: no gesture, no resume
+    gesture() { this.state = 'running'; this.emit('statechange'); }
+  }
+  const fakeEl = () => ({
+    style: {}, dataset: {}, value: '', textContent: '', innerHTML: '',
+    classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
+    querySelectorAll: () => [], querySelector: () => null,
+    addEventListener() {}, appendChild() {},
+  });
+  const sandbox = {
+    console, Date, Math, JSON, Map, Set, Promise,
+    setTimeout, clearTimeout, setInterval, clearInterval,
+    document: { getElementById: () => fakeEl(), createElement: () => fakeEl(), addEventListener() {} },
+    fetch: () => Promise.reject(new Error('no network in the vm')),
+    AudioContext: FakeCtx,
+  };
+  sandbox.window = sandbox;
+  sandbox.globalThis = sandbox;
+  vm.createContext(sandbox);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'public', 'mixer.js'), 'utf8'), sandbox);
+  const Mixer = sandbox.SolarionMixer;
+  assert.ok(Mixer, 'mixer module loaded in the vm');
+  Mixer.hooks = { send() {}, toast() {}, esc: (s) => String(s), getMe: () => ({ id: 42 }), getMapDef: () => null };
+  Mixer.buildDom();
+  Mixer.loops = musicMod.LOOPS;
+  Mixer.loopsById = new Map(musicMod.LOOPS.map(l => [l.id, l]));
+
+  const mix = { name: 'Cold Start', bpm: 160, bars: 2, tracks: [{ loopId: 'pop-drums-1', startBar: 0 }, { loopId: 'pop-bass-1', startBar: 0 }] };
+  const startAt = Date.now() + 1200;
+  Mixer.handle({ type: 'performance-start', performerId: 42, performerName: 'Cold', mixName: 'Cold Start', mix, startAt, durationMs: 3000 });
+  await sleep(350);
+  assert.equal(starts.length, 0, 'NOTHING is scheduled onto a frozen (suspended) context — the old code scheduled the whole set here and the performer heard silence');
+
+  // The set's start time passes with the context STILL frozen —
+  // then the performer's next real gesture un-suspends it.
+  const ctx = FakeCtx.instances[0];
+  assert.ok(ctx, 'engine created a context');
+  await sleep(1450); // now ≈ startAt + 600ms
+  assert.equal(starts.length, 0, 'still nothing scheduled while frozen, even past startAt');
+  const gestureAt = Date.now();
+  ctx.gesture();
+  await sleep(250);
+  assert.ok(starts.length > 0, 'once the context runs, the deferred set is scheduled');
+  // A performance is ONE pass — there is no later grid point — so a
+  // late wake joins from the top of the mix, immediately: the first
+  // source sounds within a beat of the gesture. (ctx.currentTime
+  // never advances in the fake, so a source sounds at
+  // schedule-wall-time + its ctx timestamp.)
+  const soundWall = (e) => e.wall + e.when * 1000;
+  const firstSound = Math.min(...starts.map(soundWall));
+  assert.ok(firstSound >= gestureAt - 50 && firstSound < gestureAt + 700, `late join plays from the top at once (first sound ${Math.round(firstSound - gestureAt)}ms after the gesture)`);
+
+  // Warm path: a second set with the context already running
+  // schedules immediately, at startAt itself.
+  Mixer.handle({ type: 'performance-end', performerId: 42, performerName: 'Cold', mixName: 'Cold Start', up: 0, down: 0, earned: 0 });
+  starts.length = 0;
+  const startAt2 = Date.now() + 1200;
+  Mixer.handle({ type: 'performance-start', performerId: 42, performerName: 'Cold', mixName: 'Cold Start', mix, startAt: startAt2, durationMs: 3000 });
+  await sleep(200);
+  assert.ok(starts.length > 0, 'warm context schedules immediately');
+  const soundWall2 = (e) => e.wall + e.when * 1000;
+  const firstSound2 = Math.min(...starts.map(soundWall2));
+  assert.ok(Math.abs(firstSound2 - startAt2) < 500, 'warm join is at startAt (in sync with the room)');
+  Mixer.handle({ type: 'performance-end', performerId: 42, performerName: 'Cold', mixName: 'Cold Start', up: 0, down: 0, earned: 0 });
+});
+
+// Item 14 — zone music resolution + toggle/ducking contract.
+test('zone music (v1.1): every map resolves a composition; toggle + ducking gate the level', { timeout: 30000 }, async () => {
+  const zm = require('../public/zonemusic.js');
+  const { MAPS } = require('../src/maps.js');
+  const musicMod = require('../src/music.js');
+  for (const id of Object.keys(MAPS)) {
+    const spec = zm.forMap(id, Boolean(MAPS[id].casino));
+    assert.ok(spec && spec.genre && spec.bpm > 0, `${id} resolves a composition`);
+    const tracks = zm.pickTracks(spec, musicMod.LOOPS, id);
+    assert.ok(tracks.length >= 2, `${id} composition layers ${tracks.length} loops`);
+    for (const t of tracks) assert.ok(spec.roles.includes(t.role), `${id}: track role ${t.role} is in the composition`);
+  }
+  assert.ok(zm.forMap('studio:self', false), 'player homes resolve');
+  assert.equal(zm.forMap('neon-district', false).genre, 'Dance', 'Neon pulses');
+  assert.equal(zm.forMap('frosthaven', false).genre, 'Chill', 'Frosthaven stays calm');
+  assert.equal(zm.forMap('verdant-hollow', false).genre, 'Pop', 'Verdant is mellow pop');
+
+  const ZM = zm.ZoneMusic;
+  globalThis.SolarionMixer = { perf: { active: false } };
+  globalThis.SolarionStudio = { radioKey: null };
+  globalThis.SolarionSfx = { muted: false };
+  try {
+    ZM.enabled = true;
+    assert.equal(ZM.targetLevel(), zm.MUSIC_LEVEL, 'on + nothing foreground = full zone-music level');
+    globalThis.SolarionMixer.perf.active = true;
+    assert.equal(ZM.targetLevel(), 0, 'a live stage performance ducks zone music to silent');
+    globalThis.SolarionMixer.perf.active = false;
+    globalThis.SolarionStudio.radioKey = 'owner:1:loop';
+    assert.equal(ZM.targetLevel(), 0, 'a sounding home radio ducks zone music');
+    globalThis.SolarionStudio.radioKey = null;
+    ZM.setEnabled(false);
+    assert.equal(ZM.enabled, false);
+    assert.equal(ZM.targetLevel(), 0, 'toggle off silences zone music');
+    ZM.setEnabled(true);
+    assert.equal(ZM.targetLevel(), zm.MUSIC_LEVEL, 'toggle back on restores it');
+  } finally {
+    delete globalThis.SolarionMixer;
+    delete globalThis.SolarionStudio;
+    delete globalThis.SolarionSfx;
+  }
+});
