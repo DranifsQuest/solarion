@@ -322,31 +322,46 @@ async function main() {
   // but the order is harmless and keeps the balance trail
   // easy to follow.
   // ---- casino: poker hand with chip conservation
+  // Per-table buy-ins (v1.1.2): the FIRST player SETS the table's
+  // buy-in through the offer flow; the second JOINS at exactly that
+  // amount. Conservation is derived from the amounts actually
+  // debited, never hardcoded to 200z stacks.
   try {
     const T1 = 'casino-lounge-poker-1';
+    const SET_BUYIN = 100; // the amount A chooses when setting the table
     const preA = await balA(), preB = await balB();
     await travel(B.client, 496, 1200, 'casino-lounge', 'B bay -> casino lounge door');
     await walkTo(A.client, 176, 144);
     await walkTo(B.client, 176, 144);
     const tbl = (u) => lastOf(u.client, 'poker-state', s => s.id === T1);
-    // A real player whose first click doesn't take clicks again —
-    // re-send the sit once mid-wait instead of failing on one race.
-    const sitAndWait = async (u, chair, tag) => {
-      const t0 = Date.now();
-      let resent = false;
-      u.client.send({ type: 'poker', action: 'sit', table: T1, chair });
-      await waitFor(() => {
-        const s = tbl(u);
-        if (s && s.chairs.some(c => c.name === u.name)) return true;
-        if (!resent && Date.now() - t0 > 5000) {
-          resent = true;
-          u.client.send({ type: 'poker', action: 'sit', table: T1, chair });
-        }
-        return null;
-      }, 14000, `${tag} seated`);
+    // The offer flow: E at the table snaps you into a chair and pops
+    // the buy-in offer. One retry — a first interact can land while
+    // the player is still standing up from a previous seat.
+    const offerFor = async (u, tag) => {
+      u.client.send({ type: 'interact' });
+      try {
+        return await waitFor(() => lastOf(u.client, 'poker-offer'), 3000, `${tag} offer (first try)`);
+      } catch (e) {
+        u.client.send({ type: 'interact' });
+        return await waitFor(() => lastOf(u.client, 'poker-offer'), 9000, `${tag} buy-in offer`);
+      }
     };
-    await sitAndWait(A, 'N', 'A');
-    await sitAndWait(B, 'S', 'B');
+    // A starts the table and SETS the buy-in at SET_BUYIN.
+    const offerA = await offerFor(A, 'A');
+    if (offerA.established !== false || offerA.amount !== null) throw new Error(`A's offer should start an unset table: ${JSON.stringify(offerA)}`);
+    A.client.send({ type: 'poker', action: 'buyin', amount: SET_BUYIN });
+    await waitFor(() => { const s = tbl(A); return s && s.chairs.some(c => c.name === A.name); }, 10000, 'A seated after setting the buy-in');
+    const debA = preA - (await balA());
+    if (debA !== SET_BUYIN) throw new Error(`A debited ${debA}, want exactly the chosen ${SET_BUYIN}`);
+    if (tbl(A).buyin !== SET_BUYIN) throw new Error(`table buy-in reads ${tbl(A).buyin}, want ${SET_BUYIN}`);
+    // B joins at A's amount — exactly SET_BUYIN, not B's own cap.
+    const offerB = await offerFor(B, 'B');
+    if (offerB.established !== true || offerB.amount !== SET_BUYIN) throw new Error(`B's offer should quote the table's ${SET_BUYIN}: ${JSON.stringify(offerB)}`);
+    const midB = await balB();
+    B.client.send({ type: 'poker', action: 'buyin' });
+    await waitFor(() => { const s = tbl(B); return s && s.chairs.some(c => c.name === B.name); }, 10000, 'B seated after joining');
+    const debB = midB - (await balB());
+    if (debB !== SET_BUYIN) throw new Error(`B debited ${debB}, want exactly the table's ${SET_BUYIN}`);
     await waitFor(() => lastOf(A.client, 'poker-cards'), 30000, 'hole cards dealt');
     // check/call the hand down
     const start = Date.now();
@@ -374,7 +389,7 @@ async function main() {
     await sleep(800);
     const postA = await balA(), postB = await balB();
     if (postA + postB !== preA + preB) throw new Error(`conservation: before ${preA}+${preB}=${preA + preB}, after ${postA}+${postB}=${postA + postB}`);
-    report('casino poker: full hand to showdown, pot paid in full, chips conserved', true, `pot=${doneState.pot} winners=${doneState.winners.map(w => w.name + ':' + w.amount).join(',')} totals ${preA + preB} -> ${postA + postB}`);
+    report('casino poker: full hand to showdown, pot paid in full, chips conserved', true, `A set the buy-in at ${SET_BUYIN}z, B joined at ${SET_BUYIN}z, pot=${doneState.pot} winners=${doneState.winners.map(w => w.name + ':' + w.amount).join(',')} totals ${preA + preB} -> ${postA + postB}`);
   } catch (e) { report('casino poker: full hand to showdown, pot paid in full, chips conserved', false, e.message); }
 
   // ---- casino bar: the day's first drink is the Phase 9 treat

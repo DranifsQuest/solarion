@@ -13,10 +13,13 @@
  * hand, bet/spin controls, table chat, the bar button — and the
  * centred buy-in offer that pops when you sit at a poker table.
  *
- * Join flow (v1.1.1): sitting at a table does NOT auto-buy-in. The
- * server snaps you into the chair and sends poker-offer; the modal
- * asks — accept runs the server's existing atomic buy-in, decline
- * leaves you seated as a spectator with no chips moved.
+ * Join flow (v1.1.1, per-table v1.1.2): sitting at a table does
+ * NOT auto-buy-in. The server snaps you into the chair and sends
+ * poker-offer; the modal asks — at an EMPTY table you SET the
+ * table's buy-in from preset buttons, at a SET table you join for
+ * exactly the table's amount (or see the insufficient-funds state
+ * and just watch). Declining always leaves you seated as a
+ * spectator with no chips moved.
  */
 
 const Casino = {
@@ -42,6 +45,7 @@ const Casino = {
       myCards: $('myCards'), actions: $('pokerActions'),
       raiseAmt: $('raiseAmt'),
       offer: $('pokerOffer'), offerText: $('offerText'), offerBuy: $('offerBuy'),
+      offerChoices: $('offerChoices'),
       slotMsg: $('slotMsg'),
     };
     for (const b of document.querySelectorAll('.slotBetBtn')) {
@@ -125,16 +129,53 @@ const Casino = {
   showOffer(m) {
     this.offer = m;
     const tableNo = String(m.table || '').split('-').pop();
-    this.el.offerText.textContent = m.established
-      ? `Table ${tableNo} is already running — its buy-in is ${m.amount}z. Join for ${m.amount}z?`
-      : `You're the first at Table ${tableNo} — the buy-in is ${m.amount}z. Take your seat in the game?`;
-    this.el.offerBuy.textContent = `Buy in — ${m.amount}z`;
+    const bal = Number.isFinite(m.balance) ? m.balance : 0;
+    this.el.offerChoices.innerHTML = '';
+    this.el.offerChoices.classList.add('hidden');
+    this.el.offerBuy.classList.remove('hidden');
+    this.el.offerBuy.disabled = false;
+    if (m.established) {
+      // The table owns its buy-in — join at exactly its amount.
+      if (bal >= m.amount) {
+        this.el.offerText.textContent =
+          `Table ${tableNo} — table buy-in: ${m.amount}z. Join for ${m.amount}z? (Your balance: ${bal}z)`;
+        this.el.offerBuy.textContent = `Join — ${m.amount}z`;
+      } else {
+        this.el.offerText.textContent =
+          `Table ${tableNo} — table buy-in: ${m.amount}z. You have ${bal}z — not enough to join, but you can watch from this chair.`;
+        this.el.offerBuy.classList.add('hidden');
+      }
+    } else {
+      // First at the table: YOU set the buy-in (presets only, and
+      // only the ones your balance covers — the server re-checks).
+      this.el.offerBuy.classList.add('hidden');
+      const min = m.min || 50;
+      let text = `You're starting Table ${tableNo} — set the buy-in. Your balance: ${bal}z.`;
+      if (bal < min) text += ` You need at least ${min}z to set a buy-in — you can still just watch.`;
+      this.el.offerText.textContent = text;
+      const choices = Array.isArray(m.choices) && m.choices.length ? m.choices : [50, 100, 200, 500];
+      for (const amt of choices) {
+        const b = document.createElement('button');
+        b.textContent = `${amt}z`;
+        b.disabled = amt > bal;
+        b.onclick = () => {
+          this.hideOffer();
+          this.hooks.send({ type: 'poker', action: 'buyin', amount: amt });
+        };
+        this.el.offerChoices.appendChild(b);
+      }
+      this.el.offerChoices.classList.remove('hidden');
+    }
     this.el.offer.classList.remove('hidden');
   },
 
   hideOffer() {
     this.offer = null;
     if (this.el && this.el.offer) this.el.offer.classList.add('hidden');
+    if (this.el && this.el.offerChoices) {
+      this.el.offerChoices.innerHTML = '';
+      this.el.offerChoices.classList.add('hidden');
+    }
   },
 
   // ------------------------------------------------------------ rendering
@@ -152,10 +193,11 @@ const Casino = {
     this.el.trayPoker.classList.toggle('hidden', !this.mySeat);
     if (this.mySeat) this.hideOffer(); // bought in — question answered
     const mine = this.mySeat && this.myCards[this.mySeat.tableId];
-    this.el.myCards.innerHTML = this.mySeat
-      ? (mine ? `Your cards: ${mine.map((c) => `<span class="card mine">${esc(c)}</span>`).join(' ')}` : 'Seated — good luck!')
-      : '';
     const st = this.mySeat ? this.tables.get(this.mySeat.tableId) : null;
+    const buyinNote = st && st.buyin ? `Table buy-in ${st.buyin}z · ` : '';
+    this.el.myCards.innerHTML = this.mySeat
+      ? buyinNote + (mine ? `Your cards: ${mine.map((c) => `<span class="card mine">${esc(c)}</span>`).join(' ')}` : 'Seated — good luck!')
+      : '';
     const myTurn = Boolean(st && st.chairs[this.mySeat.chairIdx] && st.chairs[this.mySeat.chairIdx].acting);
     this.el.actions.classList.toggle('hidden', !this.mySeat);
     for (const id of ['actFold', 'actCheck', 'actCall', 'actRaise', 'actAllin']) {

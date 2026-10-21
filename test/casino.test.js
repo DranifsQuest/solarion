@@ -622,7 +622,10 @@ test('poker join flow: sit -> offer -> watch (no chips) -> buy in (atomic)', { t
     5000, 'first sitter gets the buy-in offer');
   assert.equal(offer1.table, T1.id);
   assert.equal(offer1.established, false, 'empty table: no established game');
-  assert.equal(offer1.amount, Math.min(startA, 200), 'offer quotes the server buy-in (min(balance, 200))');
+  assert.equal(offer1.amount, null, 'empty table: no buy-in set yet (v1.1.2)');
+  assert.deepEqual(offer1.choices, [50, 100, 200, 500], 'the setter picks from the presets');
+  assert.equal(offer1.balance, startA, 'the offer carries the sitter balance');
+  assert.equal(offer1.canAfford, true);
   assert.equal(await balanceOf(a), startA, 'sitting down moved no chips');
   a.client.send({ type: 'poker', action: 'state' });
   await sleep(300);
@@ -632,30 +635,33 @@ test('poker join flow: sit -> offer -> watch (no chips) -> buy in (atomic)', { t
   await sleep(300);
   assert.equal(await balanceOf(a), startA, 'declining moved no chips');
   assert.ok(!latestTable(a, T1.id).chairs.some(c => c.name === a.name), 'a watcher holds no game seat');
-  // Stand (E), sit again (E), this time accept.
+  // Stand (E), sit again (E), this time accept — the first sitter
+  // SETS the table buy-in (200z here, a preset like the old default).
   a.client.send({ type: 'interact' });
   await sleep(300);
   a.client.send({ type: 'interact' });
   await waitFor(
     () => a.client.msgs.filter(m => m.type === 'poker-offer').length >= 2 ? true : null,
     5000, 're-sitting re-offers the buy-in');
-  a.client.send({ type: 'poker', action: 'buyin' });
+  a.client.send({ type: 'poker', action: 'buyin', amount: 200 });
   const seated = await waitFor(() => {
     const s = latestTable(a, T1.id);
     return s && s.chairs.some(c => c.name === a.name) ? s : null;
   }, 5000, 'accepting seats the player with chips');
-  assert.equal(seatChips(seated, a.name), offer1.amount, 'the quoted stack bought in');
-  assert.equal(await balanceOf(a), startA - offer1.amount, 'buy-in debited exactly once');
-  // Second player at a RUNNING table sees the established buy-in.
+  assert.equal(seatChips(seated, a.name), 200, 'the chosen stack bought in');
+  assert.equal(seated.buyin, 200, 'the table now owns a 200z buy-in');
+  assert.equal(await balanceOf(a), startA - 200, 'buy-in debited exactly once');
+  // Second player at a SET table is quoted the table's buy-in.
   b.client.send({ type: 'debug-teleport', x: T1.x, y: T1.y });
   await sleep(300);
   b.client.send({ type: 'interact' });
   const offer2 = await waitFor(
     () => b.client.msgs.filter(m => m.type === 'poker-offer').pop(),
     5000, 'second sitter gets the offer');
-  assert.equal(offer2.established, true, 'table has a player: established game');
+  assert.equal(offer2.established, true, 'table buy-in is set: established game');
   const startB = await balanceOf(b);
-  assert.equal(offer2.amount, Math.min(startB, 200), 'joiner is quoted the table buy-in');
+  assert.equal(offer2.amount, 200, 'joiner is quoted THE TABLE buy-in, not their own');
+  assert.equal(offer2.balance, startB);
   b.client.send({ type: 'poker', action: 'watch' });
   await sleep(300);
   assert.equal(await balanceOf(b), startB, 'the joiner declining moved no chips');
@@ -677,4 +683,160 @@ test('poker join flow: sit -> offer -> watch (no chips) -> buy in (atomic)', { t
   assert.deepEqual(fx.reels, res.reels, 'fx reels match the result');
   a.client.ws.close();
   b.client.ws.close();
+});
+
+// ---------------------------------------------------------------- v1.1.2
+// Per-table buy-ins: the TABLE owns the amount. The first accepted
+// buy-in SETS it from the presets; joiners pay exactly that (never
+// their own min(balance, 200)); forged setter choices are refused
+// server-side; the amount clears when the table empties; a rebuy
+// tops back up to the table amount.
+
+test('poker per-table buy-ins: setter sets, joiners match, forgeries refused, clears on empty, rebuy to table amount', { timeout: 150000 }, async () => {
+  const setter = await makeUser('tb_setter');
+  const joiner = await makeUser('tb_joiner');
+  const poor = await makeUser('tb_poor');
+  const broke = await makeUser('tb_broke');
+  poor.client.send({ type: 'debug-casino', op: 'set-balance', zcoins: 120 });
+  broke.client.send({ type: 'debug-casino', op: 'set-balance', zcoins: 300 });
+  await sleep(250);
+  assert.equal(await balanceOf(poor), 120);
+  assert.equal(await balanceOf(broke), 300);
+  await toCasino(setter); await toCasino(joiner); await toCasino(poor); await toCasino(broke);
+  await sleep(1700); // outlast arrival locks
+
+  const sitOffer = async (u) => {
+    u.client.send({ type: 'debug-teleport', x: T2.x, y: T2.y });
+    await sleep(300);
+    u.client.send({ type: 'interact' });
+    return waitFor(() => u.client.msgs.filter(m => m.type === 'poker-offer').pop(),
+      5000, `${u.name} gets the buy-in offer`);
+  };
+  const standUp = async (u) => {
+    u.client.send({ type: 'poker', action: 'stand', table: T2.id });
+    await waitFor(() => {
+      const s = latestTable(u, T2.id);
+      return s && !s.chairs.some(c => c.name === u.name) ? s : null;
+    }, 5000, `${u.name} stood up`);
+  };
+
+  // --- the setter SETS 100 at the empty table
+  const offerS = await sitOffer(setter);
+  assert.equal(offerS.established, false);
+  assert.equal(offerS.amount, null, 'unset table quotes no amount');
+  const balS0 = await balanceOf(setter);
+  setter.client.send({ type: 'poker', action: 'buyin', amount: 100 });
+  const stSet = await waitFor(() => {
+    const s = latestTable(setter, T2.id);
+    return s && s.buyin === 100 && s.chairs.some(c => c.name === setter.name) ? s : null;
+  }, 5000, 'setter seated, table buy-in = 100');
+  assert.equal(seatChips(stSet, setter.name), 100);
+  assert.equal(await balanceOf(setter), balS0 - 100, 'setter debited exactly the chosen 100');
+
+  // --- the joiner pays THE TABLE's 100, not their own min(balance, 200)
+  const offerJ = await sitOffer(joiner);
+  assert.equal(offerJ.established, true);
+  assert.equal(offerJ.amount, 100);
+  assert.equal(offerJ.canAfford, true);
+  const balJ0 = await balanceOf(joiner);
+  joiner.client.send({ type: 'poker', action: 'buyin', amount: 500 }); // "asking" 500 changes nothing
+  const stJoin = await waitFor(() => {
+    const s = latestTable(joiner, T2.id);
+    return s && s.chairs.some(c => c.name === joiner.name) ? s : null;
+  }, 5000, 'joiner seated');
+  assert.equal(seatChips(stJoin, joiner.name), 100);
+  assert.equal(await balanceOf(joiner), balJ0 - 100, 'joiner debited exactly the table amount');
+
+  // --- a full hand at the 100z table conserves every coin
+  const done = await driveHand([setter, joiner], T2.id, (u, st) => {
+    u.client.send({ type: 'poker', action: 'act', table: T2.id, act: st.toCall > 0 ? 'call' : 'check' });
+  });
+  assert.equal(done.state, 'done');
+  const idle1 = await waitFor(() => {
+    const s = latestTable(setter, T2.id);
+    return s && s.state === 'idle' ? s : null;
+  }, 15000, 'table idle after the 100z hand');
+  const total1 = (await balanceOf(setter)) + seatChips(idle1, setter.name)
+    + (await balanceOf(joiner)) + seatChips(idle1, joiner.name);
+  assert.equal(total1, 10000, 'chip conservation across a hand at a non-200 table amount');
+
+  // --- rebuy tops back up to the TABLE amount (100), not the old 200 cap
+  setter.client.send({ type: 'debug-casino', op: 'set-chips', chips: 40 });
+  await sleep(300);
+  const balS1 = await balanceOf(setter);
+  setter.client.send({ type: 'poker', action: 'rebuy', table: T2.id });
+  await waitFor(() => {
+    const s = latestTable(setter, T2.id);
+    return s && seatChips(s, setter.name) === 100 ? s : null;
+  }, 5000, 'rebuy restores the table stack');
+  assert.equal(await balanceOf(setter), balS1 - 60, 'rebuy debited exactly the 60z difference to the table buy-in');
+
+  // --- the table empties -> the buy-in clears
+  await standUp(setter);
+  await standUp(joiner);
+  const stEmpty = await waitFor(() => {
+    const s = latestTable(setter, T2.id);
+    return s && s.buyin === null && s.chairs.every(c => !c.name) ? s : null;
+  }, 5000, 'buy-in cleared when the table emptied');
+  assert.ok(stEmpty);
+
+  // --- forged setter choices are refused server-side (poor has 120z)
+  const offerP = await sitOffer(poor);
+  assert.equal(offerP.established, false, 'the emptied table is unset again');
+  assert.equal(offerP.balance, 120);
+  const offersBefore = poor.client.msgs.filter(m => m.type === 'poker-offer').length;
+  poor.client.send({ type: 'poker', action: 'buyin', amount: 500 }); // above balance: refused
+  await waitFor(() => poor.client.msgs.filter(m => m.type === 'poker-offer').length > offersBefore ? true : null,
+    5000, 'a fresh offer follows the refusal');
+  await sleep(200);
+  assert.equal(await balanceOf(poor), 120, 'forged 500 choice debited nothing');
+  assert.ok(!latestTable(poor, T2.id).chairs.some(c => c.name === poor.name), 'forged choice seated nobody');
+  poor.client.send({ type: 'poker', action: 'buyin', amount: 75 }); // not a preset: refused
+  await sleep(400);
+  assert.equal(await balanceOf(poor), 120, 'non-preset choice debited nothing');
+  assert.ok(!latestTable(poor, T2.id).chairs.some(c => c.name === poor.name), 'non-preset choice seated nobody');
+  poor.client.send({ type: 'poker', action: 'buyin', amount: 100 }); // legal: sets the table
+  await waitFor(() => {
+    const s = latestTable(poor, T2.id);
+    return s && s.buyin === 100 && s.chairs.some(c => c.name === poor.name) ? s : null;
+  }, 5000, 'poor sets the table at 100');
+  assert.equal(await balanceOf(poor), 20, 'legal setter choice debited exactly 100');
+  await standUp(poor);
+  assert.equal(await balanceOf(poor), 120, 'standing refunded the stack');
+  await waitFor(() => {
+    const s = latestTable(poor, T2.id);
+    return s && s.buyin === null ? s : null;
+  }, 5000, 'buy-in cleared again after poor leaves');
+
+  // --- setter at 500; a 300z joiner is refused clean, can still watch
+  const offerS2 = await sitOffer(setter);
+  assert.equal(offerS2.established, false);
+  const balS2 = await balanceOf(setter);
+  setter.client.send({ type: 'poker', action: 'buyin', amount: 500 });
+  await waitFor(() => {
+    const s = latestTable(setter, T2.id);
+    return s && s.buyin === 500 && s.chairs.some(c => c.name === setter.name) ? s : null;
+  }, 5000, 'setter re-sets the table at 500');
+  assert.equal(await balanceOf(setter), balS2 - 500, 'setter debited exactly 500');
+  const offerB = await sitOffer(broke);
+  assert.equal(offerB.established, true);
+  assert.equal(offerB.amount, 500);
+  assert.equal(offerB.canAfford, false, 'a 300z joiner cannot afford a 500z table');
+  const offersB = broke.client.msgs.filter(m => m.type === 'poker-offer').length;
+  broke.client.send({ type: 'poker', action: 'buyin' });
+  await waitFor(() => broke.client.msgs.filter(m => m.type === 'poker-offer').length > offersB ? true : null,
+    5000, 'the refusal re-offers with the insufficient state');
+  await sleep(200);
+  assert.equal(await balanceOf(broke), 300, 'insufficient joiner debited nothing');
+  assert.ok(!latestTable(broke, T2.id).chairs.some(c => c.name === broke.name), 'insufficient joiner holds no seat');
+  broke.client.send({ type: 'poker', action: 'watch' }); // spectating still works
+  await sleep(300);
+  assert.equal(await balanceOf(broke), 300, 'watching moved no chips');
+  await standUp(setter);
+  await waitFor(() => {
+    const s = latestTable(setter, T2.id);
+    return s && s.buyin === null ? s : null;
+  }, 5000, 'buy-in cleared at the end');
+
+  setter.client.ws.close(); joiner.client.ws.close(); poor.client.ws.close(); broke.client.ws.close();
 });

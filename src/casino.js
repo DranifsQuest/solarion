@@ -134,8 +134,13 @@ function cmpHands(a, b) {
 const HAND_NAMES = ['High Card', 'Pair', 'Two Pair', 'Three of a Kind', 'Straight', 'Flush', 'Full House', 'Four of a Kind', 'Straight Flush'];
 
 // ------------------------------------------------------------------ poker
-const CHIP_BUYIN_MIN = 50;    // z coins
+const CHIP_BUYIN_MIN = 50;    // z coins — the global floor (set or join)
+// CHIP_BUYIN_MAX is now only the LEGACY default: a direct 'sit'
+// action with no offer behind it buys in for min(balance, 200),
+// exactly as before v1.1.2. The offer flow never uses it — the
+// first buyer SETS the table's buy-in from BUYIN_PRESETS.
 const CHIP_BUYIN_MAX = 200;   // z coins
+const BUYIN_PRESETS = [50, 100, 200, 500]; // setter choices, z coins
 const SB = 2, BB = 5;
 const TURN_SECS = 25;
 const START_COUNTDOWN_SECS = 6;
@@ -158,6 +163,11 @@ class PokerTable {
     }));
     this.state = 'idle';
     this.reservedBy = new Map(); // chairIdx -> userId (v1.1.1 spectator holds)
+    // v1.1.2: the TABLE owns its buy-in. null = unset (empty table);
+    // the first accepted buy-in sets it, joiners pay exactly it, and
+    // it clears when the last bought-in player leaves. Runtime only —
+    // a restart's stranded-chips refund makes everyone whole anyway.
+    this.buyin = null;
     this.community = [];
     this.deck = [];
     this.dealerChair = -1;
@@ -236,7 +246,8 @@ class PokerTable {
         ? Math.max(0, this.currentBet - this.chairs[this.actionChair].seat.bet) : 0,
       countdown: this.state === 'countdown' ? Math.max(0, Math.ceil((this.stateUntil - now) / 1000)) : 0,
       winners: this.lastWinners, reveal: this.reveal,
-      buyinMin: CHIP_BUYIN_MIN, buyinMax: CHIP_BUYIN_MAX, blinds: [SB, BB],
+      buyin: this.buyin,
+      buyinMin: CHIP_BUYIN_MIN, buyinMax: BUYIN_PRESETS[BUYIN_PRESETS.length - 1], blinds: [SB, BB],
     };
   }
 
@@ -261,30 +272,74 @@ class PokerTable {
   }
 
   // ------------------------------------------------------------------ sit
-  sit(p, dir) {
-    if (p.mapId !== this.mapId) { this.game.send(p, { type: 'notice', text: 'The poker tables are in a casino lounge.' }); return; }
-    if (!this.nearTable(p)) { this.game.send(p, { type: 'notice', text: 'Walk up to the table to sit down.' }); return; }
-    if (this.casino.findSeatByUser(p.userId)) { this.game.send(p, { type: 'notice', text: 'You are already seated at a table.' }); return; }
+  /**
+   * The atomic buy-in. Amount resolution (v1.1.2, table-owned):
+   *  - table buy-in SET   -> exactly the table's amount, always.
+   *    (An offer choice, if any, is ignored — the server never lets
+   *    a joiner pay anything but the table's price.)
+   *  - table buy-in UNSET + offer accept (opts.viaOffer) -> the
+   *    setter's chosen preset, validated server-side against
+   *    BUYIN_PRESETS and their balance. No valid choice = refusal
+   *    ('stale' when none was sent — the table emptied under a
+   *    pending join quote and must be re-offered as a setter).
+   *  - table buy-in UNSET + direct sit (legacy path) -> the old
+   *    per-player min(balance, CHIP_BUYIN_MAX), unchanged.
+   * A successful debit SETS the table's buy-in when it was unset.
+   * Returns { ok, amount? , reason? } — callers before v1.1.2
+   * ignored the return value.
+   */
+  sit(p, dir, opts = {}) {
+    if (p.mapId !== this.mapId) { this.game.send(p, { type: 'notice', text: 'The poker tables are in a casino lounge.' }); return { ok: false, reason: 'guard' }; }
+    if (!this.nearTable(p)) { this.game.send(p, { type: 'notice', text: 'Walk up to the table to sit down.' }); return { ok: false, reason: 'guard' }; }
+    if (this.casino.findSeatByUser(p.userId)) { this.game.send(p, { type: 'notice', text: 'You are already seated at a table.' }); return { ok: false, reason: 'guard' }; }
     // Phase 5: chair must be a known chair string — no probing other shapes.
-    if (typeof dir !== 'string' || dir.length > 8) { this.game.send(p, { type: 'notice', text: 'No such chair.' }); return; }
+    if (typeof dir !== 'string' || dir.length > 8) { this.game.send(p, { type: 'notice', text: 'No such chair.' }); return { ok: false, reason: 'guard' }; }
     const i = this.chairs.findIndex((c) => c.dir === dir);
-    if (i < 0) { this.game.send(p, { type: 'notice', text: 'No such chair.' }); return; }
-    if (this.chairs[i].seat) { this.game.send(p, { type: 'notice', text: 'That chair is taken.' }); return; }
-    if (this.reservedBy.has(i) && this.reservedBy.get(i) !== p.userId) { this.game.send(p, { type: 'notice', text: 'That chair is taken.' }); return; }
+    if (i < 0) { this.game.send(p, { type: 'notice', text: 'No such chair.' }); return { ok: false, reason: 'guard' }; }
+    if (this.chairs[i].seat) { this.game.send(p, { type: 'notice', text: 'That chair is taken.' }); return { ok: false, reason: 'guard' }; }
+    if (this.reservedBy.has(i) && this.reservedBy.get(i) !== p.userId) { this.game.send(p, { type: 'notice', text: 'That chair is taken.' }); return { ok: false, reason: 'guard' }; }
+    // Resolve the buy-in amount under the table-owned model.
+    const balance = this.zcoinsOf(p.userId);
+    let amount;
+    let settingTable = false;
+    if (this.buyin !== null) {
+      amount = this.buyin;
+      if (balance < amount) {
+        this.game.send(p, { type: 'notice', text: `This table's buy-in is ${amount}z — you have ${balance}z.` });
+        return { ok: false, reason: 'funds' };
+      }
+    } else if (opts.viaOffer) {
+      const raw = typeof opts.choice === 'number' ? opts.choice : Number(opts.choice);
+      const choice = Number.isFinite(raw) ? Math.round(raw) : NaN;
+      if (Number.isNaN(choice)) return { ok: false, reason: 'stale' };
+      if (!BUYIN_PRESETS.includes(choice)) {
+        this.game.send(p, { type: 'notice', text: `Pick a buy-in: ${BUYIN_PRESETS.map((n) => `${n}z`).join(' / ')}.` });
+        return { ok: false, reason: 'choice' };
+      }
+      if (choice > balance) {
+        this.game.send(p, { type: 'notice', text: `That buy-in is ${choice}z — you have ${balance}z.` });
+        return { ok: false, reason: 'funds' };
+      }
+      amount = choice;
+      settingTable = true;
+    } else {
+      amount = Math.min(balance, CHIP_BUYIN_MAX);
+      if (amount < CHIP_BUYIN_MIN) {
+        this.game.send(p, { type: 'notice', text: `You need at least ${CHIP_BUYIN_MIN}z to buy in.` });
+        return { ok: false, reason: 'funds' };
+      }
+      settingTable = true;
+    }
     // Atomic debit: exactly one of two racing sit requests can win.
-    const buyin = Math.min(this.zcoinsOf(p.userId), CHIP_BUYIN_MAX);
-    if (buyin < CHIP_BUYIN_MIN) {
-      this.game.send(p, { type: 'notice', text: `You need at least ${CHIP_BUYIN_MIN}z to buy in.` });
-      return;
-    }
-    const debited = CQ.debit.run(buyin, p.userId, buyin);
+    const debited = CQ.debit.run(amount, p.userId, amount);
     if (debited.changes !== 1) {
-      this.game.send(p, { type: 'notice', text: `You need at least ${CHIP_BUYIN_MIN}z to buy in.` });
-      return;
+      this.game.send(p, { type: 'notice', text: 'Not enough z coins to buy in.' });
+      return { ok: false, reason: 'funds' };
     }
+    if (settingTable) this.buyin = amount;
     const seat = {
       userId: p.userId, name: p.name,
-      chips: buyin, bet: 0, committed: 0, hole: [],
+      chips: amount, buyin: amount, bet: 0, committed: 0, hole: [],
       inHand: false, folded: false, allIn: false,
       sittingOut: this.state !== 'idle' && this.state !== 'countdown' && this.state !== 'done',
     };
@@ -300,8 +355,12 @@ class PokerTable {
     p.seated = { id: `poker:${this.id}:${dir}`, dir: CHAIR_FACE[dir], kind: 'poker' };
     this.game.savePosition(p);
     this.game.send(p, { type: 'zcoins', zcoins: this.zcoinsOf(p.userId) });
-    this.game.send(p, { type: 'notice', text: `You sit at the ${dir} chair with ${buyin}z in chips.` });
+    this.game.send(p, { type: 'notice', text: `You sit at the ${dir} chair with ${amount}z in chips.` });
+    if (settingTable && opts.viaOffer) {
+      this.game.send(p, { type: 'notice', text: `You set this table's buy-in at ${amount}z.` });
+    }
     this.broadcast();
+    return { ok: true, amount };
   }
 
   /** Cash out a seat: uncommitted chips return to zcoins, ledger cleared. */
@@ -339,8 +398,13 @@ class PokerTable {
     if (!this.nearTable(p)) { this.game.send(p, { type: 'notice', text: 'Walk up to the table first.' }); return; }
     if (this.inHandState()) { this.game.send(p, { type: 'notice', text: 'Wait for the hand to finish to rebuy.' }); return; }
     const { seat } = found;
-    if (seat.chips >= CHIP_BUYIN_MAX) { this.game.send(p, { type: 'notice', text: 'Your stack is already at the maximum.' }); return; }
-    const want = CHIP_BUYIN_MAX - seat.chips;
+    // v1.1.2: a rebuy tops back up to THE TABLE'S buy-in (the stack
+    // everyone started with), not the old universal 200z cap. The
+    // seat's own original buy-in is the fallback if the table
+    // amount is somehow unset; the legacy cap is the last resort.
+    const target = this.buyin ?? seat.buyin ?? CHIP_BUYIN_MAX;
+    if (seat.chips >= target) { this.game.send(p, { type: 'notice', text: `Your stack is already at the table buy-in (${target}z).` }); return; }
+    const want = target - seat.chips;
     const have = this.zcoinsOf(p.userId);
     const amount = Math.min(have, want);
     if (amount <= 0) { this.game.send(p, { type: 'notice', text: 'Not enough z coins to rebuy.' }); return; }
@@ -364,6 +428,9 @@ class PokerTable {
   }
 
   afterSeatChange() {
+    // v1.1.2: the table's buy-in clears when the last bought-in
+    // player is gone (spectator reservations don't hold it open).
+    if (this.buyin !== null && !this.chairs.some((c) => c.seat)) this.buyin = null;
     // If a hand is running and only one player remains un-folded, award it.
     if (this.inHandState()) this.checkHandEnd();
     this.broadcast();
@@ -910,8 +977,31 @@ class CasinoSystem {
   // Sit first, money second: walking up to a table and pressing E
   // snaps you into the nearest free chair as a spectator and pops
   // the buy-in question (poker-offer). Accepting runs the table's
-  // existing atomic sit(); declining keeps the chair and moves no
-  // chips. The chair stays reserved while you sit in it.
+  // atomic sit(); declining keeps the chair and moves no chips.
+  // The chair stays reserved while you sit in it.
+  // v1.1.2: the offer now carries the TABLE's buy-in state — unset
+  // (the sitter sets it from BUYIN_PRESETS) or set (joiners pay
+  // exactly that). A sitter who can't afford anything still gets
+  // the chair + the modal's insufficient state; spectating is
+  // always available.
+
+  /** Build the poker-offer payload for a player holding a chair. */
+  offerPayload(p, table, dir) {
+    const balance = this.zcoinsOf(p.userId);
+    return {
+      type: 'poker-offer', table: table.id, chair: dir,
+      established: table.buyin !== null,
+      amount: table.buyin,
+      choices: BUYIN_PRESETS.slice(),
+      balance,
+      canAfford: table.buyin !== null ? balance >= table.buyin : balance >= CHIP_BUYIN_MIN,
+      min: CHIP_BUYIN_MIN, max: BUYIN_PRESETS[BUYIN_PRESETS.length - 1],
+    };
+  }
+
+  sendOffer(p, table, dir) {
+    this.game.send(p, this.offerPayload(p, table, dir));
+  }
 
   offerSeat(p) {
     const lounge = this.loungeFor(p);
@@ -926,11 +1016,6 @@ class CasinoSystem {
       if (d < bestD) { bestD = d; best = i; }
     });
     if (best < 0) { this.game.send(p, { type: 'notice', text: 'Every chair at this table is taken.' }); return true; }
-    const amount = Math.min(this.zcoinsOf(p.userId), CHIP_BUYIN_MAX);
-    if (amount < CHIP_BUYIN_MIN) {
-      this.game.send(p, { type: 'notice', text: `You need at least ${CHIP_BUYIN_MIN}z to buy in.` });
-      return true;
-    }
     const chair = table.chairs[best];
     table.reservedBy.set(best, p.userId);
     p.pokerPending = { tableId: table.id, dir: chair.dir };
@@ -938,20 +1023,26 @@ class CasinoSystem {
     p.seated = { id: `poker:${table.id}:${chair.dir}`, dir: CHAIR_FACE[chair.dir], kind: 'poker-pending' };
     this.game.savePosition(p);
     this.game.send(p, { type: 'sit-state', seated: true });
-    this.game.send(p, {
-      type: 'poker-offer', table: table.id, chair: chair.dir,
-      amount, min: CHIP_BUYIN_MIN, max: CHIP_BUYIN_MAX,
-      established: table.chairs.some((c) => c.seat),
-    });
+    this.sendOffer(p, table, chair.dir);
     return true;
   }
 
-  acceptBuyin(p) {
+  acceptBuyin(p, choice) {
     const pend = p.pokerPending;
     if (!pend) { this.game.send(p, { type: 'notice', text: 'No buy-in waiting — sit at a table first (E).' }); return; }
     const table = this.tableById(pend.tableId);
     if (!table) { p.pokerPending = null; return; }
-    table.sit(p, pend.dir); // the existing atomic buy-in; clears pending on success
+    const r = table.sit(p, pend.dir, { viaOffer: true, choice }); // clears pending on success
+    if (!r.ok) {
+      // Refused (funds / bad choice / the table emptied under the
+      // quote): the player stays in the spectator chair — re-send a
+      // fresh offer so the modal shows the CURRENT state (as a
+      // setter now, or with the insufficient-funds state).
+      if (r.reason === 'stale') {
+        this.game.send(p, { type: 'notice', text: 'That table emptied — you\'re setting the buy-in now.' });
+      }
+      if (p.pokerPending) this.sendOffer(p, table, pend.dir);
+    }
   }
 
   watchTable(p) {
@@ -983,7 +1074,7 @@ class CasinoSystem {
       for (const t of pool) this.game.send(p, t.publicState());
       return;
     }
-    if (action === 'buyin') { this.acceptBuyin(p); return; }
+    if (action === 'buyin') { this.acceptBuyin(p, msg.amount); return; }
     if (action === 'watch') { this.watchTable(p); return; }
     const table = (typeof msg.table === 'string' && this.tableById(msg.table)) || this.tableFor(p);
     if (!table) { this.game.send(p, { type: 'notice', text: 'No poker table here.' }); return; }
@@ -1179,6 +1270,6 @@ module.exports = {
   slotRoll, slotPayout, theoreticalRTP, jackpotPoolZ,
   SLOT_SYMBOLS, SLOT_BETS, SLOT_PAIR_PAY, SLOT_COOLDOWN_MS,
   JACKPOT_CUT_PCT, JACKPOT_SEED_H,
-  CHIP_BUYIN_MIN, CHIP_BUYIN_MAX, SB, BB, SIT_RADIUS,
+  CHIP_BUYIN_MIN, CHIP_BUYIN_MAX, BUYIN_PRESETS, SB, BB, SIT_RADIUS,
   HAND_NAMES,
 };
