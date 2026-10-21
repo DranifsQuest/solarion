@@ -523,7 +523,12 @@ class Game {
         this.send(p, { type: 'notice', text: `${gw.label} isn't open yet — coming in a later phase.` });
         return;
       }
-      this.switchMap(p, target);
+      // Lane C: gateways are gatehouses — arrival means stepping
+      // OUT of the matching gatehouse in the target map. Land at
+      // that gatehouse's spawnOut (just outside its mouth, clear of
+      // its trigger) instead of the map's generic spawn.
+      const back = (target.gateways || []).find(g2 => g2.target === p.mapId);
+      this.switchScene(p, target, back && back.spawnOut ? { spawn: back.spawnOut } : {});
       return;
     }
     // Phase 10: the Gateway's "My Home" door — its target is the

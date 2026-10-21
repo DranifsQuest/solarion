@@ -770,6 +770,49 @@ the substance.
   the server already broadcasts; the transfer/lock protocol is
   untouched, so every Phase B door guarantee still holds verbatim.
 
+## Lane C — the world-art pass (gatehouses, facades, zone character)
+
+Built on branch `lanec-worldart`; the parent merges + live-verifies.
+
+- **Gateways are gatehouses now.** Every inter-city gateway (hub ⇄
+  all five cities, both directions) is a stone structure: two flank
+  towers (real solid tiles), a lintel sign naming the destination,
+  lanterns, a short stone passage, and big double doors at the
+  mouth that swing open as you approach — the same visual language
+  as the Phase 10 doors. The transfer still fires at the INNER
+  threshold: the gateway rect never moved, so every existing
+  travel coordinate still works. Arrival now lands you OUTSIDE the
+  matching gatehouse in the target map (`spawnOut` on the gateway
+  def), clear of its trigger — no bounce-back. The flat gold pads
+  are gone from the renderer entirely.
+- **Exteriors: the boxes are gone.** The scattered block
+  pseudo-buildings were removed from the Gateway, Neon District,
+  Cinder Mesa, Frosthaven and Verdant Hollow. Enterable places get
+  exactly ONE quality facade each — the Homes block and the
+  Gateway Café in the hub, the Casino Lounge, the Neon Casino, the
+  Hookah Lounge — drawn as single buildings: walls, a pitched
+  roof, windows that light up at night, the real door standing in
+  front. Non-enterable places get NO building: ground dressing
+  instead — trees (`T`), planters (`P`), rocks (`R`), market
+  stalls, flower beds. Solid-looking still means solid.
+- **Zone character.** One hero landmark per city: the Gateway's
+  fountain is a real tiered fountain; Solstice Bay flies a
+  lighthouse; the Neon District a giant chasing-bulb NEON sign;
+  Cinder Mesa a working forge monument between its posts;
+  Frosthaven an ice sculpture; Verdant Hollow a Great Tree.
+  Ground is zoned and textured — boardwalk (`b`), stone plaza
+  (`s`), dirt path (`p`) — so no city is one flat colour.
+- **Slots are arcade cabinets** (per the Gasoline Alley pinball
+  row): chunky body, angled glass with visible reels, a chasing
+  bulb marquee, side art. Machine positions, sit-to-spin stools
+  and all slot math are unchanged; the marquees join the
+  night-glow pass.
+- **Booth seating.** Café seats render as diner booths (bench +
+  backrest + a wood table toward the facing direction) and
+  hookah-station seats as low booth benches — paired seats ring
+  their tables like poker chairs. Seat data, positions and the
+  E-key system are untouched.
+
 ## Stubbed / deferred to later phases
 
 - More Casino Lounges: `makeCasinoLounge()` can build one for any
