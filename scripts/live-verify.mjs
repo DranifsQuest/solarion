@@ -196,7 +196,7 @@ async function main() {
     report('login + /api/me: POST auth round-trip works live', true, 'login 200, /api/me returns A avatar');
   } catch (e) { report('login + /api/me: POST auth round-trip works live', false, e.message); return finish(); }
 
-  // ---- WS connect + daily bonus (exactly once)
+  // ---- WS connect + welcome bonus (exactly once)
   try {
     A.client = await connectClient(A.token);
     A.id = A.client.hello.you.id;
@@ -315,11 +315,12 @@ async function main() {
     await sleep(1600); // slot cooldown
   } catch (e) { report('casino slots: spin settles with exact balance math', false, e.message); }
 
-  // ORDER NOTE (Phase 10): poker runs BEFORE the bar ritual on
-  // purpose — the bar's 45z of drinks would drop A under the
-  // table's 50z minimum buy-in whenever the slot spin loses,
-  // and the sit is then legitimately refused. Up here A holds
-  // 80z+ from the slots step, so the buy-in always clears.
+  // ORDER NOTE (Phase 10, kept for determinism): poker runs
+  // BEFORE the bar ritual. The original reason — the bar's 45z
+  // of drinks could drop A under the table's 50z minimum buy-in
+  // — no longer binds now that fresh accounts start at 5,000z,
+  // but the order is harmless and keeps the balance trail
+  // easy to follow.
   // ---- casino: poker hand with chip conservation
   try {
     const T1 = 'casino-lounge-poker-1';
@@ -378,7 +379,8 @@ async function main() {
 
   // ---- casino bar: the day's first drink is the Phase 9 treat
   // (free + 10z tip); drinks after cost exactly 5z; the 10th passes
-  // A out for a REAL 20 seconds, then A wakes with the count reset to 2.
+  // A out cold. v1.1 rule: the WHOLE drunk state (count, haze,
+  // pass-out) expires 30s after the last drink — A wakes sober (0).
   try {
     await walkTo(A.client, 176, 528); // bar patron spot (movement stands A up from the stool)
     const b0 = await balA();
@@ -389,6 +391,7 @@ async function main() {
     if ((await balA()) !== b0 + 10) throw new Error(`first drink of the day was not the free treat +10z tip (${b0} -> ${await balA()})`);
     report('casino bar: first drink of the day is free + a 10z house tip (Phase 9 ritual)', true, `balance ${b0} -> ${b0 + 10}, drinks=1`);
     for (let i = 0; i < 9; i++) A.client.send({ type: 'buy-drink' });
+    const lastDrinkAt = Date.now(); // the 30s drunk window runs from the LAST drink
     const vsOut = await waitFor(() => lastOf(A.client, 'vice-state', v => v.passedOut), 8000, 'A passed out at drink 10');
     if (vsOut.drinks !== 10) throw new Error(`drinks at pass-out = ${vsOut.drinks}`);
     if ((await balA()) !== b0 + 10 - 45) throw new Error(`ten drinks math wrong (${b0} -> ${await balA()}, want ${b0 - 35}: treat +10, then 9 x 5z)`);
@@ -398,11 +401,16 @@ async function main() {
       return me2 && me2.fallen ? me2 : null;
     }, 6000, 'fallen pose in snapshots');
     if (!fallen) throw new Error('no fallen snapshot');
-    await sleep(21000); // the real production window
-    const vsWake = await waitFor(() => lastOf(A.client, 'vice-state', v => !v.passedOut), 8000, 'A wakes after 20s');
-    if (vsWake.drinks !== 2) throw new Error(`drinks after waking = ${vsWake.drinks} (want the reset value 2)`);
-    report('casino bar: 10th drink passes A out cold for 20s, wakes at 2 drinks', true, 'fallen broadcast, real 21s wait, count reset to 2');
-  } catch (e) { report('casino bar: 10th drink passes A out cold for 20s, wakes at 2 drinks', false, e.message); }
+    // v1.1: the whole drunk state expires 30s after the last drink.
+    // Wait past that envelope (32s from the 10th drink) before
+    // asserting: A must be awake AND sober — count 0, not the old 2.
+    // (Polling starts after the deadline so the last vice-state on
+    // file is the expiry broadcast, not a mid-drinking one.)
+    await sleep(Math.max(0, lastDrinkAt + 32000 - Date.now()));
+    const vsWake = await waitFor(() => lastOf(A.client, 'vice-state', v => !v.passedOut), 10000, 'A wakes sober as the 30s window expires');
+    if (vsWake.drinks !== 0) throw new Error(`drinks after waking = ${vsWake.drinks} (want 0: the 30s window expired the whole drunk state)`);
+    report('casino bar: 10th drink passes A out cold; drunk state expires 30s after the last drink, A wakes sober (0 drinks)', true, 'pass-out + fallen broadcast, waited out the 30s envelope, count 0 on waking');
+  } catch (e) { report('casino bar: 10th drink passes A out cold; drunk state expires 30s after the last drink, A wakes sober (0 drinks)', false, e.message); }
 
   // ---- studio: buy -> place -> relog persistence
   try {
@@ -435,10 +443,10 @@ async function main() {
   } catch (e) { report('studio: buy chair (-40z) -> place -> relog persistence verified', false, e.message); }
 
   // ---- player homes (Phase 8): catalog, room invite, radio sync.
-  // Fresh account D (100z) buys a boombox (80z); B — sitting in the
-  // Casino Lounge — accepts D's invite from across the world and
-  // watches the radio state change. (A fresh account can't reach a
-  // 150z TV, so TV behavior is covered by the local suite; the live
+  // Fresh account D (5,000z welcome bonus) buys a boombox (80z);
+  // B — sitting in the Casino Lounge — accepts D's invite from
+  // across the world and watches the radio state change. (TV
+  // purchase/playback is covered by the local suite; the live
   // catalog check asserts TVs and radios are on sale.)
   try {
     const NAME_D = NAME_A.slice(0, -1) + 'd';
@@ -457,7 +465,11 @@ async function main() {
     report('homes catalog: 40+ items on sale incl. TVs and radios', true, `${dst.catalog.length} items`);
     D.client.send({ type: 'studio-buy', itemId: 'boombox' });
     const dst1 = await waitFor(() => lastOf(D.client, 'studio-state', s => s.inventory && s.inventory.length === 1), 6000, 'boombox in inventory');
-    if ((await balD()) !== 20) throw new Error(`D balance after boombox = ${await balD()} (want 100-80=20)`);
+    // Derive from D's actual hello balance so this survives future
+    // welcome-bonus changes (5,000z today -> expect start - 80).
+    const dStart = D.client.hello.zcoins;
+    const dAfter = await balD();
+    if (dAfter !== dStart - 80) throw new Error(`D balance after boombox = ${dAfter} (want hello ${dStart} - 80 = ${dStart - 80})`);
     const boom = dst1.inventory[0];
     D.client.send({ type: 'studio-place', instanceItemId: boom.instanceId, x: 5, y: 5, rot: 0 });
     await waitFor(() => lastOf(D.client, 'studio-furniture', f => f.furniture.length === 1), 6000, 'boombox placed');
@@ -593,7 +605,8 @@ async function main() {
   }
 
   // ---- hookah lounge: a fresh visitor C puffs 5z x10, turns hippy
-  // for a REAL 20 seconds (server-broadcast override), then reverts.
+  // (server-broadcast override). v1.1 rule: the hippy state holds
+  // through the window and reverts 30s after the LAST puff.
   try {
     const NAME_C = NAME_A.slice(0, -1) + 'c'; // vfy<sfx>a -> vfy<sfx>c (A/B end a/b)
     const rc = await api('/api/register', { username: NAME_C, password: PW });
@@ -619,25 +632,33 @@ async function main() {
       return me2 && me2.seated ? true : null;
     }, 6000, 'C seated at the hookah');
     for (let i = 0; i < 10; i++) { C.client.send({ type: 'interact' }); await sleep(120); }
+    const lastPuffAt = Date.now(); // the 30s hippy window runs from the LAST puff
     const vsH = await waitFor(() => lastOf(C.client, 'vice-state', v => v.hippy), 8000, 'C turned hippy at puff 10');
     if (vsH.puffs !== 0) throw new Error(`puffs after trip = ${vsH.puffs} (want reset to 0)`);
-    if ((await balC()) !== 50) throw new Error(`C balance after 10 puffs = ${await balC()} (want 100 - 10*5z = 50)`);
+    // Derive from C's actual hello balance (5,000z welcome bonus
+    // today -> expect start - 10*5z), not a hardcoded 100z start.
+    const cStart = C.client.hello.zcoins;
+    const cAfter = await balC();
+    if (cAfter !== cStart - 50) throw new Error(`C balance after 10 puffs = ${cAfter} (want hello ${cStart} - 10*5z = ${cStart - 50})`);
+    // Hippy must be ON inside the window (headband in snapshots)...
     const hip = await waitFor(() => {
       const s = lastOf(C.client, 'snapshot');
       const me2 = s && s.players.find(p => p.id === C.id);
       return me2 && me2.hippy && me2.accessory === 'headband' ? me2 : null;
     }, 6000, 'hippy override in snapshots');
     if (!hip) throw new Error('no hippy snapshot');
-    await sleep(21000); // the real production window
+    // ...and revert only once the window lapses: 30s after the last
+    // puff (+2s buffer), not the old flat 20s.
+    await sleep(Math.max(0, lastPuffAt + 32000 - Date.now()));
     const back = await waitFor(() => {
       const s = lastOf(C.client, 'snapshot');
       const me2 = s && s.players.find(p => p.id === C.id);
       return me2 && !me2.hippy && me2.accessory === 'cap' ? me2 : null;
-    }, 8000, 'C reverts after 20s');
+    }, 10000, 'C reverts after the 30s window');
     if (!back) throw new Error('hippy did not revert');
-    report('hookah lounge: 10 puffs at 5z turn C hippy for 20s (broadcast), then revert', true, 'puffs reset, balance 100 -> 50, headband -> real look');
+    report('hookah lounge: 10 puffs at 5z turn C hippy (broadcast); hippy holds in the window and reverts 30s after the last puff', true, `puffs reset, balance ${cStart} -> ${cAfter}, headband inside window -> real look after 30s`);
     C.client.ws.close();
-  } catch (e) { report('hookah lounge: 10 puffs at 5z turn C hippy for 20s (broadcast), then revert', false, e.message); }
+  } catch (e) { report('hookah lounge: 10 puffs at 5z turn C hippy (broadcast); hippy holds in the window and reverts 30s after the last puff', false, e.message); }
 
   // ---- Phase 9: friends + join-friend + navigator travel
   try {
