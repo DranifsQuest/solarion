@@ -859,7 +859,7 @@ class Game {
     if (p.seated) {
       if (p.seated.kind === 'hookah') { this.handlePuff(p); return; }
       if (p.seated.kind === 'poker') {
-        this.send(p, { type: 'notice', text: 'Use the casino panel to stand up from the poker table.' });
+        this.send(p, { type: 'notice', text: 'Use Stand / Cash out in the poker tray to leave the table.' });
         return;
       }
       p.seated = null;
@@ -897,7 +897,7 @@ class Game {
     if (s.kind === 'hookah') {
       this.send(p, { type: 'notice', text: `Settled in. Press E to take a puff — ${VICE.PUFF_COST}z each.` });
     } else if (String(s.id).includes('-slotseat-')) {
-      this.send(p, { type: 'notice', text: 'Seated at the slot machine — hit SPIN in the casino panel!' });
+      this.send(p, { type: 'notice', text: 'Seated at the slot machine — hit SPIN 🎰!' });
     }
   }
 }

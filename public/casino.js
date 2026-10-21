@@ -32,6 +32,12 @@ const Casino = {
   spinning: false,
   inLounge: false,
   offer: null,            // pending poker-offer payload
+  context: null,          // v1.2: 'poker' | 'slots' | 'bar' | null (Item F2)
+  mySlotId: null,         // the machine whose stool I occupy
+  guiOpen: false,         // v1.2: the slot GUI window (Item H)
+  guiDismissed: false,    // closed with X — stays shut for this sit
+  guiAnimating: false,
+  lastReels: null,        // last server symbols shown on the GUI
 
   attach(hooks) {
     this.hooks = hooks; // { send, toast, esc, getMe, getMapDef, getCoins }
@@ -42,19 +48,26 @@ const Casino = {
     const $ = (id) => document.getElementById(id);
     this.el = {
       tray: $('casinoTray'), trayPoker: $('trayPoker'),
+      traySlots: $('traySlots'), trayChat: $('trayChat'), trayBar: $('trayBar'),
       myCards: $('myCards'), actions: $('pokerActions'),
       raiseAmt: $('raiseAmt'),
       offer: $('pokerOffer'), offerText: $('offerText'), offerBuy: $('offerBuy'),
       offerChoices: $('offerChoices'),
       slotMsg: $('slotMsg'),
+      gui: $('slotGui'), guiSpin: $('slotGuiSpin'), guiMsg: $('slotGuiMsg'),
+      guiBalance: $('slotGuiBalance'), guiJackpot: $('slotGuiJackpot'),
+      reelStrips: [$('reelStrip0'), $('reelStrip1'), $('reelStrip2')],
     };
     for (const b of document.querySelectorAll('.slotBetBtn')) {
-      b.onclick = () => {
-        this.slotBet = Number(b.dataset.bet);
-        for (const x of document.querySelectorAll('.slotBetBtn')) x.classList.toggle('active', x === b);
-      };
+      b.onclick = () => this.setBet(Number(b.dataset.bet));
+    }
+    for (const b of document.querySelectorAll('.guiBetBtn')) {
+      b.onclick = () => this.setBet(Number(b.dataset.bet));
     }
     $('slotSpin').onclick = () => this.spin();
+    if (this.el.guiSpin) this.el.guiSpin.onclick = () => this.spin();
+    const guiClose = $('slotGuiClose');
+    if (guiClose) guiClose.onclick = () => { this.guiDismissed = true; this.closeGui(); this.applyContext(); };
     $('tableChatBtn').onclick = () => {
       const inp = $('tableChatInput');
       const text = inp.value.trim();
@@ -93,8 +106,20 @@ const Casino = {
     this.hooks.send({ type: 'poker', action: 'act', table: this.mySeat.tableId, act: actName, amount });
   },
 
+  /** One bet state for both the tray buttons and the GUI buttons. */
+  setBet(n) {
+    this.slotBet = n;
+    for (const x of document.querySelectorAll('.slotBetBtn,.guiBetBtn')) {
+      x.classList.toggle('active', Number(x.dataset.bet) === n);
+    }
+  },
+
   spin() {
     if (this.spinning) return;
+    this.spinning = true;
+    if (this.el.guiSpin) this.el.guiSpin.disabled = true;
+    // Safety: if the server never answers, don't wedge the button.
+    setTimeout(() => { if (this.spinning && !this.guiAnimating) { this.spinning = false; if (this.el.guiSpin) this.el.guiSpin.disabled = false; } }, 3500);
     this.hooks.send({ type: 'slots', action: 'spin', bet: this.slotBet });
   },
 
@@ -112,10 +137,65 @@ const Casino = {
         this.hooks.send({ type: 'slots', action: 'info' });
       }
     }
+    if (inside) this.updateContext(x, y, mapDef);
+    else if (this.context !== null) { this.context = null; this.applyContext(); }
+  },
+
+  /**
+   * v1.2 (Item F2/G): the tray context — exactly one section family
+   * at a time. Poker (with table chat) only while seated at a poker
+   * table; slots only while seated at a slot stool; the bar only
+   * while at the bar (seated on a bar stool or standing at the
+   * counter spot). Derived fresh each frame from my seat + position
+   * against the map's own machine/stool/bar data — no hardcoded
+   * directions or rooms.
+   */
+  updateContext(x, y, mapDef) {
+    const cz = mapDef && mapDef.casino;
+    if (!cz) return;
+    const me = this.hooks.getMe();
+    let ctx = null;
+    let slotId = null;
+    if (this.mySeat) {
+      ctx = 'poker';
+    } else if (me && me.seated) {
+      for (const s of cz.slots || []) {
+        if (Math.hypot(x - s.ix, y - s.iy) < 26) { ctx = 'slots'; slotId = s.id; break; }
+      }
+      if (!ctx) {
+        const slotSeatIds = new Set((cz.slots || []).map(s => s.seatId));
+        for (const st of mapDef.seats || []) {
+          if (st.kind !== 'stool' || slotSeatIds.has(st.id)) continue;
+          if (Math.hypot(x - st.x, y - st.y) < 26) { ctx = 'bar'; break; }
+        }
+      }
+    }
+    if (!ctx && cz.bar && Math.hypot(x - cz.bar.x, y - cz.bar.y) < 62) ctx = 'bar';
+    if (ctx !== this.context || slotId !== this.mySlotId) {
+      this.context = ctx;
+      this.mySlotId = slotId;
+      if (ctx !== 'slots') { this.guiDismissed = false; this.closeGui(); }
+      this.applyContext();
+      if (ctx === 'slots' && !this.guiDismissed) this.openGui();
+    }
+  },
+
+  /** Show exactly the tray sections for the current context. */
+  applyContext() {
+    const ctx = this.context;
+    this.el.trayPoker.classList.toggle('hidden', ctx !== 'poker');
+    this.el.trayChat.classList.toggle('hidden', ctx !== 'poker');
+    this.el.trayBar.classList.toggle('hidden', ctx !== 'bar');
+    // While the slot GUI is open it owns bet + SPIN (Item H).
+    this.el.traySlots.classList.toggle('hidden', !(ctx === 'slots' && !this.guiOpen));
   },
 
   onMapChanged() {
     this.inLounge = false;
+    this.context = null;
+    this.mySlotId = null;
+    this.guiDismissed = false;
+    this.closeGui();
     this.el.tray.classList.add('hidden');
     this.hideOffer();
     this.tables.clear();
@@ -178,6 +258,104 @@ const Casino = {
     }
   },
 
+  // ------------------------------------------------------------ slot GUI (Item H)
+
+  /** The seated player's own cabinet window. Opens on the sit,
+   *  stays while seated; X dismisses it for this sit; standing
+   *  closes it. The in-world glass (slot-fx) is for spectators. */
+  openGui() {
+    if (!this.el.gui || this.guiOpen) return;
+    this.guiOpen = true;
+    this.el.gui.classList.remove('hidden');
+    const ids = Object.keys(this.slotSymbols);
+    const show = this.lastReels && this.lastReels.length === 3 ? this.lastReels : ids.slice(0, 3);
+    this.setReelsIdle(show.length === 3 ? show : ['sun', 'zcoin', 'star']);
+    this.syncGuiBalance();
+    this.applyContext(); // tray slots defer to the GUI
+  },
+
+  closeGui() {
+    if (!this.guiOpen) return;
+    this.guiOpen = false;
+    this.guiAnimating = false;
+    if (this.el.gui) this.el.gui.classList.add('hidden');
+  },
+
+  syncGuiBalance() {
+    const c = document.getElementById('coins');
+    if (c && this.el.guiBalance) this.el.guiBalance.textContent = c.textContent;
+  },
+
+  setReelsIdle(ids) {
+    ids.forEach((id, r) => {
+      const strip = this.el.reelStrips[r];
+      if (!strip) return;
+      strip.style.transition = 'none';
+      strip.style.transform = 'translateY(0)';
+      strip.innerHTML = `<div class="reelSym">${this.slotSymbols[id] || '⭐'}</div>`;
+      strip.parentElement.classList.remove('win', 'jackpot');
+    });
+  },
+
+  /**
+   * Animate the GUI reels onto the server's result: each reel's
+   * strip tumbles (blur while fast) and settles LEFT to RIGHT with
+   * a small overshoot bounce, landing exactly on slot-result.reels
+   * (the planner in slotreels.js owns that contract). Win readout,
+   * payout and jackpot state land when the last reel stops.
+   */
+  animateGuiReels(m) {
+    const SR = window.SolarionSlotReels;
+    const ids = Object.keys(this.slotSymbols);
+    if (!SR || !Array.isArray(m.reels) || m.reels.length !== 3 || ids.length < 2) {
+      this.finishGuiResult(m);
+      return;
+    }
+    this.guiAnimating = true;
+    const plan = SR.planReels(m.reels, ids);
+    const SYM_H = 64;
+    this.el.guiMsg.textContent = '🎰 The reels are spinning…';
+    plan.forEach((reel, r) => {
+      const strip = this.el.reelStrips[r];
+      strip.parentElement.classList.remove('win', 'jackpot');
+      strip.innerHTML = reel.strip.map(id => `<div class="reelSym">${this.slotSymbols[id] || '⭐'}</div>`).join('');
+      strip.style.transition = 'none';
+      strip.style.transform = 'translateY(0)';
+      strip.classList.add('spinning');
+      // Force layout, then run the tumble to the final symbol.
+      void strip.offsetHeight;
+      strip.style.transition = `transform ${reel.settleMs}ms cubic-bezier(.15,.6,.25,1.04)`;
+      strip.style.transform = `translateY(${-reel.finalIndex * SYM_H}px)`;
+      setTimeout(() => strip.classList.remove('spinning'), reel.settleMs);
+    });
+    const total = Math.max(...plan.map(p => p.settleMs));
+    setTimeout(() => {
+      this.guiAnimating = false;
+      const mask = SR.matchMask(m.reels);
+      const jp = SR.isJackpot(m.reels);
+      mask.forEach((on, r) => {
+        if (on) this.el.reelStrips[r].parentElement.classList.add(jp ? 'jackpot' : 'win');
+      });
+      this.finishGuiResult(m);
+    }, total + 60);
+  },
+
+  /** Reels settled: the win/loss readout + balance + jackpot land. */
+  finishGuiResult(m) {
+    this.spinning = false;
+    if (this.el.guiSpin) this.el.guiSpin.disabled = false;
+    this.lastReels = Array.isArray(m.reels) ? m.reels.slice() : this.lastReels;
+    if (Number.isFinite(m.zcoins) && this.el.guiBalance) this.el.guiBalance.textContent = String(m.zcoins);
+    this.el.guiMsg.textContent = m.jackpotWin > 0
+      ? `☀️☀️☀️ THREE SUNS — THE JACKPOT! You win ${m.jackpotWin}z!!`
+      : m.win > 0
+        ? `🎉 You win ${m.win}z! (bet ${m.bet}z)`
+        : `No win — bet ${m.bet}z.`;
+    if (m.win >= m.bet * 4 && m.win > 0) this.hooks.toast(`🎰 JACKPOT! +${m.win}z on the slots!`);
+    // Keep the tray line in sync for if the GUI gets dismissed.
+    this.el.slotMsg.textContent = this.el.guiMsg.textContent;
+  },
+
   // ------------------------------------------------------------ rendering
 
   render() {
@@ -188,9 +366,9 @@ const Casino = {
       const seatedIdx = me ? st.chairs.findIndex((c) => c.name === me.name) : -1;
       if (seatedIdx >= 0) this.mySeat = { tableId: st.id, chairIdx: seatedIdx };
     }
-    // The tray's poker section exists only while you hold chips at
-    // a table; the felt itself carries the shared table state.
-    this.el.trayPoker.classList.toggle('hidden', !this.mySeat);
+    // v1.2: tray sections are context-owned (applyContext); a fresh
+    // seat at a table promotes the context immediately.
+    if (this.mySeat && this.context !== 'poker') { this.context = 'poker'; this.applyContext(); }
     if (this.mySeat) this.hideOffer(); // bought in — question answered
     const mine = this.mySeat && this.myCards[this.mySeat.tableId];
     const st = this.mySeat ? this.tables.get(this.mySeat.tableId) : null;
@@ -264,11 +442,13 @@ const Casino = {
   },
 
   onSlotResult(m) {
-    // My cabinet animates in the world (the slot-fx broadcast covers
-    // it — the server sends it to the room, me included). The tray
-    // just reports the outcome once the reels have settled.
-    this.spinning = true;
+    // The room still watches my cabinet's glass (slot-fx). For ME:
+    // with the Item H GUI open, its reels tumble and settle on the
+    // server symbols and the readout lands at the settle; without
+    // it (dismissed), the compact tray reports as before.
     if (Number.isFinite(m.jackpotPool)) this.setJackpot(m.jackpotPool);
+    if (this.guiOpen) { this.animateGuiReels(m); return; }
+    this.spinning = true;
     this.el.slotMsg.textContent = '🎰 The reels are spinning…';
     setTimeout(() => {
       this.spinning = false;
@@ -282,8 +462,11 @@ const Casino = {
   },
 
   setJackpot(pool) {
+    if (!Number.isFinite(pool)) return;
+    const text = `💰 JACKPOT (both casinos): ${pool}z — three ☀️ take it all!`;
     const el = document.getElementById('slotJackpot');
-    if (el && Number.isFinite(pool)) el.textContent = `💰 JACKPOT (both casinos): ${pool}z — three ☀️ take it all!`;
+    if (el) el.textContent = text;
+    if (this.el && this.el.guiJackpot) this.el.guiJackpot.textContent = text;
   },
 };
 

@@ -840,3 +840,45 @@ test('poker per-table buy-ins: setter sets, joiners match, forgeries refused, cl
 
   setter.client.ws.close(); joiner.client.ws.close(); poor.client.ws.close(); broke.client.ws.close();
 });
+
+// ------------------------------------------------------------------ Item G
+
+test('slot stools: seated player faces the machine in BOTH casinos (Item G)', { timeout: 90000 }, async () => {
+  const selfOf = (u) => {
+    const s = u.client.msgs.filter(m => m.type === 'snapshot').pop();
+    return s ? s.players.find(p => p.id === u.id) : null;
+  };
+  const sitAndCheck = async (u, spot, wantDir, label) => {
+    u.client.send({ type: 'debug-teleport', x: spot.x, y: spot.y });
+    await sleep(300);
+    u.client.msgs.length = 0;
+    u.client.send({ type: 'interact' });
+    await waitFor(() => u.client.msgs.filter(m => m.type === 'sit-state' && m.seated).pop(), 5000, `seated ${label}`);
+    const me = await waitFor(() => { const s = selfOf(u); return s && s.seated ? s : null; }, 5000, `snapshot seated ${label}`);
+    assert.equal(me.dir, wantDir, `${label}: seated facing is toward the machine`);
+    assert.ok(Math.hypot(me.x - spot.x, me.y - spot.y) < 2, `${label}: sitter anchored ON the stool`);
+    u.client.send({ type: 'interact' }); // stand back up
+    await waitFor(() => u.client.msgs.filter(m => m.type === 'sit-state' && !m.seated).pop(), 5000, `stood ${label}`);
+  };
+
+  // Casino Lounge: north-row machine (stool south of it, face up)
+  // and an east-wall machine (stool west of it, face right/east).
+  const u = await makeUser('facing_fay');
+  await toCasino(u);
+  await sleep(3400); // transfer lock
+  await sitAndCheck(u, { x: 528, y: 112 }, 'up', 'lounge north-row slot');
+  await sitAndCheck(u, { x: 880, y: 144 }, 'right', 'lounge east-wall slot');
+  u.client.ws.close();
+
+  // Neon Casino: the east-wall row from Zan's screenshot.
+  const v = await makeUser('facing_vic');
+  v.client.send({ type: 'debug-teleport', x: 224, y: 48 });
+  await waitFor(() => v.client.msgs.filter(m => m.type === 'map' && m.map.id === 'neon-district').pop(), 5000, 'vic in neon-district');
+  await sleep(1600); // portal debounce
+  v.client.send({ type: 'debug-teleport', x: 1968, y: 944 }); // casino door
+  await waitFor(() => v.client.msgs.filter(m => m.type === 'map' && m.map.id === 'neon-casino').pop(), 5000, 'vic in neon-casino');
+  await sleep(3400); // transfer lock
+  await sitAndCheck(v, { x: 880, y: 144 }, 'right', 'neon east-wall slot');
+  await sitAndCheck(v, { x: 528, y: 112 }, 'up', 'neon north-row slot');
+  v.client.ws.close();
+});
