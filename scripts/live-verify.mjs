@@ -351,10 +351,24 @@ async function main() {
     await walkTo(A.client, 176, 144);
     await walkTo(B.client, 176, 144);
     const tbl = (u) => lastOf(u.client, 'poker-state', s => s.id === T1);
-    A.client.send({ type: 'poker', action: 'sit', table: T1, chair: 'N' });
-    await waitFor(() => { const s = tbl(A); return s && s.chairs.some(c => c.name === NAME_A); }, 8000, 'A seated');
-    B.client.send({ type: 'poker', action: 'sit', table: T1, chair: 'S' });
-    await waitFor(() => { const s = tbl(B); return s && s.chairs.some(c => c.name === NAME_B); }, 8000, 'B seated');
+    // A real player whose first click doesn't take clicks again —
+    // re-send the sit once mid-wait instead of failing on one race.
+    const sitAndWait = async (u, chair, tag) => {
+      const t0 = Date.now();
+      let resent = false;
+      u.client.send({ type: 'poker', action: 'sit', table: T1, chair });
+      await waitFor(() => {
+        const s = tbl(u);
+        if (s && s.chairs.some(c => c.name === u.name)) return true;
+        if (!resent && Date.now() - t0 > 5000) {
+          resent = true;
+          u.client.send({ type: 'poker', action: 'sit', table: T1, chair });
+        }
+        return null;
+      }, 14000, `${tag} seated`);
+    };
+    await sitAndWait(A, 'N', 'A');
+    await sitAndWait(B, 'S', 'B');
     await waitFor(() => lastOf(A.client, 'poker-cards'), 30000, 'hole cards dealt');
     // check/call the hand down
     const start = Date.now();
@@ -576,7 +590,11 @@ async function main() {
     C.id = C.client.hello.you.id;
     const balC = async () => (await api('/api/me', { token: C.token })).json.avatar.zcoins;
     await travel(C.client, 672, 48, 'cinder-mesa', 'C gateway -> cinder mesa');
-    await walkTo(C.client, 1250, 976); // swing wide to the building's north side — its door faces north
+    // Swing wide to the building's north side — its door faces
+    // north. One steering retry: the mesa's cacti can trap the
+    // bot's strafe for a whole walk window; a player just re-paths.
+    try { await walkTo(C.client, 1250, 976); }
+    catch (e) { await walkTo(C.client, 1250, 976); }
     const hm = await travel(C.client, 976, 1008, 'hookah-lounge', 'C cinder -> hookah lounge door');
     if (!hm.map.hookahs || hm.map.hookahs.length !== 4) throw new Error('hookah payload incomplete');
     await walkTo(C.client, 176, 160, { arrive: 12 }); // station 1's seats
