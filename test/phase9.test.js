@@ -173,7 +173,7 @@ test('homes v2: name/paint/floor persist, expansion keeps furniture, lock + invi
   owner.client.send({ type: 'home-expand' });
   const poor = await waitFor(() => owner.client.msgs.filter(m => m.type === 'notice' && /costs 1500z/.test(m.text)).pop(), 5000, 'expansion refused when broke');
   assert.ok(poor);
-  owner.client.send({ type: 'debug-casino', action: 'set-balance', amount: 5000 });
+  owner.client.send({ type: 'debug-casino', op: 'set-balance', zcoins: 5000 });
   await waitFor(() => owner.client.msgs.filter(m => m.type === 'zcoins' && m.zcoins === 5000).pop(), 5000, 'funded');
   owner.client.send({ type: 'home-expand' });
   const big = await waitFor(() => {

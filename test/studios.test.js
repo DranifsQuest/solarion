@@ -169,9 +169,12 @@ test('travel: all 4 new cities reachable, staged, distinct, and isolated', { tim
     assert.equal(arrived.map.stage.speakers.length, 2, `${city.id} stage has 2 speakers`);
     assert.ok(arrived.map.gateways.some(g => g.label === 'The Gateway' && g.active), `${city.id} return gateway active`);
     // isolation: A is alone in this city; B (Gateway) stops seeing A
+    // (Phase 9: NPC locals ride snapshots too — count humans only)
     await waitFor(() => {
       const s = a.client.msgs.filter(m => m.type === 'snapshot').pop();
-      return s && s.players.length === 1 && s.players[0].id === a.id ? s : null;
+      if (!s) return null;
+      const humans = s.players.filter(p => !p.npc);
+      return humans.length === 1 && humans[0].id === a.id ? s : null;
     }, 5000, `A alone in ${city.id}`);
     await waitFor(() => {
       const snaps = b.client.msgs.filter(m => m.type === 'snapshot').slice(-3);

@@ -219,10 +219,12 @@ test('gateway travel: Gateway -> Solstice Bay -> Gateway; Phase 4 cities open', 
     const snaps = b.msgs.filter(m => m.type === 'snapshot').slice(-3);
     return snaps.length >= 3 && snaps.every(s => !s.players.some(p => p.id === aId)) ? true : null;
   }, 5000, 'B stops seeing A in fresh snapshots');
-  // A sees only herself in the bay
+  // A sees only herself in the bay (Phase 9: NPC locals don't count)
   await waitFor(() => {
     const s = a.msgs.filter(m => m.type === 'snapshot').pop();
-    return s && s.players.length === 1 && s.players[0].id === aId;
+    if (!s) return null;
+    const humans = s.players.filter(p => !p.npc);
+    return humans.length === 1 && humans[0].id === aId;
   }, 5000, 'A alone in solstice-bay');
   // Back through the return gateway: x=35*32=1120, y=43*32=1376, w=64 -> center (1152,1392)
   await sleep(1600); // gateway debounce
