@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Solarion Factory Demo (test-only)</title>
+<style>
+  html, body { margin: 0; background: #141021; height: 100%; }
+  canvas { display: block; margin: 0 auto; }
+</style>
+</head>
+<body>
+<canvas id="demo" width="1680" height="760"></canvas>
+<script src="sprites.js"></script>
+<script src="factory.js"></script>
+<script>
+'use strict';
+/**
+ * Bake Shop factory demo — composes ONE scene entirely from
+ * public/factory.js parts (building, cabinets, tree, planter, lamp,
+ * sign) on an iso ground patch, with two real avatar sprites for
+ * scale. Served ONLY by the test-only /factory-demo route
+ * (SOLARION_TEST=1); screenshotted by scripts/preview.mjs --factory.
+ */
+const F = window.SolarionFactory;
+const Sprites = window.SolarionSprites;
+const cv = document.getElementById('demo');
+const ctx = cv.getContext('2d');
+
+// dusk backdrop
+const bg = ctx.createLinearGradient(0, 0, 0, cv.height);
+bg.addColorStop(0, '#241536');
+bg.addColorStop(0.62, '#3a2350');
+bg.addColorStop(1, '#171126');
+ctx.fillStyle = bg;
+ctx.fillRect(0, 0, cv.width, cv.height);
+
+// iso ground patch (painter order, the client's own floor language).
+// Every scene placement goes through G(tx, ty) — tile space -> the
+// patch's screen space — so props stand ON the ground, not near it.
+const TS = 32;
+const OX = 840, OY = 30;
+function G(tx, ty) {
+  const [gx, gy] = F.proj(tx * TS, ty * TS);
+  return [gx + OX, gy + OY];
+}
+for (let s = 0; s <= 34; s++) {
+  for (let tx = Math.max(0, s - 17); tx <= Math.min(17, s); tx++) {
+    const ty = s - tx;
+    if (ty < 0 || ty > 17) continue;
+    const [gx, gy] = G(tx + 0.5, ty + 0.5);
+    F.diamond(ctx, gx, gy, TS * F.ZOOM, TS * F.ZOOM * 0.5,
+      (tx + ty) % 2 ? '#4a3560' : '#432a5c');
+  }
+}
+// a rug inlay in front of the building
+const [rugX, rugY] = G(8.5, 12.5);
+F.diamond(ctx, rugX, rugY, 66, 33, '#9c4034');
+F.diamond(ctx, rugX, rugY, 44, 22, '#c96f4a');
+
+// --- the composed scene (back to front, in tile space) ---
+const [bX, bY] = G(8.5, 10.5);
+const b = F.makeBuilding(ctx, bX, bY, {
+  w: 300, floors: 2, wall: '#7a4a2f', roof: '#5a2e22', sign: 'CAFÉ SOL',
+});
+F.makeTree(ctx, ...G(15, 9.5), { size: 1.15, canopy: '#2b5d8a' });
+F.makeCabinet(ctx, ...G(13, 12.5), { body: '#7a1f2b' });
+F.makeCabinet(ctx, ...G(14, 14), { body: '#1f4d7a', marquee: '#57d977', reels: 'BAR' });
+F.makeTree(ctx, ...G(5, 13.5), { size: 1.5, fruit: '#ff5d5d' });
+F.makePlanter(ctx, ...G(11, 15.5), {});
+F.makeSign(ctx, ...G(6.5, 16.5), { text: 'SOLSTICE BAY' });
+
+// two residents for scale (real sprite renderer)
+const lookM = {
+  gender: 'M', face: 'classic', eyes: 'round', eye_color: '#20242c', nose: 'button',
+  lips: 'natural', skin_tone: '#f1c27d', hair_style: 'short', hair_color: '#111111',
+  top_style: 'button-up', body_color: '#22242c', bottom_style: 'pants',
+  accent_color: '#2b3a55', shoe_color: '#23262b', accessory: 'none',
+};
+const lookF = {
+  gender: 'F', face: 'classic', eyes: 'round', eye_color: '#20242c', nose: 'button',
+  lips: 'natural', skin_tone: '#f1c27d', hair_style: 'ponytail', hair_color: '#ff2e88',
+  top_style: 'tank', body_color: '#17102b', bottom_style: 'leggings',
+  accent_color: '#23232e', shoe_color: '#ffd23f', accessory: 'sunglasses',
+};
+for (const [look, sx, sy] of [[lookM, ...G(8.2, 14)], [lookF, ...G(9.4, 14.8)]]) {
+  const spr = Sprites.makeSprite(look, 'down');
+  ctx.beginPath(); ctx.ellipse(sx, sy, 13, 6, 0, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0,0,0,.30)'; ctx.fill();
+  ctx.drawImage(spr, sx - spr.width / 2, sy - spr.height + 4);
+}
+
+// lamp last + its glow punched over the dusk (night-pass language)
+const [lampX, lampY] = G(11.5, 13.5);
+const glowAnchor = F.makeLamp(ctx, lampX, lampY, { lantern: true });
+ctx.save();
+ctx.globalCompositeOperation = 'lighter';
+const g = ctx.createRadialGradient(glowAnchor.x, glowAnchor.y, 2, glowAnchor.x, glowAnchor.y, glowAnchor.r * 1.6);
+g.addColorStop(0, 'rgba(255,205,110,.38)');
+g.addColorStop(1, 'rgba(255,205,110,0)');
+ctx.fillStyle = g;
+ctx.beginPath(); ctx.arc(glowAnchor.x, glowAnchor.y, glowAnchor.r * 1.6, 0, Math.PI * 2); ctx.fill();
+ctx.restore();
+
+document.title = 'factory-demo-ready';
+window.__FACTORY_DEMO__ = { building: b, glowAnchor };
+</script>
+</body>
+</html>

@@ -227,6 +227,84 @@ app.get('/health', (req, res) => {
 });
 
 const server = http.createServer(app);
+
+// ------------------------------------------------------------------
+// Bake Shop — TEST-ONLY preview routes (registered ONLY when
+// SOLARION_TEST=1; in production these paths 404 like any other
+// unknown route — see docs/bakeshop.md). They let tooling render any
+// map through the REAL client (public/client.js draws it) with a
+// synthetic hello payload built from the same serializers the live
+// hello uses (clientMap + the publicPlayer field shape), so a build
+// agent can SEE its own map/sprite work. No auth, no DB writes.
+// ------------------------------------------------------------------
+if (TEST_MODE) {
+  const fs = require('fs');
+  const { TILE: MTILE, collides: mapCollides } = require('./maps');
+
+  // Standable pixel point nearest the given tile, using the game's
+  // own circle-collision test — preview characters stand exactly
+  // where a real player could.
+  function previewSpot(map, tx, ty) {
+    for (let r = 0; r < 24; r++) {
+      for (let yy = ty - r; yy <= ty + r; yy++) {
+        for (let xx = tx - r; xx <= tx + r; xx++) {
+          if (Math.max(Math.abs(xx - tx), Math.abs(yy - ty)) !== r) continue;
+          const x = xx * MTILE + MTILE / 2, y = yy * MTILE + MTILE / 2;
+          if (xx >= 0 && yy >= 0 && xx < map.tiles.w && yy < map.tiles.h && !mapCollides(map, x, y, 10)) {
+            return { x, y };
+          }
+        }
+      }
+    }
+    return { x: map.spawn.x, y: map.spawn.y };
+  }
+
+  function fakePub(id, name, look, x, y, dir) {
+    return {
+      id, name, x, y, dir,
+      seated: false, drinks: 0, puffs: 0, fallen: false,
+      performing: false, emote: null, ...look,
+    };
+  }
+
+  app.get('/preview-data/:mapId', (req, res) => {
+    const map = MAPS[req.params.mapId];
+    if (!map) return res.status(404).json({ ok: false, error: 'unknown map' });
+    // The Bake Shop preview page is loaded from file:// (Chrome's
+    // Local Network Access rules block http://localhost pages in
+    // this environment); its origin is "null", so let it read this
+    // synthetic, test-only payload cross-origin.
+    res.set('Access-Control-Allow-Origin', '*');
+    // Force the world clock: 0.25 = full day, 0.70 = deep night.
+    const phase = req.query.phase === 'night' ? 0.70 : 0.25;
+    const dayCycle = { periodMs: DAY_CYCLE.periodMs, anchor: Date.now() - phase * DAY_CYCLE.periodMs };
+    const ctx = Math.floor(map.tiles.w / 2), cty = Math.floor(map.tiles.h / 2);
+    const v = previewSpot(map, ctx, cty);
+    const s1 = previewSpot(map, ctx + 2, cty + 2);
+    const s2 = previewSpot(map, ctx - 2, cty + 2);
+    const lookM = { ...appearance.defaultsFor('M'), hair_color: '#111111', body_color: '#22242c', top_style: 'button-up' };
+    const lookF = { ...appearance.defaultsFor('F'), hair_style: 'ponytail', hair_color: '#ff2e88', body_color: '#17102b', accessory: 'sunglasses' };
+    const lookM2 = { ...appearance.defaultsFor('M'), hair_color: '#ffd23f', body_color: '#3aa7e0', accessory: 'cap' };
+    const you = fakePub(900001, 'Preview', lookM, v.x, v.y, 'down');
+    const players = [
+      you,
+      fakePub(900002, 'Pip', lookF, s1.x, s1.y, 'left'),
+      fakePub(900003, 'Juno', lookM2, s2.x, s2.y, 'right'),
+    ];
+    res.json({
+      type: 'hello', you, map: clientMap(map), players,
+      chat: [], zcoins: 0, bonusGranted: false, dayCycle,
+    });
+  });
+
+  app.get('/preview/:mapId', (req, res) => {
+    if (!MAPS[req.params.mapId]) return res.status(404).send('unknown map');
+    const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
+    const phase = req.query.phase === 'night' ? 'night' : 'day';
+    const inject = `<script>window.__PREVIEW_CFG__ = ${JSON.stringify({ mapId: req.params.mapId, phase })};</script>\n<script src="/preview.js"></script>\n</body>`;
+    res.type('html').send(html.replace('</body>', inject));
+  });
+}
 // Phase 5: cap inbound WS frames at 64 KB. The `ws` library default is
 // 100 MB — one huge frame from any signed-in client could OOM the
 // process. Mix payloads are already capped at ~8 KB by Phase 2, so
