@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Solarion Factory Demo (test-only)</title>
+<style>
+  html, body { margin: 0; background: #141021; height: 100%; }
+  canvas { display: block; margin: 0 auto; }
+</style>
+</head>
+<body>
+<canvas id="demo" width="1680" height="1050"></canvas>
+<script src="/sprites.js"></script>
+<script src="/factory.js"></script>
+<script>
+'use strict';
+/**
+ * Bake Shop factory demo — composes ONE scene entirely from
+ * public/factory.js parts (building, cabinets, tree, planter, lamp,
+ * sign) on an iso ground patch, with two real avatar sprites for
+ * scale. Served ONLY by the test-only /factory-demo route
+ * (SOLARION_TEST=1); screenshotted by scripts/preview.mjs --factory.
+ */
+const F = window.SolarionFactory;
+const Sprites = window.SolarionSprites;
+const cv = document.getElementById('demo');
+const ctx = cv.getContext('2d');
+
+// dusk backdrop
+const bg = ctx.createLinearGradient(0, 0, 0, cv.height);
+bg.addColorStop(0, '#241536');
+bg.addColorStop(0.62, '#3a2350');
+bg.addColorStop(1, '#171126');
+ctx.fillStyle = bg;
+ctx.fillRect(0, 0, cv.width, cv.height);
+
+// iso ground patch (painter order, the client's own floor language)
+const TS = 32;
+for (let s = 0; s <= 26; s++) {
+  for (let tx = Math.max(0, s - 13); tx <= Math.min(13, s); tx++) {
+    const ty = s - tx;
+    if (ty < 0 || ty > 13) continue;
+    const [gx, gy] = F.proj((tx + 0.5) * TS, (ty + 0.5) * TS);
+    F.diamond(ctx, gx + 620, gy + 120, TS * F.ZOOM, TS * F.ZOOM * 0.5,
+      (tx + ty) % 2 ? '#4a3560' : '#432a5c');
+  }
+}
+// a rug inlay in front of the building
+const [rugX, rugY] = F.proj(6.5 * TS, 9.5 * TS);
+F.diamond(ctx, rugX + 620, rugY + 120, 66, 33, '#9c4034');
+F.diamond(ctx, rugX + 620, rugY + 120, 44, 22, '#c96f4a');
+
+// --- the composed scene (back to front) ---
+const BX = 830, BY = 470; // building door ground point
+F.makeTree(ctx, 470, 430, { size: 1.5, fruit: '#ff5d5d' });
+const b = F.makeBuilding(ctx, BX, BY, {
+  w: 300, floors: 2, wall: '#7a4a2f', roof: '#5a2e22', sign: 'CAFÉ SOL',
+});
+F.makeCabinet(ctx, 1065, 520, { body: '#7a1f2b' });
+F.makeCabinet(ctx, 1125, 545, { body: '#1f4d7a', marquee: '#57d977', reels: 'BAR' });
+F.makeTree(ctx, 1210, 470, { size: 1.15, canopy: '#2b5d8a' });
+F.makePlanter(ctx, 620, 590, {});
+F.makeSign(ctx, 700, 700, { text: 'SOLSTICE BAY' });
+
+// two residents for scale (real sprite renderer)
+const lookM = {
+  gender: 'M', face: 'classic', eyes: 'round', eye_color: '#20242c', nose: 'button',
+  lips: 'natural', skin_tone: '#f1c27d', hair_style: 'short', hair_color: '#111111',
+  top_style: 'button-up', body_color: '#22242c', bottom_style: 'pants',
+  accent_color: '#2b3a55', shoe_color: '#23262b', accessory: 'none',
+};
+const lookF = {
+  gender: 'F', face: 'classic', eyes: 'round', eye_color: '#20242c', nose: 'button',
+  lips: 'natural', skin_tone: '#f1c27d', hair_style: 'ponytail', hair_color: '#ff2e88',
+  top_style: 'tank', body_color: '#17102b', bottom_style: 'leggings',
+  accent_color: '#23232e', shoe_color: '#ffd23f', accessory: 'sunglasses',
+};
+for (const [look, sx, sy] of [[lookM, 800, 610], [lookF, 880, 640]]) {
+  const spr = Sprites.makeSprite(look, 'down');
+  ctx.beginPath(); ctx.ellipse(sx, sy, 13, 6, 0, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0,0,0,.30)'; ctx.fill();
+  ctx.drawImage(spr, sx - spr.width / 2, sy - spr.height + 4);
+}
+
+// lamp last + its glow punched over the dusk (night-pass language)
+const glowAnchor = F.makeLamp(ctx, 1010, 640, { lantern: true });
+ctx.save();
+ctx.globalCompositeOperation = 'lighter';
+const g = ctx.createRadialGradient(glowAnchor.x, glowAnchor.y, 2, glowAnchor.x, glowAnchor.y, glowAnchor.r * 1.6);
+g.addColorStop(0, 'rgba(255,205,110,.38)');
+g.addColorStop(1, 'rgba(255,205,110,0)');
+ctx.fillStyle = g;
+ctx.beginPath(); ctx.arc(glowAnchor.x, glowAnchor.y, glowAnchor.r * 1.6, 0, Math.PI * 2); ctx.fill();
+ctx.restore();
+
+document.title = 'factory-demo-ready';
+window.__FACTORY_DEMO__ = { building: b, glowAnchor };
+</script>
+</body>
+</html>

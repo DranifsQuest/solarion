@@ -714,4 +714,4 @@ function clientMap(map) {
   };
 }
 
-module.exports = { TILE, MAPS, collides, gatewayAt, doorAt, clientMap };
+module.exports = { TILE, MAPS, collides, gatewayAt, doorAt, clientMap, isSolidTile, WALKABLE };
