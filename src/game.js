@@ -18,6 +18,7 @@ const { db, q } = require('./db');
 // module (single source for the input + facing rules; it is written
 // require-able for exactly this).
 const { screenFacing } = require('../public/input-guard');
+const FISHING = require('./fishing');
 
 // Phase B amendment — vice money moves (atomic debit, same pattern
 // as the casino's ledger: the WHERE guard makes overspend impossible).
@@ -205,6 +206,10 @@ class Game {
       passedOutUntil: 0,  // Phase B amendment: epoch-ms while out cold
       hippyUntil: 0,      // Phase B amendment: epoch-ms while hippified
       performing: false,
+      pokerPending: null, // v1.1.1: { tableId, dir } while a buy-in offer is open
+      casting: null,      // v1.1.1 fishing: { until, spot } while a line is out
+      heldFish: null,     // v1.1.1 fishing: { id, until } during the hold-up
+      fishForce: null,    // TEST ONLY: debug-fish outcome override
       returnTo: null,   // Phase 4: public map/pos to return to from a studio
     };
     this.players.set(user.id, p);
@@ -289,6 +294,10 @@ class Game {
       puffs: this.viceCount(p, 'puffs', now),
       fallen: Boolean(p.passedOutUntil && now < p.passedOutUntil),
       hippy,
+      // v1.1.1 fishing: a line in the water, and the just-caught
+      // fish held overhead while its second lasts (room-visible).
+      casting: Boolean(p.casting),
+      heldFish: p.heldFish && now < p.heldFish.until ? p.heldFish.id : null,
       gender: p.gender,
       face: p.face,
       eyes: p.eyes,
@@ -465,6 +474,17 @@ class Game {
         p.hippyUntil = 0;
         this.sendVice(p);
       }
+      // v1.1.1 fishing: a cast resolves on its timer, right here in
+      // the zone it was made. Wandering off the spot reels it in.
+      if (p.casting) {
+        if (now >= p.casting.until) {
+          p.casting = null;
+          this.resolveCast(p, now);
+        } else if (Math.hypot(p.x - p.casting.spot.x, p.y - p.casting.spot.y) > 80) {
+          p.casting = null;
+          this.send(p, { type: 'notice', text: 'You wander off — the line comes with you. Cast cancelled.' });
+        }
+      }
       let dx = 0, dy = 0;
       if (p.keys.left) dx -= 1;
       if (p.keys.right) dx += 1;
@@ -603,6 +623,7 @@ class Game {
   switchScene(p, scene, opts = {}) {
     p.lastGatewayAt = Date.now();
     p.performing = false; // never carry a performance across scenes
+    p.casting = null;     // ... or a fishing line (v1.1.1)
     p.seated = null;      // ... or a chair
     p.path = null;        // ... or a walking route
     // Phase B: EVERY scene transfer runs the fixed load-screen window.
@@ -778,6 +799,52 @@ class Game {
     this.sendVice(p);
   }
 
+  // ---------------------------------------------------------- fishing
+  // v1.1.1 (Zan): pond fishing. State, RNG and money all live here on
+  // the server; src/fishing.js carries the shared math + species.
+
+  /** Nearest fishing spot within reach of the player, or null. */
+  fishingSpotNear(p) {
+    const map = this.sceneFor(p.mapId);
+    const spots = (map && map.fishing) || [];
+    let best = null, bestD = Infinity;
+    for (const s of spots) {
+      const d = Math.hypot(s.x - p.x, s.y - p.y);
+      if (d < bestD) { bestD = d; best = s; }
+    }
+    return bestD <= SIT_RADIUS ? best : null;
+  }
+
+  /** Cast a line from a shore spot: face the water, wait it out. */
+  handleFish(p, spot) {
+    const now = Date.now();
+    if (p.casting) {
+      this.send(p, { type: 'notice', text: 'Your line is already in the water…' });
+      return;
+    }
+    p.dir = spot.dir;
+    p.casting = { until: now + FISHING.CAST_MS, spot };
+    this.send(p, { type: 'notice', text: '🎣 You cast your line…' });
+  }
+
+  /** Settle a finished cast: roll; on a catch, pay 1z + hold it up. */
+  resolveCast(p, now = Date.now()) {
+    const forced = p.fishForce; p.fishForce = null;
+    const caught = forced ? forced === 'catch' : FISHING.rollCatch();
+    if (!caught) {
+      this.send(p, { type: 'notice', text: '🎣 …a nibble, then nothing. Cast again!' });
+      return;
+    }
+    const fish = FISHING.pickFish();
+    VQ.credit.run(FISHING.PAYOUT_Z, p.userId);
+    p.heldFish = { id: fish.id, until: now + FISHING.HOLD_MS };
+    this.send(p, { type: 'zcoins', zcoins: this.zcoinsOf(p.userId) });
+    this.send(p, { type: 'notice', text: `🎣 Caught a ${fish.name}! +${FISHING.PAYOUT_Z}z` });
+    this.broadcastToMap(p.mapId, {
+      type: 'fish-caught', playerId: p.userId, fish: fish.id, name: fish.name,
+    });
+  }
+
   /**
    * `interact` (E key / Sit button): toggle sitting. Standing next to
    * a free seat sits you on it (snapped into place, facing the seat's
@@ -799,6 +866,10 @@ class Game {
       this.send(p, { type: 'sit-state', seated: false });
       return;
     }
+    // v1.1.1 fishing: at a pond spot, interact casts a line — spots
+    // win over seats (a shore is for fishing, not sitting).
+    const fishSpot = this.fishingSpotNear(p);
+    if (fishSpot) { this.handleFish(p, fishSpot); return; }
     const taken = new Set();
     for (const q2 of this.players.values()) {
       if (q2 !== p && q2.mapId === p.mapId && q2.seated) taken.add(q2.seated.id);

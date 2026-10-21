@@ -270,6 +270,8 @@ function drawProp(pr) {
     case 'forge': drawForgeAt(px2, py2, (pr.x + pr.y) % 7); break;
     case 'icesculpt': drawIceSculptAt(px2, py2); break;
     case 'greattree': drawGreatTreeAt(px2, py2); break;
+    case 'table': drawTableAt(px2, py2); break;
+    case 'fishingpole': drawFishingPoleAt(px2, py2); break;
     case 'stall': drawStallAt(px2, py2, (pr.x + pr.y) % 5); break;
     case 'flowers': {
       const cols = ['#ff8fab', '#ffd23f', '#fff6e6', '#c77dff'];
@@ -654,16 +656,103 @@ function drawGatehouse(g, open, gm) {
   drawGateLeaf(R[0], R[1], -vx, -vy, 0.5, open, '#7d5227');
 }
 
+
+// ------------------------------------------------------------------ v1.1.1: cards ON the felt
+// The hand renders in the world now (no sidebar): community cards
+// and the pot on the felt, hole-card backs in front of live seats,
+// your own hole cards face-up at your chair, bets as gold text on
+// the felt path, showdown reveals face-up. State comes straight
+// from the casino client's poker-state store.
+function drawMiniCard(x, y, text, isBack) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(-6, -8, 12, 16, 2.5); else ctx.rect(-6, -8, 12, 16);
+  if (isBack) {
+    ctx.fillStyle = '#7a1f2b'; ctx.fill();
+    ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = 1; ctx.stroke();
+  } else {
+    ctx.fillStyle = '#f5f0e6'; ctx.fill();
+    ctx.strokeStyle = 'rgba(20,10,30,.6)'; ctx.lineWidth = 0.8; ctx.stroke();
+    ctx.textAlign = 'center';
+    ctx.fillStyle = /[♥♦]/.test(text || '') ? '#c22f3d' : '#23202b';
+    ctx.font = `bold ${(text || '').length > 2 ? 6.5 : 8.5}px system-ui`;
+    ctx.fillText(text || '', 0, 3.2);
+  }
+  ctx.restore();
+}
+
+function drawFeltState(t, tx2, ty2) {
+  const C = window.SolarionCasino;
+  const st = C && C.tables ? C.tables.get(t.id) : null;
+  if (!st) { ctx.font = '13px system-ui'; ctx.textAlign = 'center'; ctx.fillText('♠ ♥ ♦ ♣', tx2, ty2 + 3); return; }
+  const comm = st.community || [];
+  if (!comm.length) { ctx.font = '13px system-ui'; ctx.textAlign = 'center'; ctx.fillText('♠ ♥ ♦ ♣', tx2, ty2 + 3); }
+  if (st.pot) {
+    ctx.font = 'bold 10px system-ui'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffd23f';
+    ctx.fillText(`POT ${st.pot}z`, tx2, ty2 - 13);
+  }
+  comm.forEach((card, i) => drawMiniCard(tx2 + (i - (comm.length - 1) / 2) * 14.5, ty2 + 2, card, false));
+  (t.chairs || []).forEach((ch3, ci) => {
+    const cst = st.chairs && st.chairs[ci];
+    if (!cst || !cst.name) return;
+    const [cx9, cy9] = proj(ch3.x, ch3.y);
+    if (cst.acting) {
+      ctx.beginPath(); ctx.ellipse(cx9, cy9, 19, 10, 0, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255,210,63,.9)'; ctx.lineWidth = 2; ctx.stroke();
+    }
+    ctx.font = '8.5px system-ui'; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(255,233,168,.85)';
+    if (Number.isFinite(cst.chips)) ctx.fillText(`${cst.chips}z`, cx9, cy9 + 18);
+    const mx = cx9 + (tx2 - cx9) * 0.42, my = cy9 + (ty2 - cy9) * 0.42;
+    if (cst.bet) {
+      ctx.font = 'bold 9px system-ui'; ctx.fillStyle = '#ffe9a8';
+      ctx.fillText(`${cst.bet}z`, mx, my - 10);
+    }
+    const handLive = st.state !== 'idle' && st.state !== 'countdown' && st.state !== 'done';
+    const rev = (st.reveal || []).find((r) => r.name === cst.name);
+    const isMine = C.mySeat && C.mySeat.tableId === t.id && C.mySeat.chairIdx === ci;
+    const cards = rev ? rev.cards : (isMine ? (C.myCards[t.id] || null) : null);
+    if (cards && cards.length) {
+      cards.forEach((card, i) => drawMiniCard(mx + (i - 0.5) * 13.5, my + 2, card, false));
+    } else if (handLive && !cst.folded) {
+      drawMiniCard(mx - 7, my + 2, null, true);
+      drawMiniCard(mx + 7, my + 2, null, true);
+    }
+  });
+  if (st.winners && st.winners.length) {
+    ctx.font = 'bold 10px system-ui'; ctx.textAlign = 'center'; ctx.fillStyle = '#8dff9a';
+    ctx.fillText(`🏆 ${st.winners.map((w) => `${w.name} +${w.amount}z`).join(' · ')}`, tx2, ty2 - 25);
+  }
+}
+
+// Reels for a cabinet: while a spin resolves, the faces tumble;
+// then they settle on the server's result and stay there. With no
+// spin yet, the classic decorative faces.
+function slotDisplayReels(machineId, idx) {
+  const C = window.SolarionCasino;
+  const fx = C && C.slotFxBySlot ? C.slotFxBySlot.get(machineId) : null;
+  if (fx && C.slotSymbols) {
+    const age = Date.now() - fx.at;
+    if (age >= 750) return fx.reels.map((id) => C.slotSymbols[id] || '❓');
+    const faces = Object.keys(C.slotSymbols);
+    if (faces.length) {
+      const tick = Math.floor(age / 70);
+      return [0, 1, 2].map((i) => C.slotSymbols[faces[(tick * (3 + i * 2) + i * 5 + idx) % faces.length]] || '❓');
+    }
+  }
+  return SLOT_REELS[idx % SLOT_REELS.length];
+}
+
 // ------------------------------------------------------------------ Lane C slot cabinets
 // Per the Gasoline Alley pinball row: a chunky cabinet, an angled
 // glass front with visible reels, a lit marquee, side art. Pure
 // rendering — machine positions, stools and all slot math are
-// untouched (the interactive reels live in the casino panel).
+// untouched (v1.1.1: the reels animate on this cabinet in-world).
 const SLOT_REELS = [
   ['7', '7', '7'], ['☀', '☀', '🍒'], ['🍒', '🔔', '💎'],
   ['💎', '7', '☀'], ['🔔', '🍒', '🔔'], ['🍒', '🍒', '7'],
 ];
-function drawSlotCabinet(sx, sy, idx, facing) {
+function drawSlotCabinet(sx, sy, idx, facing, machineId) {
   const sgn = facing === 'W' ? -1 : 1; // east-wall machines present their other cheek
   ctx.beginPath(); ctx.ellipse(sx, sy + 3, 18, 6, 0, 0, Math.PI * 2);
   ctx.fillStyle = 'rgba(0,0,0,.30)'; ctx.fill();
@@ -701,7 +790,7 @@ function drawSlotCabinet(sx, sy, idx, facing) {
     [sx - 12, sy - 37], [sx + 12, sy - 37],
     [sx + 14, sy - 16], [sx - 14, sy - 16],
   ], 'rgba(16,12,34,.94)');
-  const reels = SLOT_REELS[idx % SLOT_REELS.length];
+  const reels = slotDisplayReels(machineId, idx);
   ctx.font = '9px system-ui'; ctx.textAlign = 'center';
   [-8, 0, 8].forEach((off, i) => {
     ctx.fillStyle = '#f5f0e6';
@@ -1600,23 +1689,176 @@ function drawTvScene(channelId, x, y, w, h, t) {
 // and a slatted BACKREST on the side away from its facing — never
 // the old 12px diamond "dot". Warm wood throughout (Phase 10).
 function drawChairAt(x, y, dir) {
-  ctx.strokeStyle = '#5a3d1f';
-  ctx.lineWidth = 2.4;
+  // v1.1.1 chair art v2 — must read as A CHAIR at play zoom: a TALL
+  // backrest (posts + top rail + slats) rising ~30px above a warm
+  // russet cushion, visible legs, soft ground shadow. The back
+  // stands on the side opposite the sitter's facing.
+  ctx.beginPath(); ctx.ellipse(x, y + 9, 16, 6, 0, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0,0,0,.28)'; ctx.fill();
+  const FRAME = '#8a5a2b', DARK = '#5a3d1f', SLAT = '#a5713a';
+  const CUSH = '#c96f4a', CUSH_D = '#9c4f30';
+  if (dir === 'left' || dir === 'right') {
+    const s = dir === 'left' ? 1 : -1; // facing left -> back on the east side
+    ctx.strokeStyle = DARK; ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(x - 10, y + 1); ctx.lineTo(x - 11, y + 9);
+    ctx.moveTo(x + 10, y + 1); ctx.lineTo(x + 11, y + 9);
+    ctx.stroke();
+    diamond(x, y, 30, 12, CUSH_D);
+    diamond(x, y - 2.5, 27, 10, CUSH);
+    // ladder side panel: two posts, two slats, a top rail
+    const bx = x + s * 14;
+    ctx.strokeStyle = FRAME; ctx.lineWidth = 3.4;
+    ctx.beginPath();
+    ctx.moveTo(bx - s * 3, y - 2); ctx.lineTo(bx - s * 1, y - 29);
+    ctx.moveTo(bx + s * 4, y + 1); ctx.lineTo(bx + s * 5, y - 25);
+    ctx.stroke();
+    ctx.strokeStyle = SLAT; ctx.lineWidth = 2.6;
+    for (const t of [0.4, 0.68]) {
+      ctx.beginPath();
+      ctx.moveTo(bx - s * 3 + s * 2 * t, y - 2 - 27 * t);
+      ctx.lineTo(bx + s * 4 + s * 1 * t, y + 1 - 26 * t);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = FRAME; ctx.lineWidth = 4.4;
+    ctx.beginPath();
+    ctx.moveTo(bx - s * 2, y - 30); ctx.lineTo(bx + s * 6, y - 26);
+    ctx.stroke();
+    return;
+  }
+  const s = dir === 'up' ? 1 : -1; // 'down': back up-screen; 'up': back near-side
+  const by = s * 8;
+  // back assembly first — seat and sitter overlap its base
+  ctx.strokeStyle = FRAME; ctx.lineWidth = 3.4;
   ctx.beginPath();
-  ctx.moveTo(x - 14, y); ctx.lineTo(x - 16, y + 10);
-  ctx.moveTo(x + 14, y); ctx.lineTo(x + 16, y + 10);
+  ctx.moveTo(x - 12, y + by); ctx.lineTo(x - 13, y + by - 25);
+  ctx.moveTo(x + 12, y + by); ctx.lineTo(x + 13, y + by - 25);
   ctx.stroke();
-  const back = { down: [0, -13], up: [0, 10], left: [21, -7], right: [-21, -7] }[dir] || [0, -13];
-  ctx.save();
-  ctx.translate(x + back[0], y + back[1]);
-  diamond(0, 0, 40, 12, '#8a5a2b');
-  diamond(0, -2, 40, 8, '#a5713a');
-  ctx.fillStyle = 'rgba(46,26,10,.55)';
-  ctx.fillRect(-13, -3, 3, 7);
-  ctx.fillRect(10, -3, 3, 7);
+  ctx.strokeStyle = SLAT; ctx.lineWidth = 2.6;
+  ctx.beginPath();
+  ctx.moveTo(x - 12.6, y + by - 12); ctx.lineTo(x + 12.6, y + by - 12);
+  ctx.moveTo(x - 12.9, y + by - 19); ctx.lineTo(x + 12.9, y + by - 19);
+  ctx.stroke();
+  ctx.fillStyle = FRAME;
+  ctx.fillRect(x - 15, y + by - 30, 30, 6); // top rail
+  ctx.fillStyle = 'rgba(255,220,150,.35)';
+  ctx.fillRect(x - 15, y + by - 30, 30, 2);
+  // legs
+  ctx.strokeStyle = DARK; ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(x - 11, y + 2); ctx.lineTo(x - 12, y + 10);
+  ctx.moveTo(x + 11, y + 2); ctx.lineTo(x + 12, y + 10);
+  ctx.stroke();
+  // seat cushion
+  diamond(x, y, 32, 13, CUSH_D);
+  diamond(x, y - 2.5, 28, 10.5, CUSH);
+}
+
+/** A built-in fishing-pole stand at a pond edge: crossed sticks, a
+ *  leaning rod, a reel dot, and a faint line dropping to the water. */
+function drawFishingPoleAt(x, y) {
+  ctx.beginPath(); ctx.ellipse(x, y + 3, 10, 3.6, 0, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fill();
+  ctx.strokeStyle = '#6d4c26'; ctx.lineWidth = 2.4;
+  ctx.beginPath();
+  ctx.moveTo(x - 6, y + 2); ctx.lineTo(x + 4, y - 10);
+  ctx.moveTo(x + 6, y + 2); ctx.lineTo(x - 4, y - 10);
+  ctx.stroke();
+  // the rod: leans out over the water (screen-down = toward the pond)
+  ctx.strokeStyle = '#8a5a2b'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(x - 3, y - 9); ctx.quadraticCurveTo(x + 3, y - 20, x + 9, y - 27); ctx.stroke();
+  ctx.beginPath(); ctx.arc(x + 1, y - 13, 2, 0, Math.PI * 2); ctx.fillStyle = '#c99700'; ctx.fill();
+  ctx.strokeStyle = 'rgba(240,248,255,.75)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(x + 9, y - 27); ctx.lineTo(x + 10, y - 12); ctx.stroke();
+  ctx.beginPath(); ctx.arc(x + 10, y - 11, 1.6, 0, Math.PI * 2); ctx.fillStyle = '#e2543e'; ctx.fill();
+}
+
+// ------------------------------------------------------------------ fish (v1.1.1)
+// Ten species, one shared little-fish silhouette; colour + markings
+// carry the variety. Used for catch hold-ups and ambient pond leaps.
+const FISH_IDS = ['minnow', 'bluegill', 'sunfish', 'perch', 'trout', 'bass', 'catfish', 'koi', 'golden-carp', 'moonfish'];
+const FISH_ART = {
+  minnow: { body: '#b8c4cc', fin: '#7e8a93' },
+  bluegill: { body: '#5b84c4', fin: '#e8a33d' },
+  sunfish: { body: '#e8a33d', fin: '#c45b2d' },
+  perch: { body: '#a8b45b', fin: '#5d7031', stripes: true },
+  trout: { body: '#c48a5b', fin: '#8a5a2b', spots: true },
+  bass: { body: '#5d7d43', fin: '#3d5527' },
+  catfish: { body: '#6b7d8c', fin: '#46545f', whiskers: true },
+  koi: { body: '#f0e6da', fin: '#e86a2d', patches: true },
+  'golden-carp': { body: '#f2c230', fin: '#c99700' },
+  moonfish: { body: '#a8c8e8', fin: '#5b84c4', glow: true },
+};
+function drawFishShape(x, y, id, s = 1, wiggle = 0) {
+  const a = FISH_ART[id] || FISH_ART.minnow;
+  ctx.save(); ctx.translate(x, y); ctx.rotate(wiggle); ctx.scale(s, s);
+  if (a.glow) {
+    ctx.beginPath(); ctx.ellipse(0, 0, 21, 12, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(168,200,232,.35)'; ctx.fill();
+  }
+  ctx.beginPath(); ctx.moveTo(-12, 0); ctx.lineTo(-20, -7); ctx.lineTo(-20, 7); ctx.closePath();
+  ctx.fillStyle = a.fin; ctx.fill();
+  ctx.beginPath(); ctx.ellipse(0, 0, 15, 8, 0, 0, Math.PI * 2);
+  ctx.fillStyle = a.body; ctx.fill();
+  if (a.stripes) {
+    ctx.fillStyle = 'rgba(40,50,20,.45)';
+    for (const dx of [-6, 0, 6]) ctx.fillRect(dx - 1.4, -6.3, 2.8, 12.6);
+  }
+  if (a.spots) {
+    ctx.fillStyle = 'rgba(90,40,20,.5)';
+    for (const [dx, dy] of [[-7, -2], [-1, 2], [5, -3], [9, 1]]) {
+      ctx.beginPath(); ctx.arc(dx, dy, 1.3, 0, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  if (a.patches) {
+    ctx.fillStyle = '#e86a2d';
+    ctx.beginPath(); ctx.ellipse(-4, -2, 5.5, 3.6, 0.4, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(6, 2, 4, 2.8, 0.4, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.beginPath(); ctx.moveTo(-3, -7); ctx.lineTo(3, -11); ctx.lineTo(7, -7); ctx.closePath();
+  ctx.fillStyle = a.fin; ctx.fill();
+  if (a.whiskers) {
+    ctx.strokeStyle = a.fin; ctx.lineWidth = 1.1;
+    ctx.beginPath();
+    ctx.moveTo(13, 2); ctx.quadraticCurveTo(19, 4, 22, 2);
+    ctx.moveTo(13, 3.4); ctx.quadraticCurveTo(19, 6, 21, 5);
+    ctx.stroke();
+  }
+  ctx.beginPath(); ctx.arc(9.5, -1.5, 1.7, 0, 0, Math.PI * 2); ctx.fillStyle = '#10151f'; ctx.fill();
   ctx.restore();
-  diamond(x, y - 2, 40, 15, '#9c6b35');
-  diamond(x, y - 4, 34, 11, '#b98347');
+}
+
+/** Ambient pond leaps (v1.1.1): on fishing maps, a little fish
+ *  arcs out of a random pond tile every few seconds, splash rings
+ *  at entry and exit. Client-only ambience — no server traffic. */
+const pondLeaps = [];
+let leapState = { mapId: null, tiles: [], nextAt: 0 };
+function tickPondLeaps(now) {
+  if (!mapDef || !mapDef.fishing || !mapDef.fishing.length || !mapDef.rows) return;
+  if (leapState.mapId !== mapDef.id) {
+    const tiles = [];
+    mapDef.rows.forEach((row, ty) => {
+      [...row].forEach((ch, tx) => { if (ch === '%') tiles.push([tx * 32 + 16, ty * 32 + 16]); });
+    });
+    leapState = { mapId: mapDef.id, tiles, nextAt: now + 1200 };
+  }
+  if (now >= leapState.nextAt && leapState.tiles.length) {
+    const [wx, wy] = leapState.tiles[Math.floor(Math.random() * leapState.tiles.length)];
+    pondLeaps.push({ x: wx, y: wy, at: now, fish: FISH_IDS[(wx * 7 + wy * 13) % FISH_IDS.length] });
+    leapState.nextAt = now + 2200 + Math.random() * 2600;
+  }
+  for (let i = pondLeaps.length - 1; i >= 0; i--) {
+    const L = pondLeaps[i];
+    const t = (now - L.at) / 750;
+    if (t >= 1) { pondLeaps.splice(i, 1); continue; }
+    const [lx, ly] = proj(L.x + t * 14, L.y);
+    if (t < 0.3 || t > 0.7) {
+      const rt = t < 0.3 ? t / 0.3 : (t - 0.7) / 0.3;
+      ctx.beginPath(); ctx.ellipse(lx, ly, 4 + rt * 8, (4 + rt * 8) * 0.42, 0, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(210,240,255,${0.65 * (1 - rt)})`; ctx.lineWidth = 1.2; ctx.stroke();
+    }
+    drawFishShape(lx, ly - Math.sin(t * Math.PI) * 26, L.fish, 0.8, (t - 0.5) * 1.6);
+  }
 }
 
 /** A round café/home table on a pedestal, wide enough to sit AT. */
@@ -1873,7 +2115,7 @@ function draw() {
       // Lane C: arcade cabinets. Facing comes from the stool spot
       // in the data: north row stools sit south of the machine,
       // east-wall stools sit west of it.
-      drawSlotCabinet(sx2, sy2, idx, s.ix < s.x - 4 ? 'W' : 'S');
+      drawSlotCabinet(sx2, sy2, idx, s.ix < s.x - 4 ? 'W' : 'S', s.id);
     });
     for (const t of cz.tables) {
       const [tx2, ty2] = proj(t.x, t.y);
@@ -1893,8 +2135,7 @@ function draw() {
       ctx.fillStyle = '#7a5a2b'; ctx.fill();
       ctx.beginPath(); ctx.ellipse(tx2, ty2 - 2, 38, 19, 0, 0, Math.PI * 2);
       ctx.fillStyle = '#14663c'; ctx.fill();
-      ctx.font = '13px system-ui'; ctx.textAlign = 'center';
-      ctx.fillText('♠ ♥ ♦ ♣', tx2, ty2 + 3);
+      drawFeltState(t, tx2, ty2);
     }
     // Phase B amendment — the bar: counter frontage + the bartender
     // NPC behind it (a fixed-look layered sprite + name).
@@ -1912,7 +2153,7 @@ function draw() {
       ctx.fillText(`🍸 ${bt.name}`, bx, by - bspr.height - 4);
     }
     // (the way out is drawn by the generic doors pass below)
-    // tell the casino panel whether we're inside the lounge
+    // tell the casino tray whether we are inside the lounge
     if (window.SolarionCasino && myRp) window.SolarionCasino.updatePresence(myRp.x, myRp.y, mapDef);
   }
 
@@ -2050,6 +2291,9 @@ function draw() {
   // lights and nook rugs baked into the map data.
   for (const pr of mapDef.props || []) drawProp(pr);
 
+  // v1.1.1: pond fish leap now and then — a little arc + splash.
+  tickPondLeaps(Date.now());
+
   // doors (Phase 10): REAL doors — framed, swinging, named. They
   // open as anyone approaches and close behind them; the transfer
   // itself still fires server-side on the door tile, masked by the
@@ -2147,6 +2391,27 @@ function draw() {
     ctx.lineWidth = 3;
     ctx.strokeText(p.name, sx, sy - dh - 6 - bob);
     ctx.fillText(p.name, sx, sy - dh - 6 - bob);
+
+    // v1.1.1 fishing: cast line + bobber over the water while a
+    // cast is live (the server drives p.casting and p.dir).
+    if (p.casting) {
+      const off = { down: [44, 44], up: [-44, -44], right: [22, -22], left: [-22, 22] }[p.dir] || [44, 44];
+      const [bx2, by2] = proj(rp.x + off[0], rp.y + off[1]);
+      ctx.strokeStyle = 'rgba(240,248,255,.8)'; ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(sx + (p.dir === 'left' ? -12 : 12), sy - 52 - bob);
+      ctx.quadraticCurveTo((sx + bx2) / 2, Math.min(sy - 52 - bob, by2) - 14, bx2, by2);
+      ctx.stroke();
+      const rip = 3 + ((now / 320) % 1) * 6;
+      ctx.beginPath(); ctx.ellipse(bx2, by2, rip, rip * 0.45, 0, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(210,240,255,.55)'; ctx.stroke();
+      ctx.beginPath(); ctx.arc(bx2, by2 - 2, 2.6, 0, Math.PI * 2); ctx.fillStyle = '#e2543e'; ctx.fill();
+      ctx.beginPath(); ctx.arc(bx2, by2 - 0.4, 2.6, Math.PI, Math.PI * 2); ctx.fillStyle = '#fff6e6'; ctx.fill();
+    }
+    // v1.1.1: the catch hold-up — the fish, overhead, for its second.
+    if (p.heldFish) {
+      drawFishShape(sx, sy - dh - 30 - bob, p.heldFish, 1.05, Math.sin(now / 90 + p.id) * 0.14);
+    }
 
     // speech bubble (Phase 9: fades out over its last 900ms)
     const b = bubbles.get(p.id);

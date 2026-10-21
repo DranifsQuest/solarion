@@ -28,7 +28,8 @@ const fs = require('fs');
 process.env.SOLARION_DB_PATH = path.join(__dirname, '..', 'data', `xtest-unit-${process.env.TEST_RUN || '0'}.db`);
 const casino = require('../src/casino');
 casino.initLedger();
-const { MAPS, collides, gatewayAt } = require('../src/maps');
+const { MAPS, collides, gatewayAt, clientMap } = require('../src/maps');
+const FISHING = require('../src/fishing');
 
 const WebSocket = require('ws');
 
@@ -213,8 +214,8 @@ test('map data: ~5x scale, spawns/portals/seats/stage all sane', { timeout: 3000
     if (id2 !== 'casino-lounge' && id2 !== 'neon-casino') assert.ok(!m2.casino, `${id2} has no casino`);
   }
   const cafe = MAPS['gateway-cafe'];
-  assert.equal(cafe.tiles.w, 20); assert.equal(cafe.tiles.h, 13);
-  assert.equal(cafe.seats.length, 13, 'café has 13 seats (10 café + 3 hearth-side, Phase 10)');
+  assert.equal(cafe.tiles.w, 26); assert.equal(cafe.tiles.h, 16);
+  assert.equal(cafe.seats.length, 15, 'café has 15 seats (12 table chairs at three 4-seat tables + 3 hearth-side, Phase 10/v1.1.1)');
   const hookah = MAPS['hookah-lounge'];
   assert.equal(hookah.tiles.w, 20); assert.equal(hookah.tiles.h, 14);
   assert.equal(hookah.hookahs.length, 4, 'four hookah stations');
@@ -344,10 +345,10 @@ test('door transfer gateway ⇄ café round trip', { timeout: 60000 }, async () 
   teleport(u, 2000, 1040); // café door tile on the Gateway
   const inCafe = await arriveMap(u, 'gateway-cafe');
   assert.equal(inCafe.map.name, 'Gateway Café');
-  assert.ok(Math.abs(inCafe.you.x - 336) < 2 && Math.abs(inCafe.you.y - 336) < 2, 'placed at the café entrance');
-  assert.equal(inCafe.map.seats.length, 13, 'café seats in the client payload');
+  assert.ok(Math.abs(inCafe.you.x - 432) < 2 && Math.abs(inCafe.you.y - 400) < 2, 'placed at the café entrance');
+  assert.equal(inCafe.map.seats.length, 15, 'café seats in the client payload');
   await sleep(1600);
-  teleport(u, 336, 368); // café door-back rect
+  teleport(u, 432, 464); // café door-back rect
   const back = await arriveMap(u, 'the-gateway');
   assert.ok(Math.abs(back.you.x - 2000) < 2 && Math.abs(back.you.y - 1008) < 2, 'lands outside the café door');
   u.client.ws.close();
@@ -524,4 +525,96 @@ test('slots: a spin on NEW machine 10 (east wall) pays by the ported paytable', 
   assert.equal(res.zcoins, 5000 - 10 + res.win, 'balance math exact');
   assert.equal(await balanceOf(u), res.zcoins, 'DB balance matches');
   u.client.ws.close();
+});
+
+// ------------------------------------------------------------------ h (v1.1.1)
+
+test('fishing: the math contract + pond geography', () => {
+  // 10 distinct species, flat 1z — variety is flavour, not tiers.
+  assert.equal(FISHING.FISH.length, 10);
+  assert.equal(new Set(FISHING.FISH.map(f => f.id)).size, 10);
+  assert.equal(new Set(FISHING.FISH.map(f => f.name)).size, 10);
+  assert.equal(FISHING.PAYOUT_Z, 1);
+  // Zan's contract: a fish every 3–6 casts on average.
+  const mean = 1 / FISHING.CATCH_P;
+  assert.ok(mean >= 3 && mean <= 6, `mean casts per fish ${mean.toFixed(2)} within [3, 6]`);
+  // Seeded RNG: the roll + pick honour the contract deterministically.
+  let seed = 123456789;
+  const rng = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
+  let catches = 0; const N = 20000;
+  for (let i = 0; i < N; i++) if (FISHING.rollCatch(rng)) catches++;
+  const rate = catches / N;
+  assert.ok(rate > 0.19 && rate < 0.25, `seeded catch rate ${rate} ≈ CATCH_P ${FISHING.CATCH_P}`);
+  seed = 987654321;
+  const seenSpecies = new Set();
+  for (let i = 0; i < 2000; i++) seenSpecies.add(FISHING.pickFish(rng).id);
+  assert.equal(seenSpecies.size, 10, 'seeded picks cover all 10 species');
+  // The Verdant pond: bigger than the v1.1 pond, and the audience
+  // grid's back row keeps >= 3 clear tiles from the waterline.
+  const verdant = MAPS['verdant-hollow'];
+  let water = 0, waterTop = Infinity;
+  verdant.tiles.rows.forEach((row, ty) => {
+    for (const ch of row) if (ch === '%') { water++; if (ty < waterTop) waterTop = ty; }
+  });
+  assert.ok(water >= 60, `pond has ${water} water tiles (grew from 50)`);
+  const audience = verdant.seats.filter(s => Number(s.id.split('-').pop()) >= 101);
+  const backRow = Math.max(...audience.map(s => Math.floor(s.y / 32)));
+  assert.ok(waterTop - backRow >= 4, `back row ty${backRow} vs waterline ty${waterTop}: >=3 clear tiles`);
+  // Fishing spots: several, all standable, riding the client payload.
+  assert.ok(verdant.fishing.length >= 4, `${verdant.fishing.length} fishing spots`);
+  for (const s of verdant.fishing) {
+    assert.equal(collides(verdant, s.x, s.y, 12), false, 'fishing spot stands on walkable ground');
+  }
+  assert.equal(clientMap(verdant).fishing.length, verdant.fishing.length, 'spots ride the client payload');
+});
+
+test('fishing: cast → catch pays exactly 1z, holds the fish up, one cast at a time', { timeout: 90000 }, async () => {
+  const u = await makeUser('fish_faye');
+  const w = await makeUser('fish_walt'); // witness: the catch is room-visible
+  teleport(u, 2016, 48); // the Gateway's Verdant Hollow arch
+  await arriveMap(u, 'verdant-hollow');
+  teleport(w, 2016, 48);
+  await arriveMap(w, 'verdant-hollow');
+  await sleep(3300); // outlast the transfer lock
+  const spot = MAPS['verdant-hollow'].fishing[0];
+  teleport(u, spot.x, spot.y);
+  teleport(w, spot.x + 64, spot.y);
+  await sleep(300);
+  const before = await balanceOf(u);
+  // Forced catch + on-demand resolve (TEST hooks) = deterministic.
+  u.client.send({ type: 'debug-fish', op: 'force-catch' });
+  u.client.send({ type: 'interact' });
+  const castNotice = await waitFor(() => u.client.msgs.filter(m => m.type === 'notice' && /cast your line/.test(m.text)).pop(),
+    5000, 'cast starts at the spot');
+  assert.ok(castNotice);
+  // A second interact mid-cast is refused, never stacked.
+  u.client.send({ type: 'interact' });
+  const busy = await waitFor(() => u.client.msgs.filter(m => m.type === 'notice' && /already in the water/.test(m.text)).pop(),
+    5000, 'second cast refused while one is active');
+  assert.ok(busy);
+  u.client.send({ type: 'debug-fish', op: 'resolve-now' });
+  const caught = await waitFor(() => u.client.msgs.filter(m => m.type === 'fish-caught').pop(), 5000, 'catch broadcast reaches the fisher');
+  assert.ok(FISHING.FISH.some(f => f.id === caught.fish), `broadcast carries a real species (${caught.fish})`);
+  assert.equal(caught.playerId, u.id);
+  const witnessed = await waitFor(() => w.client.msgs.filter(m => m.type === 'fish-caught').pop(), 5000, 'catch broadcast reaches the room');
+  assert.equal(witnessed.fish, caught.fish);
+  // The hold-up rides snapshots while its second lasts.
+  const held = await waitFor(() => {
+    const p = selfIn(u.client, u.id);
+    return p && p.heldFish === caught.fish ? p : null;
+  }, 3000, 'held fish visible in snapshots');
+  assert.ok(held);
+  assert.equal(await balanceOf(u), before + 1, 'exactly +1z for the catch');
+  // Forced miss: no credit, no broadcast, just the nibble notice.
+  const catchCount = u.client.msgs.filter(m => m.type === 'fish-caught').length;
+  u.client.send({ type: 'debug-fish', op: 'force-miss' });
+  u.client.send({ type: 'interact' });
+  u.client.send({ type: 'debug-fish', op: 'resolve-now' });
+  const nibble = await waitFor(() => u.client.msgs.filter(m => m.type === 'notice' && /nibble/.test(m.text)).pop(), 5000, 'miss resolves with a nibble');
+  assert.ok(nibble);
+  await sleep(300);
+  assert.equal(u.client.msgs.filter(m => m.type === 'fish-caught').length, catchCount, 'no catch broadcast on a miss');
+  assert.equal(await balanceOf(u), before + 1, 'a miss pays nothing');
+  u.client.ws.close();
+  w.client.ws.close();
 });

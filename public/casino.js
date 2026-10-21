@@ -1,15 +1,22 @@
 'use strict';
 
 /**
- * Solarion — casino client (Phase 3): Casino Lounge UI.
+ * Solarion — casino client (Phase 3, presentation rebuilt v1.1.1).
  *
- * A dark infostand panel (soul doc §2/§7: chunky pixel buttons, dark
- * panels) that appears only while your avatar is inside the lounge.
- * Poker: seat yourself at a table, see community cards + pot, your
- * hole cards arrive privately from the server (poker-cards), and the
- * act buttons are enabled only when the server says it's your turn —
- * the server re-validates everything anyway. Slots: pick a wager,
- * hit SPIN, reels tumble and settle on the server's result.
+ * NO SIDEBAR ANYMORE. Poker plays AT the table: community cards,
+ * the pot, hole-card backs and your own cards render on the felt
+ * in the world view (client.js drawFeltState reads this module's
+ * table store). Slots play AT the cabinet: the reels tumble and
+ * settle on the machine's glass (client.js slotDisplayReels reads
+ * slotFxBySlot). What remains here is a compact bottom-centre
+ * control TRAY — your cards + action buttons while you're in a
+ * hand, bet/spin controls, table chat, the bar button — and the
+ * centred buy-in offer that pops when you sit at a poker table.
+ *
+ * Join flow (v1.1.1): sitting at a table does NOT auto-buy-in. The
+ * server snaps you into the chair and sends poker-offer; the modal
+ * asks — accept runs the server's existing atomic buy-in, decline
+ * leaves you seated as a spectator with no chips moved.
  */
 
 const Casino = {
@@ -18,8 +25,10 @@ const Casino = {
   mySeat: null,           // { tableId, chairIdx } derived from states
   slotBet: 10,
   slotSymbols: {},        // id -> emoji
+  slotFxBySlot: new Map(), // slotId -> { reels, at } for the cabinets
   spinning: false,
   inLounge: false,
+  offer: null,            // pending poker-offer payload
 
   attach(hooks) {
     this.hooks = hooks; // { send, toast, esc, getMe, getMapDef, getCoins }
@@ -29,10 +38,11 @@ const Casino = {
   buildDom() {
     const $ = (id) => document.getElementById(id);
     this.el = {
-      panel: $('casinoPanel'), tables: $('casinoTables'),
-      slotReels: $('slotReels'), slotMsg: $('slotMsg'),
+      tray: $('casinoTray'), trayPoker: $('trayPoker'),
       myCards: $('myCards'), actions: $('pokerActions'),
       raiseAmt: $('raiseAmt'),
+      offer: $('pokerOffer'), offerText: $('offerText'), offerBuy: $('offerBuy'),
+      slotMsg: $('slotMsg'),
     };
     for (const b of document.querySelectorAll('.slotBetBtn')) {
       b.onclick = () => {
@@ -62,6 +72,16 @@ const Casino = {
     $('actCall').onclick = () => this.act('call');
     $('actRaise').onclick = () => this.act('raise', Number(this.el.raiseAmt.value) || 0);
     $('actAllin').onclick = () => this.act('allin');
+    // The buy-in offer: accept = the server's atomic buy-in; watch =
+    // stay seated as a spectator, no chips moved.
+    $('offerBuy').onclick = () => {
+      this.hideOffer();
+      this.hooks.send({ type: 'poker', action: 'buyin' });
+    };
+    $('offerWatch').onclick = () => {
+      this.hideOffer();
+      this.hooks.send({ type: 'poker', action: 'watch' });
+    };
   },
 
   act(actName, amount) {
@@ -82,11 +102,7 @@ const Casino = {
     const inside = Boolean(c) && x >= c.x && x < c.x + c.w && y >= c.y && y < c.y + c.h;
     if (inside !== this.inLounge) {
       this.inLounge = inside;
-      this.el.panel.classList.toggle('hidden', !inside);
-      if (inside) {
-        const title = document.getElementById('casinoTitle');
-        if (title) title.textContent = `🎰 ${(c.label || 'CASINO').toUpperCase()}`;
-      }
+      this.el.tray.classList.toggle('hidden', !inside);
       if (inside) {
         this.hooks.send({ type: 'poker', action: 'state' });
         this.hooks.send({ type: 'slots', action: 'info' });
@@ -96,10 +112,29 @@ const Casino = {
 
   onMapChanged() {
     this.inLounge = false;
-    this.el.panel.classList.add('hidden');
+    this.el.tray.classList.add('hidden');
+    this.hideOffer();
     this.tables.clear();
+    this.slotFxBySlot.clear();
     this.myCards = {};
     this.mySeat = null;
+  },
+
+  // ------------------------------------------------------------ the offer
+
+  showOffer(m) {
+    this.offer = m;
+    const tableNo = String(m.table || '').split('-').pop();
+    this.el.offerText.textContent = m.established
+      ? `Table ${tableNo} is already running — its buy-in is ${m.amount}z. Join for ${m.amount}z?`
+      : `You're the first at Table ${tableNo} — the buy-in is ${m.amount}z. Take your seat in the game?`;
+    this.el.offerBuy.textContent = `Buy in — ${m.amount}z`;
+    this.el.offer.classList.remove('hidden');
+  },
+
+  hideOffer() {
+    this.offer = null;
+    if (this.el && this.el.offer) this.el.offer.classList.add('hidden');
   },
 
   // ------------------------------------------------------------ rendering
@@ -108,40 +143,14 @@ const Casino = {
     const esc = this.hooks.esc;
     const me = this.hooks.getMe();
     this.mySeat = null;
-    let html = '';
     for (const st of this.tables.values()) {
       const seatedIdx = me ? st.chairs.findIndex((c) => c.name === me.name) : -1;
       if (seatedIdx >= 0) this.mySeat = { tableId: st.id, chairIdx: seatedIdx };
-      html += `<div class="pkTable"><div class="pkHead">♠ TABLE ${esc(st.id.split('-').pop())} — ${esc(st.state)}` +
-        (st.pot ? ` · POT ${st.pot}z` : '') +
-        (st.countdown ? ` · starts in ${st.countdown}s` : '') + `</div>`;
-      html += `<div class="pkComm">${st.community.length ? st.community.map((c) => `<span class="card">${esc(c)}</span>`).join(' ') : '<span class="pkDim">no cards yet</span>'}</div>`;
-      html += '<div class="pkChairs">';
-      st.chairs.forEach((c, i) => {
-        if (c.name) {
-          html += `<div class="pkChair ${c.acting ? 'acting' : ''} ${i === seatedIdx ? 'mine' : ''}">` +
-            `${c.dealer ? '🔘 ' : ''}<b>${esc(c.name)}</b> ${c.chips}z` +
-            (c.bet ? ` · bet ${c.bet}z` : '') + (c.folded ? ' · folded' : '') + (c.allIn ? ' · ALL-IN' : '') + '</div>';
-        } else if (!this.mySeat) {
-          html += `<button class="pkSit" data-table="${esc(st.id)}" data-chair="${esc(c.dir)}">Sit ${esc(c.dir)} — buy in 50–200z</button>`;
-        } else {
-          html += '<div class="pkChair pkDim">empty</div>';
-        }
-      });
-      html += '</div>';
-      if (st.winners) {
-        html += `<div class="pkWin">${st.winners.map((w) => `🏆 ${esc(w.name)} won ${w.amount}z (${esc(w.hand || '')})`).join('<br>')}</div>`;
-      }
-      if (st.reveal) {
-        html += `<div class="pkDim">${st.reveal.map((r) => `${esc(r.name)}: ${esc(r.cards.join(' '))}`).join(' · ')}</div>`;
-      }
-      html += '</div>';
     }
-    this.el.tables.innerHTML = html || '<div class="pkDim">Walk into the Casino Lounge…</div>';
-    for (const b of this.el.tables.querySelectorAll('.pkSit')) {
-      b.onclick = () => this.hooks.send({ type: 'poker', action: 'sit', table: b.dataset.table, chair: b.dataset.chair });
-    }
-    // my hole cards + action bar
+    // The tray's poker section exists only while you hold chips at
+    // a table; the felt itself carries the shared table state.
+    this.el.trayPoker.classList.toggle('hidden', !this.mySeat);
+    if (this.mySeat) this.hideOffer(); // bought in — question answered
     const mine = this.mySeat && this.myCards[this.mySeat.tableId];
     this.el.myCards.innerHTML = this.mySeat
       ? (mine ? `Your cards: ${mine.map((c) => `<span class="card mine">${esc(c)}</span>`).join(' ')}` : 'Seated — good luck!')
@@ -164,33 +173,40 @@ const Casino = {
     switch (m.type) {
       case 'poker-state':
         this.tables.set(m.id, m);
-        if (this.inLounge) this.render();
+        this.render();
         break;
       case 'poker-cards':
         this.myCards[m.table] = m.cards;
-        if (this.inLounge) this.render();
+        this.render();
+        break;
+      case 'poker-offer':
+        this.showOffer(m);
         break;
       case 'slot-info':
         this.slotSymbols = {};
         for (const s of m.symbols || []) this.slotSymbols[s.id] = s.emoji;
-        if (!this._reelsInit) { this._reelsInit = true; this.setReels(['sun', 'zcoin', 'palm']); }
         this.setJackpot(m.jackpotPool);
         break;
       case 'jackpot':
         this.setJackpot(m.pool);
         break;
+      case 'slot-fx':
+        // A cabinet in the room is spinning (maybe mine): the world
+        // renderer tumbles its glass, then settles on these reels.
+        if (m.slot) this.slotFxBySlot.set(m.slot, { reels: m.reels || [], at: Date.now() });
+        break;
       case 'slot-result':
-        this.animateReels(m);
+        this.onSlotResult(m);
         break;
       case 'table-chat':
-        // Phase 9: table-scoped chat lands in the main chat log with
-        // a table tag — only players at/near the table receive it.
+        // Table-scoped chat lands in the main chat log with a table
+        // tag — only players at/near the table receive it.
         if (typeof chatLine === 'function') {
           chatLine(`<span class="dim">🎰 Table ${this.hooks.esc(String(m.tableId).split('-').pop())} ·</span> <b>${this.hooks.esc(m.name)}:</b> ${this.hooks.esc(m.text)}`);
         }
         break;
       case 'vice-state':
-        // Phase B amendment: drink/puff tally for the bar box.
+        // Drink/puff tally for the tray's bar section.
         if (this.el.viceInfo) {
           const bits = [];
           if (m.drinks) bits.push(`🍸 × ${m.drinks}${m.passedOut ? ' — OUT COLD' : ''}`);
@@ -205,38 +221,27 @@ const Casino = {
     }
   },
 
+  onSlotResult(m) {
+    // My cabinet animates in the world (the slot-fx broadcast covers
+    // it — the server sends it to the room, me included). The tray
+    // just reports the outcome once the reels have settled.
+    this.spinning = true;
+    if (Number.isFinite(m.jackpotPool)) this.setJackpot(m.jackpotPool);
+    this.el.slotMsg.textContent = '🎰 The reels are spinning…';
+    setTimeout(() => {
+      this.spinning = false;
+      this.el.slotMsg.textContent = m.jackpotWin > 0
+        ? `☀️☀️☀️ THREE SUNS — THE JACKPOT! You win ${m.jackpotWin}z!!`
+        : m.win > 0
+          ? `🎉 You win ${m.win}z! (bet ${m.bet}z)`
+          : `No win — bet ${m.bet}z. Balance ${m.zcoins}z`;
+      if (m.win >= m.bet * 4 && m.win > 0) this.hooks.toast(`🎰 JACKPOT! +${m.win}z on the slots!`);
+    }, 780);
+  },
+
   setJackpot(pool) {
     const el = document.getElementById('slotJackpot');
     if (el && Number.isFinite(pool)) el.textContent = `💰 JACKPOT (both casinos): ${pool}z — three ☀️ take it all!`;
-  },
-
-  setReels(ids) {
-    this.el.slotReels.innerHTML = ids.map((id) =>
-      `<span class="reel">${this.slotSymbols[id] || '❓'}</span>`).join('');
-  },
-
-  animateReels(m) {
-    // Tumble random emoji, then settle on the server's reels.
-    this.spinning = true;
-    const ids = Object.keys(this.slotSymbols);
-    const faces = ids.length ? ids : ['sun', 'zcoin', 'palm'];
-    let ticks = 0;
-    const iv = setInterval(() => {
-      ticks++;
-      this.setReels([0, 1, 2].map(() => faces[Math.floor(Math.random() * faces.length)]));
-      if (ticks >= 8) {
-        clearInterval(iv);
-        this.setReels(m.reels);
-        this.spinning = false;
-        if (Number.isFinite(m.jackpotPool)) this.setJackpot(m.jackpotPool);
-        this.el.slotMsg.textContent = m.jackpotWin > 0
-          ? `☀️☀️☀️ THREE SUNS — THE JACKPOT! You win ${m.jackpotWin}z!!`
-          : m.win > 0
-            ? `🎉 You win ${m.win}z! (bet ${m.bet}z)`
-            : `No win — bet ${m.bet}z. Balance ${m.zcoins}z`;
-        if (m.win >= m.bet * 4 && m.win > 0) this.hooks.toast(`🎰 JACKPOT! +${m.win}z on the slots!`);
-      }
-    }, 70);
   },
 };
 
