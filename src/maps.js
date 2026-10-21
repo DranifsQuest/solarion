@@ -9,9 +9,18 @@
  *
  * `tiles` is a { rows, w, h } grid: '#'=solid, '%'=water (solid),
  * '|'=tree/stall post (solid), '.'=walkable, 'W'=casino wall (solid),
- * 'C'=casino floor (walkable). Gateways (grand arches between the hub
- * and the cities) and doors (interior sub-areas) are pixel-space
+ * 'C'=casino floor (walkable). Lane C added: 'T'=tree (solid),
+ * 'P'=planter (solid), 'R'=rock (solid), 'b'=boardwalk, 's'=stone
+ * plaza, 'p'=path (all walkable). Gateways are GATEHOUSES now: a
+ * 2-tile trigger rect on the map edge (the inner threshold), solid
+ * flank towers, and a short passage the client renders with real
+ * double doors; `spawnOut` is where a traveller arriving INTO this
+ * map through this gatehouse lands (just outside its mouth, clear
+ * of the trigger). Doors (interior sub-areas) are pixel-space
  * rectangles; stepping into one triggers a server-side scene switch.
+ * Enterable places carry exactly one `buildings` facade entry —
+ * tiles under a facade stay '#' (solid); the client draws the
+ * building instead of per-tile cubes.
  *
  * PHASE 7 ("Phase B" — the big world): every public scene was scaled
  * to ~5x the original 32x20-tile footprint. The Gateway and the five
@@ -52,9 +61,42 @@ function gridOf(g) {
   return { rows, w: rows[0].length, h: rows.length };
 }
 
-/** A 2-tile-wide gateway arch rect on a tile row (hub<->city travel). */
-function arch(tx, ty, target, label) {
-  return { x: px(tx), y: px(ty), w: TILE * 2, h: TILE, target, label };
+/**
+ * A gatehouse on a map edge (Lane C). (tx, ty) is the 2-tile-wide
+ * trigger rect — the INNER threshold, at the same tiles the old
+ * arches used. `dir` is the edge the structure sits on: 'N' (trigger
+ * on row ty, passage extends south/into the map) or 'S' (trigger on
+ * row ty, passage extends north). `spawnOut` (tile coords) is where
+ * a player arriving into THIS map through this gatehouse lands:
+ * just outside the passage mouth, clear of every trigger.
+ */
+function arch(tx, ty, target, label, dir, spawnOutTy) {
+  return {
+    x: px(tx), y: px(ty), w: TILE * 2, h: TILE, target, label, dir,
+    spawnOut: { x: px(tx) + TILE, y: cy(spawnOutTy) },
+  };
+}
+/**
+ * Solid flank columns for a gatehouse: the towers either side of
+ * the 2-wide passage, 2 tiles deep from the trigger row toward the
+ * plaza. Passage tiles themselves stay walkable.
+ */
+function gatehouseWalls(g, tx, ty, dir) {
+  const rows = dir === 'N' ? [ty, ty + 1] : [ty, ty - 1];
+  for (const ry of rows) {
+    g[ry][tx - 1] = '#';
+    g[ry][tx + 2] = '#';
+  }
+}
+/**
+ * A building facade (Lane C): exactly one per enterable place. The
+ * tiles under the rect are '#' (solid); the client draws ONE quality
+ * building (walls, pitched roof, glowing windows) instead of cubes.
+ * `style` keys the client's palette: cafe | casino | neon | hookah |
+ * home.
+ */
+function building(tx, ty, tw, th, name, style) {
+  return { tx, ty, tw, th, name, style };
 }
 /** A door rect: stepping on it enters an interior scene. */
 function door(tx, ty, target, targetSpawn, label, wTiles = 1) {
@@ -98,26 +140,46 @@ function buildGateway() {
   const W = 72, H = 45;
   const g = makeGrid(W, H, '.');
   setBorder(g, W, H, '#');
-  setRect(g, 3, 4, 6, 6, '#');    // NW market block
-  setRect(g, 63, 4, 6, 6, '#');   // NE market block
-  setRect(g, 3, 18, 4, 9, '#');   // W block
-  setRect(g, 65, 18, 4, 9, '#');  // E block
+  // Lane C ground zoning: stone plaza at the centre, stone under
+  // the café corner + south market + the two market terraces.
+  setRect(g, 28, 15, 16, 14, 's');  // Fountain Plaza stone
+  setRect(g, 54, 28, 16, 15, 's');  // Café Corner stone
+  setRect(g, 6, 32, 20, 10, 's');   // South Market stone
+  setRect(g, 3, 4, 6, 6, 's');      // NW market terrace
+  setRect(g, 63, 4, 6, 6, 's');     // NE market terrace
+  setRect(g, 65, 18, 4, 9, 's');    // E terrace
+  // Dirt paths run south from every gatehouse mouth to the plaza.
+  for (const tx of [6, 20, 34, 48, 62]) setRect(g, tx, 4, 2, 11, 'p');
+  setRect(g, 3, 18, 4, 9, '#');   // the Homes building (W) — a facade now
   setRect(g, 33, 20, 6, 3, '%');  // fountain
   for (const [x, y] of [[10, 36], [11, 36], [10, 37], [14, 38], [52, 38], [57, 36], [58, 36], [58, 37]]) {
     g[y][x] = '|';                // market stall posts, south plaza
   }
-  setRect(g, 57, 33, 12, 9, '#'); // the Gateway Café building (SE)
+  // Market terraces: stall posts + trees instead of the old blocks.
+  g[6][5] = '|'; g[8][7] = '|'; g[6][64] = '|'; g[8][66] = '|';
+  g[4][8] = 'T'; g[9][3] = 'T'; g[4][63] = 'T'; g[9][68] = 'T';
+  // E terrace dressing: trees + a planter where the E block stood.
+  g[19][66] = 'T'; g[25][68] = 'T'; g[22][65] = 'P';
+  // Plaza shade trees.
+  g[14][12] = 'T'; g[14][60] = 'T'; g[31][24] = 'T'; g[31][48] = 'T';
+  setRect(g, 57, 33, 12, 9, '#'); // the Gateway Café building (SE) — a facade now
+  // Gatehouse flank towers for the five north arches.
+  for (const tx of [6, 20, 34, 48, 62]) gatehouseWalls(g, tx, 1, 'N');
   const id = 'the-gateway';
   return {
     id, name: 'The Gateway', tiles: gridOf(g), tileSize: TILE,
     floor: '#2e3a52', floorAlt: '#33415c', wall: '#10151f',
     spawn: { x: cx(36), y: cy(28) },
     gateways: [
-      arch(6, 1, 'neon-district', 'Neon District'),
-      arch(20, 1, 'cinder-mesa', 'Cinder Mesa'),
-      arch(34, 1, 'solstice-bay', 'Solstice Bay'),
-      arch(48, 1, 'frosthaven', 'Frosthaven'),
-      arch(62, 1, 'verdant-hollow', 'Verdant Hollow'),
+      arch(6, 1, 'neon-district', 'Neon District', 'N', 3),
+      arch(20, 1, 'cinder-mesa', 'Cinder Mesa', 'N', 3),
+      arch(34, 1, 'solstice-bay', 'Solstice Bay', 'N', 3),
+      arch(48, 1, 'frosthaven', 'Frosthaven', 'N', 3),
+      arch(62, 1, 'verdant-hollow', 'Verdant Hollow', 'N', 3),
+    ],
+    buildings: [
+      building(3, 18, 4, 9, 'Homes', 'home'),
+      building(57, 33, 12, 9, 'Gateway Café', 'cafe'),
     ],
     doors: [
       door(62, 32, 'gateway-cafe', { x: cx(10), y: cy(10) }, 'Gateway Café'),
@@ -129,11 +191,18 @@ function buildGateway() {
     props: [
       // Homes Corner dressing: lanterns flank the home-door walkway.
       prop('lantern', 8, 20), prop('lantern', 8, 24),
+      // The fountain is the plaza's hero now — a real fountain, not
+      // just blue tiles.
+      prop('fountain', 36, 21),
       // A fountain-side nook: rug + lamps + a string of warm bulbs.
       prop('rug', 36, 31), prop('lamp', 34, 31), prop('lamp', 38, 31),
       prop('stringlights', 36, 30),
       // Café Corner dressing.
       prop('lamp', 59, 31), prop('stringlights', 62, 31),
+      // Market stalls on their posts (Lane C).
+      prop('stall', 5, 6), prop('stall', 64, 6), prop('stall', 10, 36), prop('stall', 57, 36),
+      // Flower beds at the plaza's south edge + the south market.
+      prop('flowers', 30, 29), prop('flowers', 42, 29), prop('flowers', 12, 33),
     ],
     areas: [
       area('The Arches', 2, 0, 68, 4),
@@ -213,26 +282,39 @@ function buildSolsticeBay() {
   setRect(g, 0, H - 1, W, 1, '#');
   setRect(g, 0, 0, 1, H, '#');
   setRect(g, W - 1, 0, 1, H, '#');
+  setRect(g, 1, 5, 70, 5, 'b');         // the boardwalk promenade (Lane C)
+  setRect(g, 15, 18, 2, 19, 'p');       // sand path down to the Casino door
   g[6][32] = '|'; g[6][39] = '|';       // stage speakers
-  for (const [x, y] of [[6, 12], [7, 12], [64, 12], [65, 12], [10, 26], [62, 26], [36, 30], [37, 30]]) {
+  for (const [x, y] of [[6, 12], [7, 12], [64, 12], [65, 12], [36, 30], [37, 30]]) {
     g[y][x] = '|';                      // boardwalk stalls
   }
-  setRect(g, 22, 32, 3, 2, '#');        // beach hut
-  setRect(g, 48, 32, 3, 2, '#');        // beach hut
-  setRect(g, 3, 33, 12, 10, '#');       // the Casino building (SW)
+  g[26][10] = 'P'; g[26][62] = 'P';     // planters where stall posts stood
+  g[5][3] = '#';                        // the lighthouse plinth (hero)
+  g[32][23] = 'T'; g[33][49] = 'T';     // palms where the beach huts stood
+  gatehouseWalls(g, 35, 43, 'S');
+  setRect(g, 3, 33, 12, 10, '#');       // the Casino building (SW) — a facade now
   const id = 'solstice-bay';
   return {
     id, name: 'Solstice Bay', tiles: gridOf(g), tileSize: TILE,
     floor: '#e8cf9a', floorAlt: '#e2c588', wall: '#2b6f8f',
     spawn: { x: cx(36), y: cy(41) },
-    gateways: [arch(35, 43, 'the-gateway', 'The Gateway')],
+    gateways: [arch(35, 43, 'the-gateway', 'The Gateway', 'S', 41)],
+    buildings: [
+      building(3, 33, 12, 10, 'Casino Lounge', 'casino'),
+    ],
     doors: [
       door(15, 37, 'casino-lounge', { x: cx(15), y: cy(16) }, 'Casino Lounge'),
     ],
     props: [
       prop('lantern', 16, 36), prop('lantern', 16, 38),
+      // The lighthouse keeps the bay's north-west shore (hero).
+      prop('lighthouse', 3, 5),
       // A boardwalk nook: rug, a lamp, and a string of bulbs.
       prop('rug', 36, 15), prop('lamp', 33, 15), prop('stringlights', 36, 13),
+      // Stalls on the boardwalk posts.
+      prop('stall', 6, 12), prop('stall', 64, 12),
+      // Planter colour along the boardwalk's south edge.
+      prop('flowers', 20, 11), prop('flowers', 52, 11),
     ],
     stage: stageDef(33, 6),
     areas: [
@@ -330,7 +412,7 @@ function buildCasino({ id, name, hostId, hostLabel, hostSpawn, floor, floorAlt, 
       door(14, 18, hostId, hostSpawn, hostLabel, 2),
     ],
     // Phase 10: lanterns flank the entryway door inside.
-    props: [prop('lantern', 12, 17), prop('lantern', 17, 17)],
+    props: [prop('lantern', 12, 17), prop('lantern', 17, 17), prop('rug', 15, 15)],
     seats,
     areas: [
       area('Poker Floor', 1, 1, 14, 17),
@@ -445,19 +527,44 @@ function cityShell(W, H) {
 function buildNeonDistrict() {
   const W = 72, H = 45;
   const g = cityShell(W, H);
-  setRect(g, 4, 4, 10, 7, '#'); setRect(g, 18, 4, 12, 7, '#');
-  setRect(g, 42, 4, 12, 7, '#'); setRect(g, 58, 4, 10, 7, '#');
-  setRect(g, 4, 16, 12, 9, '#'); setRect(g, 56, 16, 12, 9, '#');
-  setRect(g, 4, 30, 12, 8, '#'); setRect(g, 24, 30, 10, 8, '#');
-  setRect(g, 40, 30, 8, 8, '#'); setRect(g, 56, 30, 12, 8, '#');
+  // Lane C: the fake block-buildings are GONE. Their footprints are
+  // dressed ground now — a stone market square at the centre, stone
+  // plaza patches where the blocks stood, street bands, and the
+  // casino terrace. Only the enterable casino keeps a building.
+  setRect(g, 26, 14, 20, 16, 's');      // Market Square stone
+  setRect(g, 1, 11, 70, 2, 'p');        // north street
+  setRect(g, 1, 38, 70, 2, 'p');        // south street
+  setRect(g, 4, 4, 10, 7, 's');         // ex-block plaza (NW)
+  setRect(g, 18, 4, 12, 7, 's');        // ex-block plaza (N)
+  setRect(g, 42, 4, 12, 7, 's');        // ex-block plaza (N)
+  setRect(g, 58, 4, 10, 7, 's');        // ex-block plaza (NE)
+  setRect(g, 4, 16, 12, 9, 's');        // ex-block plaza (W)
+  setRect(g, 56, 16, 12, 9, 's');       // ex-block plaza (E)
+  setRect(g, 4, 30, 12, 8, 's');        // ex-block plaza (SW)
+  setRect(g, 24, 30, 10, 8, 's');       // ex-block plaza (S)
+  setRect(g, 40, 30, 8, 8, 's');        // ex-block plaza (S)
+  setRect(g, 52, 26, 18, 14, 's');      // casino terrace
+  setRect(g, 56, 30, 12, 8, '#');       // the Neon Casino (SE) — the one real building
   g[3][32] = '|'; g[3][39] = '|'; // stage speakers
   for (const [x, y] of [[30, 18], [41, 18], [30, 26], [41, 26], [36, 16]]) g[y][x] = '|'; // market stalls
+  // Dressing on the old footprints: trees, planters, stall posts.
+  g[6][6] = 'T'; g[9][12] = 'T'; g[5][8] = 'P';
+  g[7][24] = '|'; g[7][46] = '|';
+  g[9][20] = 'T'; g[5][50] = 'T';
+  g[20][6] = 'P'; g[23][6] = 'P'; g[24][12] = 'T';
+  g[18][58] = 'T'; g[22][64] = 'T'; g[20][66] = 'P';
+  g[33][10] = '|'; g[34][28] = 'T'; g[33][44] = 'P';
+  g[13][36] = '#';                      // the great sign's plinth (hero)
+  gatehouseWalls(g, 35, 43, 'S');
   const id = 'neon-district';
   return {
     id, name: 'Neon District', tiles: gridOf(g), tileSize: TILE,
     floor: '#17102b', floorAlt: '#1e1438', wall: '#ff2e88',
     spawn: { x: cx(36), y: cy(41) },
-    gateways: [arch(35, 43, 'the-gateway', 'The Gateway')],
+    gateways: [arch(35, 43, 'the-gateway', 'The Gateway', 'S', 41)],
+    buildings: [
+      building(56, 30, 12, 8, 'Neon Casino', 'neon'),
+    ],
     doors: [
       // The SE block (tiles 56..67, 30..37) is the Neon Casino —
       // its door sits on the block's north face.
@@ -465,8 +572,13 @@ function buildNeonDistrict() {
     ],
     props: [
       prop('lantern', 60, 28),
+      // The hero: a giant glowing NEON sign over the market square.
+      prop('neonsign', 36, 13),
       // A market-square nook: rug + lamp + string lights over the stalls.
       prop('rug', 36, 22), prop('lamp', 32, 22), prop('stringlights', 36, 20),
+      // Stalls on their posts (Lane C).
+      prop('stall', 30, 18), prop('stall', 41, 26), prop('stall', 24, 7), prop('stall', 10, 33),
+      prop('flowers', 30, 15), prop('flowers', 42, 28),
     ],
     stage: stageDef(33, 3),
     areas: [
@@ -492,25 +604,46 @@ function buildNeonDistrict() {
 function buildCinderMesa() {
   const W = 72, H = 45;
   const g = cityShell(W, H);
-  for (const [x, y, w, h] of [
-    [6, 6, 4, 3], [20, 4, 5, 2], [50, 5, 6, 3], [62, 14, 4, 4],
-    [8, 20, 5, 3], [16, 32, 6, 3], [56, 32, 5, 4], [30, 14, 3, 2],
-    [36, 36, 4, 2], [10, 36, 3, 3], [24, 20, 3, 2],
-  ]) setRect(g, x, y, w, h, '#');
+  // Lane C: the rock clusters were box-rects — now scattered 'R'
+  // boulders (solid, but they read as rocks, not buildings).
+  for (const [x, y] of [
+    [6, 6], [8, 6], [7, 7], [9, 8], [6, 8],
+    [20, 4], [22, 5], [24, 4],
+    [50, 5], [52, 6], [54, 5], [55, 7],
+    [62, 14], [64, 15], [63, 17], [65, 16],
+    [8, 20], [10, 21], [12, 22], [9, 22],
+    [16, 32], [18, 33], [20, 34], [17, 34],
+    [56, 32], [58, 33], [60, 35], [57, 35],
+    [30, 14], [32, 15],
+    [36, 36], [38, 37],
+    [10, 36], [12, 37], [11, 38],
+    [24, 20], [24, 21],
+  ]) g[y][x] = 'R';
+  setRect(g, 24, 17, 9, 12, 's');   // Forge Plaza stone
+  setRect(g, 27, 29, 7, 3, 's');    // Hookah Corner doorstep terrace
+  setRect(g, 4, 40, 24, 1, 'p');    // south path from the gatehouse
   g[21][62] = '|'; g[21][69] = '|'; // stage speakers
   g[18][28] = '|'; g[24][28] = '|'; // forge posts
-  setRect(g, 26, 32, 9, 6, '#');    // the Hookah Lounge building (S-centre)
+  g[21][28] = 'R';                  // the forge monument's stone base (hero)
+  g[20][24] = 'R'; g[21][24] = 'R'; // plaza-edge boulders (after the stone fill)
+  gatehouseWalls(g, 3, 43, 'S');
+  setRect(g, 26, 32, 9, 6, '#');    // the Hookah Lounge building (S-centre) — a facade now
   const id = 'cinder-mesa';
   return {
     id, name: 'Cinder Mesa', tiles: gridOf(g), tileSize: TILE,
     floor: '#c47b3a', floorAlt: '#bb7031', wall: '#6e2418',
     spawn: { x: cx(4), y: cy(41) },
-    gateways: [arch(3, 43, 'the-gateway', 'The Gateway')],
+    gateways: [arch(3, 43, 'the-gateway', 'The Gateway', 'S', 41)],
+    buildings: [
+      building(26, 32, 9, 6, 'Hookah Lounge', 'hookah'),
+    ],
     doors: [
       door(30, 31, 'hookah-lounge', { x: cx(10), y: cy(11) }, 'Hookah Lounge'),
     ],
     props: [
       prop('lantern', 29, 30),
+      // The hero: the great forge between its posts, embers lit.
+      prop('forge', 28, 21),
       // A forge-plaza nook: rug + lamp to sit by.
       prop('rug', 28, 22), prop('lamp', 26, 21),
     ],
@@ -538,19 +671,31 @@ function buildFrosthaven() {
   const g = cityShell(W, H);
   setRect(g, 3, 3, 14, 8, '%');
   setRect(g, 17, 5, 4, 4, '%');
-  for (const [x, y, w, h] of [[56, 8, 5, 4], [60, 20, 6, 5], [8, 30, 5, 3], [20, 20, 3, 2]]) {
-    setRect(g, x, y, w, h, '#');
-  }
-  for (const [x, y] of [[30, 12], [44, 14], [52, 30], [24, 32]]) g[y][x] = '|'; // pines
+  // Lane C: the ice blocks were box-rects — now scattered 'R'
+  // boulders (tinted icy by the map's wall colour client-side).
+  for (const [x, y] of [
+    [56, 8], [58, 9], [60, 11], [57, 11],
+    [60, 20], [62, 22], [65, 24], [61, 24],
+    [8, 30], [10, 31], [12, 32],
+    [20, 20], [22, 21],
+  ]) g[y][x] = 'R';
+  setRect(g, 29, 33, 14, 10, 's');  // Stage Grounds stone
+  setRect(g, 35, 5, 2, 15, 'p');    // path south from the gatehouse
+  setRect(g, 25, 13, 10, 1, 'p');   // path west to the pond-shore nook
+  for (const [x, y] of [[30, 12], [44, 14], [52, 30], [24, 32], [16, 26], [66, 12], [34, 26]]) g[y][x] = 'T'; // pines
   g[37][32] = '|'; g[37][39] = '|'; // stage speakers
+  g[7][47] = '#';                   // the ice sculpture's plinth (hero)
+  gatehouseWalls(g, 35, 1, 'N');
   const id = 'frosthaven';
   return {
     id, name: 'Frosthaven', tiles: gridOf(g), tileSize: TILE,
     floor: '#d7edf7', floorAlt: '#c6e3f2', wall: '#2f5d8a',
     spawn: { x: cx(36), y: cy(4) },
-    gateways: [arch(35, 1, 'the-gateway', 'The Gateway')],
+    gateways: [arch(35, 1, 'the-gateway', 'The Gateway', 'N', 3)],
     doors: [],
     props: [
+      // The hero: a great ice sculpture on its plinth, NE grounds.
+      prop('icesculpt', 47, 7),
       // A pond-shore nook: rug, lamp, and string lights in the cold.
       prop('rug', 24, 13), prop('lamp', 23, 13), prop('stringlights', 24, 12),
       prop('lantern', 34, 32),
@@ -576,23 +721,42 @@ function buildFrosthaven() {
 function buildVerdantHollow() {
   const W = 72, H = 45;
   const g = cityShell(W, H);
-  for (const [x, y, w, h] of [
-    [4, 4, 5, 4], [14, 3, 4, 3], [24, 5, 3, 3], [44, 4, 5, 4],
-    [56, 3, 6, 3], [64, 8, 4, 4], [4, 16, 4, 5], [64, 18, 5, 4],
-    [8, 28, 4, 4], [56, 28, 5, 4], [20, 32, 4, 3], [44, 33, 4, 3],
-  ]) setRect(g, x, y, w, h, '|');
+  // Lane C: the tree-cluster rects were solid post-blocks — now
+  // scattered 'T' trees (solid trunks, real canopies client-side).
+  for (const [x, y] of [
+    [4, 4], [6, 5], [8, 4], [5, 7], [7, 6],
+    [14, 3], [16, 4], [15, 5],
+    [24, 5], [26, 6], [25, 7],
+    [44, 4], [46, 5], [48, 6], [45, 7],
+    [56, 3], [58, 4], [60, 3], [61, 5],
+    [64, 8], [66, 9], [65, 11], [67, 10],
+    [4, 16], [6, 18], [5, 20], [7, 17],
+    [64, 18], [66, 19], [68, 21], [65, 21],
+    [8, 28], [10, 29], [9, 31], [11, 30],
+    [56, 28], [58, 29], [60, 30], [57, 31],
+    [20, 32], [22, 33], [21, 34],
+    [44, 33], [46, 34], [45, 35],
+  ]) g[y][x] = 'T';
+  setRect(g, 44, 40, 23, 1, 'p');   // path west from the gatehouse
+  setRect(g, 43, 29, 1, 11, 'p');   // path north to the pond shore
   setRect(g, 30, 37, 10, 5, '%');
   g[21][32] = '|'; g[21][39] = '|'; // stage speakers
+  g[15][28] = 'P';                  // the Great Tree's root planter (hero)
+  gatehouseWalls(g, 66, 43, 'S');
   const id = 'verdant-hollow';
   return {
     id, name: 'Verdant Hollow', tiles: gridOf(g), tileSize: TILE,
     floor: '#2e5d33', floorAlt: '#26502b', wall: '#4a3520',
     spawn: { x: cx(67), y: cy(41) },
-    gateways: [arch(66, 43, 'the-gateway', 'The Gateway')],
+    gateways: [arch(66, 43, 'the-gateway', 'The Gateway', 'S', 41)],
     doors: [],
     props: [
+      // The hero: the Great Tree at the clearing's NW shoulder.
+      prop('greattree', 28, 15),
       // A grove nook south of the stage: rug, lamp, firefly bulbs.
       prop('rug', 36, 28), prop('lamp', 33, 28), prop('stringlights', 36, 19),
+      // Flower drifts around the clearing and the pond shore.
+      prop('flowers', 31, 24), prop('flowers', 41, 24), prop('flowers', 36, 33), prop('flowers', 60, 38),
     ],
     stage: stageDef(33, 21),
     areas: [
@@ -623,7 +787,7 @@ for (const def of [
 // helpers
 // ------------------------------------------------------------------
 
-const WALKABLE = new Set(['.', 'C']); // '.' open ground, 'C' casino-lounge floor
+const WALKABLE = new Set(['.', 'C', 'b', 's', 'p']); // open ground, casino floor, boardwalk, stone, path
 
 function isSolidTile(map, tx, ty) {
   if (tx < 0 || ty < 0 || tx >= map.tiles.w || ty >= map.tiles.h) return true;
@@ -680,9 +844,10 @@ function clientMap(map) {
     floorAlt: map.floorAlt,
     wall: map.wall,
     gateways: (map.gateways || []).map(g => ({
-      x: g.x, y: g.y, w: g.w, h: g.h, label: g.label,
+      x: g.x, y: g.y, w: g.w, h: g.h, label: g.label, dir: g.dir,
       active: Boolean(MAPS[g.target]),
     })),
+    buildings: (map.buildings || []).map(b => ({ ...b })),
     doors: (map.doors || []).map(d => ({
       x: d.x, y: d.y, w: d.w, h: d.h, label: d.label,
       home: d.target === 'studio:self',

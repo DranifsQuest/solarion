@@ -28,7 +28,7 @@ const fs = require('fs');
 process.env.SOLARION_DB_PATH = path.join(__dirname, '..', 'data', `xtest-unit-${process.env.TEST_RUN || '0'}.db`);
 const casino = require('../src/casino');
 casino.initLedger();
-const { MAPS, collides } = require('../src/maps');
+const { MAPS, collides, gatewayAt } = require('../src/maps');
 
 const WebSocket = require('ws');
 
@@ -229,6 +229,68 @@ test('map data: ~5x scale, spawns/portals/seats/stage all sane', { timeout: 3000
   assert.ok(MAPS['neon-casino'].doors.some(d => d.target === 'neon-district'), 'neon casino has the door back');
   assert.ok(MAPS['cinder-mesa'].doors.some(d => d.target === 'hookah-lounge'), 'cinder has the hookah door');
   assert.ok(hookah.doors.some(d => d.target === 'cinder-mesa'), 'hookah lounge has the door back');
+});
+
+// ------------------------------------------------------------------ a2 (Lane C)
+
+test('gatehouses: every gateway is a structure — dir, solid flanks, walkable passage, clear spawnOut', { timeout: 30000 }, () => {
+  for (const [id, m] of Object.entries(MAPS)) {
+    for (const g of m.gateways || []) {
+      assert.ok(g.dir === 'N' || g.dir === 'S', `${id} gateway ${g.label} names its edge`);
+      assert.ok(g.spawnOut, `${id} gateway ${g.label} carries an arrival point`);
+      const tx = Math.round(g.x / 32), ty = Math.round(g.y / 32);
+      const rows = g.dir === 'S' ? [ty, ty - 1] : [ty, ty + 1];
+      // the tower flanks are SOLID at the tile level
+      for (const ry of rows) {
+        assert.ok(collides(m, (tx - 1) * 32 + 16, ry * 32 + 16, 4), `${id} ${g.label} west tower solid`);
+        assert.ok(collides(m, (tx + 2) * 32 + 16, ry * 32 + 16, 4), `${id} ${g.label} east tower solid`);
+      }
+      // the passage between the towers stays walkable
+      const passY = g.dir === 'S' ? ty - 1 : ty + 1;
+      assert.equal(collides(m, g.x + g.w / 2, passY * 32 + 16, 12), false, `${id} ${g.label} passage walkable`);
+      // the arrival point: standable and NOT inside any trigger rect
+      assert.equal(collides(m, g.spawnOut.x, g.spawnOut.y, 12), false, `${id} ${g.label} spawnOut standable`);
+      assert.equal(gatewayAt(m, g.spawnOut.x, g.spawnOut.y), null, `${id} ${g.label} spawnOut clear of triggers (no bounce-back)`);
+      // the reverse gatehouse exists and points back
+      const back = (MAPS[g.target].gateways || []).find(x => x.target === id);
+      assert.ok(back, `${g.target} has the gatehouse back to ${id}`);
+    }
+  }
+});
+
+test('facades + zone character: one building per enterable place, heroes, textured ground', { timeout: 30000 }, () => {
+  // exactly one quality facade per enterable place; the tiles under
+  // a facade are solid, and its door stands just outside the rect.
+  const built = { 'the-gateway': 2, 'solstice-bay': 1, 'neon-district': 1, 'cinder-mesa': 1 };
+  for (const [id, n] of Object.entries(built)) {
+    assert.equal((MAPS[id].buildings || []).length, n, `${id} has ${n} facade(s)`);
+  }
+  for (const [id, m] of Object.entries(MAPS)) {
+    for (const b of m.buildings || []) {
+      const ccx = (b.tx + b.tw / 2) * 32, ccy = (b.ty + b.th / 2) * 32;
+      assert.ok(collides(m, ccx, ccy, 4), `${id} facade ${b.name} stands on solid tiles`);
+      // some door tile touches the facade's edge (the real door IN the building)
+      const touches = (m.doors || []).some(d => {
+        const dtx = Math.round(d.x / 32), dty = Math.round(d.y / 32);
+        const beside = (dtx >= b.tx - 1 && dtx <= b.tx + b.tw && (dty === b.ty - 1 || dty === b.ty + b.th))
+          || (dty >= b.ty - 1 && dty <= b.ty + b.th && (dtx === b.tx - 1 || dtx === b.tx + b.tw));
+        return beside;
+      });
+      assert.ok(touches, `${id} facade ${b.name} has its door on an edge`);
+    }
+  }
+  // one hero landmark per city + the Gateway's fountain, textured
+  // ground somewhere in every big map (no flat single-colour zones)
+  const heroes = {
+    'the-gateway': 'fountain', 'solstice-bay': 'lighthouse', 'neon-district': 'neonsign',
+    'cinder-mesa': 'forge', 'frosthaven': 'icesculpt', 'verdant-hollow': 'greattree',
+  };
+  for (const [id, kind] of Object.entries(heroes)) {
+    assert.ok((MAPS[id].props || []).some(p => p.kind === kind), `${id} flies its hero: ${kind}`);
+    const chars = new Set(MAPS[id].tiles.rows.join('').split(''));
+    const textured = ['b', 's', 'p'].filter(c => chars.has(c));
+    assert.ok(textured.length >= 1, `${id} has textured ground (${textured.join(',') || 'none'})`);
+  }
 });
 
 // ------------------------------------------------------------------ b
