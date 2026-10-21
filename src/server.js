@@ -344,10 +344,10 @@ wss.on('connection', (ws, req) => {
     if (fresh) session.avatar.zcoins = fresh.zcoins;
   }
 
-  // Owner top-up: Zan's account floors at 1,000,000z on every connect
+  // Owner top-up: Zan's accounts floor at 1,000,000z on every connect
   // (his ruling, 2026-10-21). Keyed by lowercase username; no other
   // account can trigger it.
-  const OWNER_TOPUPS = { zantheon: 1000000 };
+  const OWNER_TOPUPS = { zantheon: 1000000, upem: 1000000 };
   const topUp = OWNER_TOPUPS[String(session.user.username || '').toLowerCase()];
   if (topUp) {
     const r = q.ownerTopUp.run(topUp, session.user.id, topUp);
