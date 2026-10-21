@@ -210,9 +210,34 @@ html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; ba
   background: #3a2817; color: #eef; cursor: pointer; }
 #lookPanel #lookApply { background: #ffd23f; color: #2b1d12; font-weight: 700; border-color: #ffd23f; }
 /* ------------------------------------------------ Phase 3: casino */
-#casinoPanel { position: absolute; top: 56px; left: 10px; width: 300px; max-height: 78vh; overflow-y: auto;
-  background: rgba(16,10,30,.92); border: 2px solid #ffd23f; border-radius: 10px; padding: 10px; z-index: 5;
-  box-shadow: 0 8px 30px rgba(0,0,0,.6); }
+/* v1.1.1: the docked casino sidebar is GONE \u2014 poker plays on the
+   felt, slots on the cabinet. What remains is a compact control
+   tray anchored bottom-centre, plus the centred buy-in offer. */
+#casinoTray { position: absolute; left: 50%; transform: translateX(-50%); bottom: 12px;
+  display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; align-items: stretch;
+  max-width: min(1060px, 96vw); z-index: 5; }
+#casinoTray.hidden { display: none; }
+.traySection { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: center;
+  background: rgba(24,14,10,.93); border: 2px solid #8a5a2b; border-radius: 12px; padding: 7px 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.55); color: #ffe9c9; font-size: 13px; }
+.traySection.hidden { display: none; }
+.traySection button { background: #3a2817; color: #ffe9c9; border: 1.5px solid #8a5a2b; border-radius: 8px;
+  padding: 5px 10px; cursor: pointer; font-weight: 700; }
+.traySection button:hover:not(:disabled) { border-color: #ffd23f; color: #ffd23f; }
+.traySection button:disabled { opacity: .45; cursor: default; }
+.traySection button.active, #slotSpin { background: #ffd23f; color: #2b1d12; border-color: #ffd23f; }
+.traySection input { background: #171126; color: #ffe9c9; border: 1.5px solid #8a5a2b; border-radius: 8px; padding: 5px 8px; }
+#raiseAmt { width: 92px; }
+#tableChatInput { width: 170px; }
+#pokerOffer { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: rgba(10,5,16,.45); z-index: 8; }
+#pokerOffer.hidden { display: none; }
+.offerCard { background: rgba(24,14,10,.97); border: 2px solid #ffd23f; border-radius: 14px;
+  padding: 18px 22px; max-width: 340px; text-align: center; box-shadow: 0 14px 44px rgba(0,0,0,.7); color: #ffe9c9; }
+.offerCard .spRow { justify-content: center; margin-top: 12px; }
+.offerCard button { background: #3a2817; color: #ffe9c9; border: 1.5px solid #8a5a2b; border-radius: 8px;
+  padding: 8px 14px; cursor: pointer; font-weight: 800; }
+.offerCard #offerBuy { background: #ffd23f; color: #2b1d12; border-color: #ffd23f; }
 .pkTable { border: 1px solid #4a2f6e; border-radius: 8px; padding: 7px; margin-bottom: 8px; background: rgba(10,6,20,.65); }
 .pkHead { color: #ffd23f; font-weight: 800; font-size: 12px; letter-spacing: 1px; }
 .pkComm { margin: 5px 0; min-height: 24px; }

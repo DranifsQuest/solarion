@@ -157,6 +157,7 @@ class PokerTable {
       dir: c.dir, x: c.x, y: c.y, seat: null,
     }));
     this.state = 'idle';
+    this.reservedBy = new Map(); // chairIdx -> userId (v1.1.1 spectator holds)
     this.community = [];
     this.deck = [];
     this.dealerChair = -1;
@@ -269,6 +270,7 @@ class PokerTable {
     const i = this.chairs.findIndex((c) => c.dir === dir);
     if (i < 0) { this.game.send(p, { type: 'notice', text: 'No such chair.' }); return; }
     if (this.chairs[i].seat) { this.game.send(p, { type: 'notice', text: 'That chair is taken.' }); return; }
+    if (this.reservedBy.has(i) && this.reservedBy.get(i) !== p.userId) { this.game.send(p, { type: 'notice', text: 'That chair is taken.' }); return; }
     // Atomic debit: exactly one of two racing sit requests can win.
     const buyin = Math.min(this.zcoinsOf(p.userId), CHIP_BUYIN_MAX);
     if (buyin < CHIP_BUYIN_MIN) {
@@ -287,6 +289,8 @@ class PokerTable {
       sittingOut: this.state !== 'idle' && this.state !== 'countdown' && this.state !== 'done',
     };
     this.chairs[i].seat = seat;
+    this.reservedBy.delete(i);
+    if (p.pokerPending && p.pokerPending.tableId === this.id) p.pokerPending = null;
     this.persistSeat(seat);
     // Snap the avatar into the chair; movement is locked while seated
     // (server drops input for seated players) until they stand.
@@ -902,10 +906,74 @@ class CasinoSystem {
 
   // ------------------------------------------------------------ messages
 
+  // ------------------------------------------------------ v1.1.1 join flow
+  // Sit first, money second: walking up to a table and pressing E
+  // snaps you into the nearest free chair as a spectator and pops
+  // the buy-in question (poker-offer). Accepting runs the table's
+  // existing atomic sit(); declining keeps the chair and moves no
+  // chips. The chair stays reserved while you sit in it.
+
+  offerSeat(p) {
+    const lounge = this.loungeFor(p);
+    if (!lounge) return false;
+    const table = this.tableFor(p);
+    if (!table || !table.nearTable(p)) return false;
+    if (this.findSeatByUser(p.userId)) return false; // already holds chips somewhere
+    let best = -1, bestD = Infinity;
+    table.chairs.forEach((c, i) => {
+      if (c.seat || table.reservedBy.has(i)) return;
+      const d = Math.hypot(p.x - c.x, p.y - c.y);
+      if (d < bestD) { bestD = d; best = i; }
+    });
+    if (best < 0) { this.game.send(p, { type: 'notice', text: 'Every chair at this table is taken.' }); return true; }
+    const amount = Math.min(this.zcoinsOf(p.userId), CHIP_BUYIN_MAX);
+    if (amount < CHIP_BUYIN_MIN) {
+      this.game.send(p, { type: 'notice', text: `You need at least ${CHIP_BUYIN_MIN}z to buy in.` });
+      return true;
+    }
+    const chair = table.chairs[best];
+    table.reservedBy.set(best, p.userId);
+    p.pokerPending = { tableId: table.id, dir: chair.dir };
+    p.x = chair.x; p.y = chair.y; p.keys = {};
+    p.seated = { id: `poker:${table.id}:${chair.dir}`, dir: CHAIR_FACE[chair.dir], kind: 'poker-pending' };
+    this.game.savePosition(p);
+    this.game.send(p, { type: 'sit-state', seated: true });
+    this.game.send(p, {
+      type: 'poker-offer', table: table.id, chair: chair.dir,
+      amount, min: CHIP_BUYIN_MIN, max: CHIP_BUYIN_MAX,
+      established: table.chairs.some((c) => c.seat),
+    });
+    return true;
+  }
+
+  acceptBuyin(p) {
+    const pend = p.pokerPending;
+    if (!pend) { this.game.send(p, { type: 'notice', text: 'No buy-in waiting — sit at a table first (E).' }); return; }
+    const table = this.tableById(pend.tableId);
+    if (!table) { p.pokerPending = null; return; }
+    table.sit(p, pend.dir); // the existing atomic buy-in; clears pending on success
+  }
+
+  watchTable(p) {
+    if (!p.pokerPending) return;
+    this.game.send(p, { type: 'notice', text: 'You watch from the chair — no chips down. Press E to stand.' });
+  }
+
+  /** Release a pending spectator chair (stand / leave / disconnect). */
+  clearPending(p) {
+    const pend = p && p.pokerPending;
+    if (!pend) return;
+    const table = this.tableById(pend.tableId);
+    if (table) {
+      for (const [i, uid] of table.reservedBy) if (uid === p.userId) table.reservedBy.delete(i);
+    }
+    p.pokerPending = null;
+  }
+
   handlePoker(p, msg) {
     const action = msg.action;
     // Phase 5: action must be one of the known strings; anything else is dropped.
-    if (typeof action !== 'string' || !['state', 'sit', 'stand', 'rebuy', 'act'].includes(action)) {
+    if (typeof action !== 'string' || !['state', 'sit', 'stand', 'rebuy', 'act', 'buyin', 'watch'].includes(action)) {
       this.game.send(p, { type: 'notice', text: 'Unknown poker action.' });
       return;
     }
@@ -915,6 +983,8 @@ class CasinoSystem {
       for (const t of pool) this.game.send(p, t.publicState());
       return;
     }
+    if (action === 'buyin') { this.acceptBuyin(p); return; }
+    if (action === 'watch') { this.watchTable(p); return; }
     const table = (typeof msg.table === 'string' && this.tableById(msg.table)) || this.tableFor(p);
     if (!table) { this.game.send(p, { type: 'notice', text: 'No poker table here.' }); return; }
     if (action === 'sit') { table.sit(p, msg.chair); return; }
@@ -979,6 +1049,7 @@ class CasinoSystem {
     const zcoins = this.zcoinsOf(p.userId);
     this.game.send(p, {
       type: 'slot-result',
+      slot: slot.id,
       reels: reels.map((s) => s.id),
       emoji: reels.map((s) => s.emoji),
       win, bet, zcoins,
@@ -986,6 +1057,8 @@ class CasinoSystem {
       jackpotPool: Math.floor(poolH / 100),
     });
     this.game.send(p, { type: 'zcoins', zcoins });
+    // v1.1.1: the room watches the cabinet — its reels animate in-world.
+    this.game.broadcastToMap(p.mapId, { type: 'slot-fx', slot: slot.id, reels: reels.map((s) => s.id) });
     // Both casinos watch the same pool climb (and crash on a win).
     for (const sceneId of ['casino-lounge', 'neon-casino']) {
       this.game.broadcastToMap(sceneId, { type: 'jackpot', pool: Math.floor(poolH / 100) });
@@ -1046,6 +1119,10 @@ class CasinoSystem {
   handlePlayerGone(userId) {
     const gp = this.game.getPlayer(userId);
     if (gp && gp.seated && gp.seated.kind === 'poker') gp.seated = null;
+    if (gp) this.clearPending(gp);
+    for (const t of this.tables.values()) {
+      for (const [i, uid] of t.reservedBy) if (uid === userId) t.reservedBy.delete(i);
+    }
     for (const t of this.tables.values()) {
       const found = t.findSeat(userId);
       if (!found) continue;

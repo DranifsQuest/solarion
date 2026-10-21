@@ -602,3 +602,79 @@ test('persistence: balances survive restart; stranded table chips are refunded',
   c3.ws.close();
   await stopServer(child3);
 });
+
+// ---------------------------------------------------------------- v1.1.1 join flow
+// Sit first, money second: E at a table pops the buy-in offer.
+// Declining moves NO chips; accepting runs the atomic buy-in.
+
+test('poker join flow: sit -> offer -> watch (no chips) -> buy in (atomic)', { timeout: 120000 }, async () => {
+  const a = await makeUser('offer_andy');
+  const b = await makeUser('offer_beth');
+  await toCasino(a);
+  await toCasino(b);
+  await sleep(1700); // outlast arrival locks
+  a.client.send({ type: 'debug-teleport', x: T1.x, y: T1.y });
+  await sleep(300);
+  a.client.send({ type: 'interact' });
+  const startA = await balanceOf(a);
+  const offer1 = await waitFor(
+    () => a.client.msgs.filter(m => m.type === 'poker-offer').pop(),
+    5000, 'first sitter gets the buy-in offer');
+  assert.equal(offer1.table, T1.id);
+  assert.equal(offer1.established, false, 'empty table: no established game');
+  assert.equal(offer1.amount, Math.min(startA, 200), 'offer quotes the server buy-in (min(balance, 200))');
+  assert.equal(await balanceOf(a), startA, 'sitting down moved no chips');
+  a.client.send({ type: 'poker', action: 'state' });
+  await sleep(300);
+  assert.ok(!latestTable(a, T1.id).chairs.some(c => c.name === a.name), 'no game seat before buying in');
+  // Decline: watch from the chair, still no chips anywhere.
+  a.client.send({ type: 'poker', action: 'watch' });
+  await sleep(300);
+  assert.equal(await balanceOf(a), startA, 'declining moved no chips');
+  assert.ok(!latestTable(a, T1.id).chairs.some(c => c.name === a.name), 'a watcher holds no game seat');
+  // Stand (E), sit again (E), this time accept.
+  a.client.send({ type: 'interact' });
+  await sleep(300);
+  a.client.send({ type: 'interact' });
+  await waitFor(
+    () => a.client.msgs.filter(m => m.type === 'poker-offer').length >= 2 ? true : null,
+    5000, 're-sitting re-offers the buy-in');
+  a.client.send({ type: 'poker', action: 'buyin' });
+  const seated = await waitFor(() => {
+    const s = latestTable(a, T1.id);
+    return s && s.chairs.some(c => c.name === a.name) ? s : null;
+  }, 5000, 'accepting seats the player with chips');
+  assert.equal(seatChips(seated, a.name), offer1.amount, 'the quoted stack bought in');
+  assert.equal(await balanceOf(a), startA - offer1.amount, 'buy-in debited exactly once');
+  // Second player at a RUNNING table sees the established buy-in.
+  b.client.send({ type: 'debug-teleport', x: T1.x, y: T1.y });
+  await sleep(300);
+  b.client.send({ type: 'interact' });
+  const offer2 = await waitFor(
+    () => b.client.msgs.filter(m => m.type === 'poker-offer').pop(),
+    5000, 'second sitter gets the offer');
+  assert.equal(offer2.established, true, 'table has a player: established game');
+  const startB = await balanceOf(b);
+  assert.equal(offer2.amount, Math.min(startB, 200), 'joiner is quoted the table buy-in');
+  b.client.send({ type: 'poker', action: 'watch' });
+  await sleep(300);
+  assert.equal(await balanceOf(b), startB, 'the joiner declining moved no chips');
+  // Slots: the spin is named + broadcast for the cabinet animation.
+  b.client.send({ type: 'interact' }); // stand from the spectator chair
+  await sleep(300);
+  b.client.send({ type: 'debug-teleport', x: SLOT1_SPOT.x, y: SLOT1_SPOT.y });
+  await sleep(300);
+  b.client.send({ type: 'interact' }); // the stool wins over any table offer
+  await sleep(300);
+  b.client.send({ type: 'slots', action: 'spin', bet: 5 });
+  const res = await waitFor(
+    () => b.client.msgs.filter(m => m.type === 'slot-result').pop(),
+    5000, 'slot result arrives');
+  assert.equal(res.slot, 'casino-lounge-slot-1', 'the result names its machine');
+  const fx = await waitFor(
+    () => b.client.msgs.filter(m => m.type === 'slot-fx' && m.slot === res.slot).pop(),
+    5000, 'the cabinet fx broadcast reaches the room');
+  assert.deepEqual(fx.reels, res.reels, 'fx reels match the result');
+  a.client.ws.close();
+  b.client.ws.close();
+});

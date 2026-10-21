@@ -144,6 +144,15 @@ function seat(mapId, n, tx, ty, dir, kind) {
   return { id: `${mapId}-seat-${n}`, x: cx(tx), y: cy(ty), dir, kind };
 }
 /**
+ * A fishing spot (v1.1.1): a shore tile with a built-in rod stand.
+ * Stand on it and interact (E) to cast; `dir` faces the water (the
+ * avatar turns that way while the line is out). Fishing data lives
+ * in src/fishing.js; this is only the geography.
+ */
+function fishSpot(tx, ty, dir) {
+  return { x: cx(tx), y: cy(ty), dir };
+}
+/**
  * A static dressing prop (Phase 10, the Warm Home pass): hearths,
  * lamps, lanterns, string lights and rugs baked into public maps.
  * Purely visual (the client renders them; hearths/lamps/lights join
@@ -209,7 +218,7 @@ function buildGateway() {
       building(57, 33, 12, 9, 'Gateway Café', 'cafe'),
     ],
     doors: [
-      door(62, 32, 'gateway-cafe', { x: cx(10), y: cy(10) }, 'Gateway Café'),
+      door(62, 32, 'gateway-cafe', { x: cx(13), y: cy(12) }, 'Gateway Café'),
       // Phase 10: your own front door in the world — a real door on
       // the west block's east face. Stepping through takes you home
       // (game.js routes the 'studio:self' target to the studio system).
@@ -254,46 +263,52 @@ function buildGateway() {
 }
 
 // ------------------------------------------------------------------
-// GATEWAY CAFÉ — a small interior off the hub: serving counter along
-// the north wall, five café tables with a chair each side, and a
-// door on the south wall back to the Gateway.
+// GATEWAY CAFÉ — an interior off the hub: serving counter along the
+// north wall, THREE 4-seat tables (a chair on every side, facing
+// in), a hearth corner on the west wall, and a door on the south
+// wall back to the Gateway.
+// v1.1.1: enlarged 20x13 -> 26x16 — the v1.1 furniture scale-up in
+// the old footprint read stuffed. Table groups now keep >=3 clear
+// tiles between them on every side.
 // ------------------------------------------------------------------
 function buildCafe() {
-  const W = 20, H = 13;
+  const W = 26, H = 16;
   const g = makeGrid(W, H, '.');
   setBorder(g, W, H, '#');
-  setRect(g, 2, 2, 16, 1, '#');   // serving counter
-  g[10][2] = '|'; g[10][17] = '|'; // plants
-  g[5][1] = '#';                   // Phase 10: the hearth niche (west wall)
+  setRect(g, 3, 2, 20, 1, '#');   // serving counter (north wall)
+  g[13][2] = '|'; g[13][23] = '|'; // plants, south corners
+  g[7][1] = '#';                   // Phase 10: the hearth niche (west wall, centred)
   const id = 'gateway-cafe';
-  // Tables at tiles (4,5) (9,5) (14,5) (6,10) (12,10); chairs flank
-  // them. (v1.1: the south row dropped a tile — more air between the
-  // two rows now the furniture draws at character scale.)
-  const chairPairs = [
-    [3, 5, 'right'], [5, 5, 'left'], [8, 5, 'right'], [10, 5, 'left'],
-    [13, 5, 'right'], [15, 5, 'left'], [5, 10, 'right'], [7, 10, 'left'],
-    [11, 10, 'right'], [13, 10, 'left'],
-  ];
+  // 4-seat tables at (7,6), (15,6), (11,12): one chair per side.
+  const tableChairs = [];
+  for (const [tx, ty] of [[7, 6], [15, 6], [11, 12]]) {
+    tableChairs.push(
+      [tx, ty - 1, 'down'], [tx, ty + 1, 'up'],
+      [tx - 1, ty, 'right'], [tx + 1, ty, 'left'],
+    );
+  }
   return {
     id, name: 'Gateway Café', tiles: gridOf(g), tileSize: TILE,
     floor: '#4a3226', floorAlt: '#443022', wall: '#2e1d12',
-    spawn: { x: cx(10), y: cy(10) },
+    spawn: { x: cx(13), y: cy(12) },
     gateways: [],
     doors: [
-      door(9, 11, 'the-gateway', { x: cx(62), y: cy(31) }, 'The Gateway', 2),
+      door(12, 14, 'the-gateway', { x: cx(62), y: cy(31) }, 'The Gateway', 2),
     ],
     props: [
-      prop('hearth', 1, 5),
-      prop('stringlights', 10, 3),
-      prop('lantern', 18, 4),
+      prop('hearth', 1, 7),
+      prop('stringlights', 13, 3),
+      prop('lantern', 23, 4),
+      // The tables themselves (v1.1.1): drawn furniture, chairs are seats.
+      prop('table', 7, 6), prop('table', 15, 6), prop('table', 11, 12),
     ],
-    areas: [area('The Hearth Corner', 0, 3, 7, 6), area('The Café', 1, 1, 18, 11)],
+    areas: [area('The Hearth Corner', 0, 5, 8, 6), area('The Café', 1, 1, 24, 14)],
     seats: [
-      ...chairPairs.map(([x, y, dir], i) => seat(id, i + 1, x, y, dir, 'cafe')),
+      ...tableChairs.map(([x, y, dir], i) => seat(id, i + 1, x, y, dir, 'chair')),
       // Phase 10: hearth-side seats, facing the fire (west).
-      seat(id, 11, 2, 4, 'left', 'chair'),
-      seat(id, 12, 2, 5, 'left', 'sofa'),
       seat(id, 13, 2, 6, 'left', 'chair'),
+      seat(id, 14, 2, 7, 'left', 'sofa'),
+      seat(id, 15, 2, 8, 'left', 'chair'),
     ],
   };
 }
@@ -778,7 +793,13 @@ function buildVerdantHollow() {
   ]) g[y][x] = 'T';
   setRect(g, 44, 40, 23, 1, 'p');   // path west from the gatehouse
   setRect(g, 43, 29, 1, 11, 'p');   // path north to the pond shore
-  setRect(g, 30, 37, 10, 5, '%');
+  // v1.1.1: the pond moved south AND grew (was 10x5 at y37-41 in
+  // v1.1, then 10x4 at y40): the v1.1 audience grid's back row (ty36)
+  // sat one tile above the old waterline and rendered as sitting in
+  // the shallows. Water now spans x26-43, y40-43 (72 tiles), leaving
+  // 3 clear tiles (37-39) behind the back row — and it's a proper
+  // fishing pond now (see the fishing spots on its shores below).
+  setRect(g, 26, 40, 18, 4, '%');
   g[23][32] = '|'; g[23][43] = '|'; // stage speakers (v1.1: front corners)
   g[15][28] = 'P';                  // the Great Tree's root planter (hero)
   gatehouseWalls(g, 66, 43, 'S');
@@ -796,11 +817,20 @@ function buildVerdantHollow() {
       prop('rug', 36, 28), prop('lamp', 33, 28), prop('stringlights', 36, 19),
       // Flower drifts around the clearing and the pond shore.
       prop('flowers', 31, 24), prop('flowers', 41, 24), prop('flowers', 36, 33), prop('flowers', 60, 38),
+      // v1.1.1: rod stands at the fishing spots (pond shores).
+      prop('fishingpole', 28, 39), prop('fishingpole', 33, 39), prop('fishingpole', 38, 39), prop('fishingpole', 42, 39),
+      prop('fishingpole', 25, 41), prop('fishingpole', 44, 41),
+    ],
+    // v1.1.1: six fishing spots — four on the north shore facing the
+    // water, one each on the west and east shores.
+    fishing: [
+      fishSpot(28, 39, 'down'), fishSpot(33, 39, 'down'), fishSpot(38, 39, 'down'), fishSpot(42, 39, 'down'),
+      fishSpot(25, 41, 'right'), fishSpot(44, 41, 'left'),
     ],
     stage: stageDef(33, 21, 'S'),
     areas: [
       area('The Clearing', 29, 17, 14, 12),
-      area('The Pond Shore', 28, 35, 14, 8),
+      area('The Pond Shore', 24, 37, 20, 8),
     ],
     seats: [
       seat(id, 1, 28, 25, 'up', 'bench'),
@@ -897,6 +927,7 @@ function clientMap(map) {
     seats: (map.seats || []).map(s => ({ id: s.id, x: s.x, y: s.y, dir: s.dir, kind: s.kind })),
     areas: (map.areas || []).map(a => ({ ...a })),
     hookahs: (map.hookahs || []).map(h => ({ x: h.x, y: h.y })),
+    fishing: (map.fishing || []).map(f => ({ x: f.x, y: f.y, dir: f.dir })),
     stage: map.stage ? {
       x: map.stage.x, y: map.stage.y, w: map.stage.w, h: map.stage.h,
       pit: map.stage.pit || null,

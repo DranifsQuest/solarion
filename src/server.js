@@ -437,10 +437,20 @@ wss.on('connection', (ws, req) => {
         game.handleChat(p, msg.text);
         break;
       case 'interact':
-        // Phase B sitting. Poker seats are managed by the casino
-        // panel — a poker-seated player stands from there, not here.
+        // Sitting. Poker GAME seats are managed by the casino (the
+        // tray's Stand / Cash out) — but v1.1.1: E at a table first
+        // sits you down as a spectator and pops the buy-in offer.
         if (casino.isSeated(p.userId)) {
-          game.send(p, { type: 'notice', text: 'Use Stand / Cash out in the casino panel to leave the poker table.' });
+          game.send(p, { type: 'notice', text: 'You hold chips at a poker table — use Stand / Cash out in the tray to leave.' });
+        } else if (p.seated && p.seated.kind === 'poker-pending') {
+          casino.clearPending(p);
+          game.handleInteract(p); // stand back up from the spectator chair
+        } else if (!p.seated
+          && !game.seatsInScene(p).some((s2) => Math.hypot(s2.x - p.x, s2.y - p.y) <= 52)
+          && casino.offerSeat(p)) {
+          // sat down at a poker table — the buy-in offer is on its way.
+          // (A real seat under your feet — a slot stool, a bar stool —
+          // wins over the table offer: poker's reach is wide.)
         } else {
           game.handleInteract(p);
         }
@@ -534,6 +544,16 @@ wss.on('connection', (ws, req) => {
         // Phase 5: strict — only the numbers 1 and -1 are votes.
         // Anything else (objects, strings, 0, 999) is dropped, not coerced.
         if (msg.value === 1 || msg.value === -1) stages.handleVote(p, msg.value);
+        break;
+      case 'debug-fish':
+        // TEST MODE ONLY (v1.1.1): pin the next cast's outcome and/or
+        // fast-forward a live cast, so the fishing suite can assert
+        // the catch flow deterministically (dead in production).
+        if (TEST_MODE) {
+          if (msg.op === 'force-catch') p.fishForce = 'catch';
+          else if (msg.op === 'force-miss') p.fishForce = 'miss';
+          else if (msg.op === 'resolve-now' && p.casting) p.casting.until = 1;
+        }
         break;
       case 'debug-teleport':
         if (TEST_MODE && Number.isFinite(msg.x) && Number.isFinite(msg.y) &&
