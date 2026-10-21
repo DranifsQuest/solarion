@@ -217,7 +217,7 @@ const CATALOG = [
   // Phase 9 — ritual furniture: trophies are EARNED (25 / 100 lifetime
   // up-votes on one mix, src/records.js), never sold; the chart
   // poster is a normal purchase that opens the Top-40 in your home.
-  { id: 'platinum-record', name: 'Platinum Record', price: 0,  type: 'wall',    cat: 'decor',   color: '#e5e4e2', accent: '#9aa5b1', icon: '💿', footprint: 1, awardOnly: true },
+  { id: 'platinum-record', name: 'Platinum Record', price: 1000,  type: 'wall',    cat: 'decor',   color: '#e5e4e2', accent: '#9aa5b1', icon: '💿', footprint: 1, awardOnly: true },
   { id: 'chart-poster',  name: 'Top-40 Chart Poster', price: 60, type: 'wall',   cat: 'decor',   color: '#22304a', accent: '#ffd23f', icon: '📊', footprint: 1 },
   { id: 'neon-sign',     name: 'Neon Sign',        price: 180, type: 'wall',    cat: 'decor',   color: '#ff2e88', accent: '#22d3ee', icon: '✨', footprint: 1 },
   { id: 'dispenser',     name: 'Drink Dispenser',  price: 150, type: 'machine', cat: 'decor',   color: '#e63946', accent: '#a62633', icon: '🥤', footprint: 1 },
