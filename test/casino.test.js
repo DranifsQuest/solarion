@@ -255,8 +255,8 @@ test('poker: full 2-player hand start -> showdown, chip conservation, private ho
   await sitAt(a, T1, 'N');
   await sitAt(b, T1, 'S');
   // Buy-in moved 100z from each balance into chips (server-side).
-  assert.equal(await balanceOf(a), 0, 'A balance debited by buy-in');
-  assert.equal(await balanceOf(b), 0, 'B balance debited by buy-in');
+  assert.equal(await balanceOf(a), 4800, 'A balance debited by buy-in (200z max stack)');
+  assert.equal(await balanceOf(b), 4800, 'B balance debited by buy-in (200z max stack)');
 
   // Hole cards are dealt privately: each player gets exactly one
   // poker-cards message, and the two hands share no card.
@@ -285,7 +285,7 @@ test('poker: full 2-player hand start -> showdown, chip conservation, private ho
   }, 15000, 'table back to idle after hand');
   const total = (await balanceOf(a)) + seatChips(idle, a.name)
     + (await balanceOf(b)) + seatChips(idle, b.name);
-  assert.equal(total, 200, 'chip conservation: 200z across balances + stacks');
+  assert.equal(total, 10000, 'chip conservation: two 200z stacks + 4,800z balances');
   a.client.ws.close(); b.client.ws.close();
 });
 
@@ -448,7 +448,7 @@ test('slots: bet sizes, exact balance math, insufficient funds, cooldown, proxim
   u.client.send({ type: 'interact' });
   await waitFor(() => u.client.msgs.filter(m => m.type === 'sit-state' && m.seated).pop(),
     5000, 'seated at slot machine 1');
-  let expected = 100;
+  let expected = 5000; // v1.1 welcome bonus starting balance
   for (const bet of [5, 10, 25]) {
     u.client.msgs.length = 0;
     u.client.send({ type: 'slots', action: 'spin', bet });
