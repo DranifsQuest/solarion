@@ -306,8 +306,6 @@ class Game {
   playersInMap(sceneId) {
     const out = [];
     for (const p of this.players.values()) if (p.mapId === sceneId) out.push(this.publicPlayer(p));
-    // Phase 9: ambient NPCs ride the same pipeline.
-    if (this.npcProvider) out.push(...this.npcProvider(sceneId));
     return out;
   }
 
@@ -321,7 +319,6 @@ class Game {
     }
     for (const inScene of byScene.values()) {
       const players = inScene.map(p => this.publicPlayer(p));
-      if (this.npcProvider) players.push(...this.npcProvider(inScene[0].mapId));
       for (const p of inScene) this.send(p, { type: 'snapshot', players });
     }
   }

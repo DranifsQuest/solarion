@@ -140,7 +140,6 @@ const Social = {
     let best = null, bestD = 34;
     for (const p of list) {
       if (me && p.id === me.id) continue;
-      if (p.npc) continue; // locals are scenery, not profiles
       const rp = (typeof renderPos !== 'undefined') ? renderPos.get(p.id) : null;
       const px = rp ? rp.x : p.x, py = rp ? rp.y : p.y;
       const d = Math.hypot(px - w.x, py - w.y);

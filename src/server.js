@@ -104,11 +104,6 @@ const studios = new StudioSystem(game);
 game.studioSystem = studios; // Phase 10: portal routing (home door / studio door exit)
 // Phase 9: friends / navigator / profiles (needs studios for home travel).
 const social = new SocialSystem(game, studios);
-// Phase 9: ambient NPCs ride the snapshot pipeline via npcProvider.
-const { NpcSystem } = require('./npcs');
-const npcs = new NpcSystem(game);
-game.npcProvider = (sceneId) => npcs.forScene(sceneId);
-npcs.start();
 // Phase 9: trophy fanfare — the record lands in the performer's home
 // inventory; tell them (and refresh the inventory if they're home).
 stages.onTrophy = (userId, kind, mixName) => {

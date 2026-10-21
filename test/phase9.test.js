@@ -292,25 +292,30 @@ test('casino social: table chat reaches the table only; jackpot accrues 2% per b
 });
 
 // ------------------------------------------------------------ item 13: ambient life
+// Lane B (post-Phase 10): the wandering NPC locals were removed at
+// Zan's direction — snapshots must contain ONLY real players. The
+// 12-minute world clock in hello stays (day/night is not NPC-driven).
 
-test('ambient life: NPCs wander the Gateway snapshots; the world clock ships in hello', { timeout: 60000 }, async () => {
+test('ambient life: no NPCs ride snapshots anymore; the world clock ships in hello', { timeout: 60000 }, async () => {
   const u = await makeUser('ambient_p9');
   assert.ok(u.client.hello.dayCycle && u.client.hello.dayCycle.periodMs === 720000, 'hello carries the 12-minute world clock');
-  const withNpc = await waitFor(() => {
-    const s = u.client.msgs.filter(m => m.type === 'snapshot').pop();
-    return s && s.players.some(p => p.npc) ? s : null;
-  }, 8000, 'snapshot includes NPCs');
-  const maple = withNpc.players.find(p => p.npc && p.name === 'Maple the Guide');
-  assert.ok(maple, 'Maple the Guide is on duty');
-  assert.ok(maple.gender && maple.hair_style, 'NPC carries a full look');
-  // She actually wanders: her position changes over a few seconds.
-  const p0 = { x: maple.x, y: maple.y };
-  const moved = await waitFor(() => {
-    const s = u.client.msgs.filter(m => m.type === 'snapshot').pop();
-    const n = s && s.players.find(p => p.npc && p.name === 'Maple the Guide');
-    return n && Math.hypot(n.x - p0.x, n.y - p0.y) > 24 ? n : null;
-  }, 30000, 'Maple wanders her route');
-  assert.ok(moved);
+  // Give any (hypothetical) NPC system ample time to show itself:
+  // collect snapshots over several seconds and require every entry
+  // in every one of them to be a real player.
+  const seen = await waitFor(() => {
+    const snaps = u.client.msgs.filter(m => m.type === 'snapshot');
+    return snaps.length >= 5 ? snaps : null;
+  }, 15000, 'a run of snapshots to inspect');
+  assert.ok(seen.length >= 5);
+  for (const s of seen) {
+    assert.ok(s.players.length >= 1, 'snapshot has at least the observer');
+    for (const p of s.players) {
+      assert.ok(!p.npc, `snapshot entry ${p.name} must not be flagged npc`);
+      assert.ok(!String(p.id).startsWith('npc:'), `snapshot entry ${p.id} must not be an NPC id`);
+    }
+  }
+  const names = seen[seen.length - 1].players.map(p => p.name);
+  assert.ok(!names.includes('Maple the Guide'), 'Maple the Guide is off duty for good');
   u.client.ws.close();
 });
 

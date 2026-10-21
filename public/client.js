@@ -446,8 +446,8 @@ function beginTransfer(m) {
     interior: Boolean(m.map.studio) || INTERIOR_IDS.has(m.map.id),
   };
   keys = { up: false, down: false, left: false, right: false };
-  lastSentKeys = JSON.stringify(keys);
-  send({ type: 'input', keys });
+  lastSentKeys = JSON.stringify(wireKeys());
+  send({ type: 'input', keys: wireKeys() });
   // Phase 10: the load screen is a doorway now — warm wood, a lamp,
   // and the destination's name like a welcome sign over the lintel.
   $('loadText').textContent = `🚪 ${m.map.name}`;
@@ -589,6 +589,17 @@ function handle(m) {
 }
 
 // ------------------------------------------------------------------ input
+// `keys` holds SCREEN-space intent — the directions the player
+// actually pressed (keyboard and touch joystick both write here).
+// The wire carries WORLD-axis keys for the server's walker, so every
+// send converts through the inverse iso projection
+// (SolarionInput.screenToWorldKeys in input-guard.js): pressing
+// "up" moves the avatar up the SCREEN, not up a world diagonal.
+function wireKeys() {
+  return (window.SolarionInput && window.SolarionInput.screenToWorldKeys)
+    ? window.SolarionInput.screenToWorldKeys(keys)
+    : keys;
+}
 const KEYMAP = {
   ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down',
   ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right',
@@ -609,8 +620,9 @@ addEventListener('keyup', (e) => {
 });
 setInterval(() => {
   if (transfer) return; // input locked during transfer
-  const s = JSON.stringify(keys);
-  if (s !== lastSentKeys) { lastSentKeys = s; send({ type: 'input', keys }); }
+  const wk = wireKeys();
+  const s = JSON.stringify(wk);
+  if (s !== lastSentKeys) { lastSentKeys = s; send({ type: 'input', keys: wk }); }
 }, 50);
 
 $('sitBtn').onclick = () => { if (!transfer) send({ type: 'interact' }); };
@@ -706,6 +718,7 @@ $('chatForm').addEventListener('submit', (e) => {
 // ------------------------------------------------------------------ iso render
 // Projection: world px (x, y) -> screen px. 2:1 diamonds, Coke-style.
 const ZOOM = 0.72;
+const CHAR_SCALE = 1.5; // playtest: characters draw 1.5x in-world (draw-time only — sprite generation, collision and the creation preview are untouched)
 const WALL_H = 20; // screen px of wall extrusion
 function proj(x, y) {
   return [(x - y) * ZOOM, (x + y) * ZOOM * 0.5];
@@ -1234,9 +1247,9 @@ function draw() {
     // Phase 9: dancing is a whole-body bounce (anywhere, anytime).
     if (p.emote === 'dance') bob += Math.abs(Math.sin(now / 130 + p.id * 1.3)) * 6;
 
-    // soft ground shadow
+    // soft ground shadow (scales with the character footprint)
     ctx.beginPath();
-    ctx.ellipse(sx, sy, 13, 6, 0, 0, Math.PI * 2);
+    ctx.ellipse(sx, sy, 13 * CHAR_SCALE, 6 * CHAR_SCALE, 0, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(0,0,0,.30)';
     ctx.fill();
 
@@ -1246,6 +1259,11 @@ function draw() {
     // players get the seated leg variant and sit a touch lower.
     const spr = Sprites.makeSprite(p, dirKey, p.seated ? { seated: true } : undefined);
     const sw = spr.width, sh = spr.height;
+    // Lane B playtest: the on-screen size is CHAR_SCALE x the sprite
+    // canvas. The feet stay anchored (drawImage bottom sits at the
+    // same +4 as before), and every head-anchored overlay below uses
+    // dh so nameplates, bubbles and glyphs ride the taller sprite.
+    const dw = sw * CHAR_SCALE, dh = sh * CHAR_SCALE;
     // Phase B amendment — drunk sway (render-side mirror of the
     // server wobble) and the passed-out fallen pose.
     const sway = (!p.fallen && p.drinks >= 2)
@@ -1255,11 +1273,11 @@ function draw() {
     if (p.fallen) {
       ctx.translate(sx, sy - 3);
       ctx.rotate(-1.45); // flat on the floor, visible to everyone
-      ctx.drawImage(spr, -sw / 2, -sh + 8);
+      ctx.drawImage(spr, -dw / 2, -dh + 8, dw, dh);
     } else {
       ctx.translate(sx + sway, sy - bob + (p.seated ? 3 : 0));
       if (p.dir === 'right') ctx.scale(-1, 1); // side sprite faces left natively; flip for right
-      ctx.drawImage(spr, -sw / 2, -sh + 4);
+      ctx.drawImage(spr, -dw / 2, -dh + 4, dw, dh);
     }
     ctx.restore();
 
@@ -1267,7 +1285,7 @@ function draw() {
     if (p.performing) {
       ctx.font = '15px system-ui';
       ctx.textAlign = 'center';
-      ctx.fillText('🎤', sx + 13, sy - 12 - bob);
+      ctx.fillText('🎤', sx + 13 * CHAR_SCALE, sy - 12 * CHAR_SCALE - bob);
     }
 
     // Phase B amendment — drink bubbles float up around drinkers
@@ -1275,8 +1293,8 @@ function draw() {
     if (p.drinks > 0 && !p.fallen) {
       for (let i = 0; i < 3; i++) {
         const ph = ((now / 950) + i * 0.33 + (p.id % 7) * 0.13) % 1;
-        const bx = sx + Math.sin(ph * 4 + p.id + i * 2) * 9;
-        const by = sy - sh - 2 - ph * 26;
+        const bx = sx + Math.sin(ph * 4 + p.id + i * 2) * 9 * CHAR_SCALE;
+        const by = sy - dh - 2 - ph * 26;
         ctx.beginPath();
         ctx.arc(bx, by, 1.8 + ph * 2.6, 0, Math.PI * 2);
         ctx.strokeStyle = `rgba(180,220,255,${0.75 * (1 - ph * 0.6)})`;
@@ -1287,7 +1305,7 @@ function draw() {
     if (p.hippy) {
       ctx.font = '14px system-ui';
       ctx.textAlign = 'center';
-      ctx.fillText('☮️', sx, sy - sh - 20 - bob);
+      ctx.fillText('☮️', sx, sy - dh - 20 - bob);
     }
 
     // Phase 9 — emote glyph floats beside the name while it lasts.
@@ -1297,7 +1315,7 @@ function draw() {
         ctx.font = '15px system-ui';
         ctx.textAlign = 'center';
         const wob = p.emote === 'wave' ? Math.sin(now / 90 + p.id) * 3 : 0;
-        ctx.fillText(glyph, sx + 16 + wob, sy - sh - 8 - bob);
+        ctx.fillText(glyph, sx + 16 + wob, sy - dh - 8 - bob);
       }
     }
 
@@ -1307,8 +1325,8 @@ function draw() {
     ctx.fillStyle = '#fff';
     ctx.strokeStyle = 'rgba(0,0,0,.65)';
     ctx.lineWidth = 3;
-    ctx.strokeText(p.name, sx, sy - sh - 6 - bob);
-    ctx.fillText(p.name, sx, sy - sh - 6 - bob);
+    ctx.strokeText(p.name, sx, sy - dh - 6 - bob);
+    ctx.fillText(p.name, sx, sy - dh - 6 - bob);
 
     // speech bubble (Phase 9: fades out over its last 900ms)
     const b = bubbles.get(p.id);
@@ -1320,7 +1338,7 @@ function draw() {
       ctx.font = '12px system-ui';
       const text = b.text.slice(0, 30);
       const w = Math.min(ctx.measureText(text).width + 16, 200);
-      const bx = sx - w / 2, by = sy - sh - 40 - bob;
+      const bx = sx - w / 2, by = sy - dh - 40 - bob;
       ctx.fillStyle = 'rgba(255,255,255,.96)';
       ctx.beginPath();
       ctx.roundRect(bx, by, w, 24, 8);

@@ -17,7 +17,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const { isTextEntryTarget } = require('../public/input-guard.js');
+const { isTextEntryTarget, screenToWorldKeys } = require('../public/input-guard.js');
 
 const el = (tagName, type, extra) => ({ tagName, type, ...(extra || {}) });
 
@@ -110,4 +110,87 @@ test('wiring: client.js consults the guard before any preventDefault; index.html
   const guardTag = html.indexOf('input-guard.js');
   const clientTag = html.indexOf('client.js');
   assert.ok(guardTag >= 0 && clientTag > guardTag, 'index.html loads input-guard.js before client.js');
+});
+
+// ---------------------------------------------------------- movement mapping
+// Regression pin for the second playtest bug: pressing "up" moved
+// the avatar diagonally on screen. The server walks WORLD axes; the
+// client renders through proj(x, y) = [(x - y), (x + y) * 0.5] (the
+// ZOOM factor cancels). screenToWorldKeys must turn each pressed
+// SCREEN direction into the world key set whose projected velocity
+// points that way on screen.
+
+const K = (up, down, left, right) => ({ up: !!up, down: !!down, left: !!left, right: !!right });
+const NONE = K(0, 0, 0, 0);
+
+/** What the server does with a sent key set (src/game.js tick). */
+function worldVelocity(sent) {
+  let dx = 0, dy = 0;
+  if (sent.left) dx -= 1;
+  if (sent.right) dx += 1;
+  if (sent.up) dy -= 1;
+  if (sent.down) dy += 1;
+  const len = Math.hypot(dx, dy) || 1;
+  return [dx / len, dy / len];
+}
+/** The client's projection (public/client.js proj, ZOOM dropped). */
+function proj([x, y]) { return [x - y, (x + y) * 0.5]; }
+/** Screen velocity direction (unit vector) for a pressed key set. */
+function screenVelocity(screenKeys) {
+  const [sx, sy] = proj(worldVelocity(screenToWorldKeys(screenKeys)));
+  const len = Math.hypot(sx, sy) || 1;
+  return [sx / len, sy / len];
+}
+
+test('movement: each cardinal key produces exactly that SCREEN direction', () => {
+  // [label, pressed, expected screen velocity sign pattern]
+  const cases = [
+    ['up',    K(1, 0, 0, 0), [0, -1]],
+    ['down',  K(0, 1, 0, 0), [0, 1]],
+    ['left',  K(0, 0, 1, 0), [-1, 0]],
+    ['right', K(0, 0, 0, 1), [1, 0]],
+  ];
+  for (const [label, pressed, [ex, ey]] of cases) {
+    const [sx, sy] = screenVelocity(pressed);
+    assert.ok(Math.abs(sx - ex) < 1e-9 && Math.abs(sy - ey) < 1e-9,
+      `${label}: screen velocity (${sx.toFixed(3)}, ${sy.toFixed(3)}) must be exactly (${ex}, ${ey}) — cardinal on screen, not a diagonal`);
+  }
+});
+
+test('movement: the raw key sets sent to the server are the iso-compensated ones', () => {
+  assert.deepEqual(screenToWorldKeys(K(1, 0, 0, 0)), K(1, 0, 1, 0), 'screen up = world up+left');
+  assert.deepEqual(screenToWorldKeys(K(0, 1, 0, 0)), K(0, 1, 0, 1), 'screen down = world down+right');
+  assert.deepEqual(screenToWorldKeys(K(0, 0, 1, 0)), K(0, 1, 1, 0), 'screen left = world down+left');
+  assert.deepEqual(screenToWorldKeys(K(0, 0, 0, 1)), K(1, 0, 0, 1), 'screen right = world up+right');
+});
+
+test('movement: two keys give a screen diagonal in the right quadrant (iso edge direction)', () => {
+  const cases = [
+    ['up+right',    K(1, 0, 0, 1), [1, -1]],
+    ['up+left',     K(1, 0, 1, 0), [-1, -1]],
+    ['down+right',  K(0, 1, 0, 1), [1, 1]],
+    ['down+left',   K(0, 1, 1, 0), [-1, 1]],
+  ];
+  for (const [label, pressed, [qx, qy]] of cases) {
+    const [sx, sy] = screenVelocity(pressed);
+    assert.ok(Math.sign(sx) === qx && Math.sign(sy) === qy && sx !== 0 && sy !== 0,
+      `${label}: screen velocity (${sx.toFixed(3)}, ${sy.toFixed(3)}) must be a diagonal in quadrant (${qx}, ${qy})`);
+  }
+});
+
+test('movement: opposing keys cancel and garbage input is inert', () => {
+  assert.deepEqual(screenToWorldKeys(K(1, 1, 0, 0)), NONE, 'up+down cancels');
+  assert.deepEqual(screenToWorldKeys(K(0, 0, 1, 1)), NONE, 'left+right cancels');
+  assert.deepEqual(screenToWorldKeys(K(1, 1, 1, 1)), NONE, 'all four cancel');
+  assert.deepEqual(screenToWorldKeys(NONE), NONE, 'no keys -> no keys');
+  assert.deepEqual(screenToWorldKeys(null), NONE, 'null is inert');
+  assert.deepEqual(screenToWorldKeys(undefined), NONE, 'undefined is inert');
+  assert.deepEqual(screenToWorldKeys({}), NONE, 'empty object is inert');
+});
+
+test('movement wiring: client.js converts through screenToWorldKeys at send time', () => {
+  const clientSrc = fs.readFileSync(path.join(__dirname, '..', 'public', 'client.js'), 'utf8');
+  assert.ok(clientSrc.includes('screenToWorldKeys'), 'client.js uses the shared mapping');
+  assert.ok(clientSrc.includes("send({ type: 'input', keys: wk })"), 'the send interval ships the converted keys');
+  assert.ok(!clientSrc.includes("send({ type: 'input', keys })"), 'no raw screen-intent key set is ever sent');
 });
