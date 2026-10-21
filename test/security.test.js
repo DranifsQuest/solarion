@@ -343,6 +343,11 @@ test('vote race: hammered duplicate votes count once per voter, payout exact', {
     data: { name: 'Race Mix', bpm: 160, bars: 2, tracks: [{ loopId: 'pop-drums-1', startBar: 0 }] },
   });
   const saved = await waitFor(() => perf.client.msgs.filter(m => m.type === 'mix-saved').pop(), 5000, 'mix saved');
+  // Phase 9 ritual: no CD, no stage — burn one before joining.
+  perf.client.send({ type: 'buy-blanks' });
+  await waitFor(() => perf.client.msgs.filter(m => m.type === 'cds' && m.blanks >= 10).pop(), 5000, 'blanks bought');
+  perf.client.send({ type: 'burn-cd', mixId: saved.mix.id });
+  await waitFor(() => perf.client.msgs.filter(m => m.type === 'cds' && m.cds.some(cd => cd.mixId === saved.mix.id)).pop(), 5000, 'CD burned');
   await toBay(perf); await toBay(v1); await toBay(v2);
   perf.client.send({ type: 'stage-join', mixId: saved.mix.id });
   await waitFor(() => v1.client.msgs.filter(m => m.type === 'performance-start').pop(), 8000, 'performance started');
