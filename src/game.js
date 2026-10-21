@@ -30,6 +30,9 @@ function studioOf(sceneId) {
   return require('./studio').studioMapForId(sceneId);
 }
 
+const PLAYER_RADIUS = 12;
+const SPEED = 175;              // px per second
+const RUN_MULT = 1.55;          // Phase 9: run-toggle speed multiplier
 // Phase 9 — the world clock: a 12-minute day/night cycle, anchored
 // to a fixed epoch so every client (and the server) agrees on the
 // phase from the payload alone. Phase 0.0 = sunrise, 0.5 = sunset.
@@ -369,7 +372,7 @@ class Game {
 
   /** { type:'emote', emote } — wave / dance / laugh / thumbsup. */
   handleEmote(p, name) {
-    if (typeof name !== 'string' || !(name in EMOTES)) return;
+    if (typeof name !== 'string' || !Object.hasOwn(EMOTES, name)) return;
     if (p.passedOutUntil && Date.now() < p.passedOutUntil) return;
     p.emote = { name, until: Date.now() + EMOTES[name] };
     this.broadcastToMap(p.mapId, { type: 'emote', userId: p.userId, emote: name });
