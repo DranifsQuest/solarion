@@ -205,7 +205,7 @@ function drawHearthAt(x, y, seed) {
     const fx = x + Math.sin(t / 130 + seed * 3 + i * 2.2) * 1.6;
     const fh = h * (0.85 + 0.3 * Math.abs(Math.sin(t / 170 + seed + i * 1.7)));
     ctx.beginPath();
-    ctx.ellipse(fx, y - 4 - fh / 2, w, fh / 2, 0, Math.PI * 2);
+    ctx.ellipse(fx, y - 4 - fh / 2, w, fh / 2, 0, 0, Math.PI * 2);
     ctx.fillStyle = col; ctx.fill();
   };
   tongue(0, 7.5, 17, 'rgba(255,110,26,.9)');
@@ -366,7 +366,7 @@ function drawForgeAt(x, y, seed) {
     const fx = x + Math.sin(t / 130 + seed * 3 + i * 2.2) * 1.4;
     const fh = h * (0.85 + 0.3 * Math.abs(Math.sin(t / 170 + seed + i * 1.7)));
     ctx.beginPath();
-    ctx.ellipse(fx, y - 7 - fh / 2, w, fh / 2, 0, Math.PI * 2);
+    ctx.ellipse(fx, y - 7 - fh / 2, w, fh / 2, 0, 0, Math.PI * 2);
     ctx.fillStyle = col; ctx.fill();
   };
   tongue(0, 6.5, 13, 'rgba(255,110,26,.9)');
