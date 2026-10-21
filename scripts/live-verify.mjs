@@ -135,7 +135,7 @@ async function main() {
     try { const r = await fetch(`${BASE}/health`); if (r.ok) { health = await r.json(); break; } } catch (e) {}
     await sleep(3000);
   }
-  report('health: service answers, phase 8, ten maps', !!(health && health.ok && health.phase === 8 && Object.keys(health.maps).length === 10),
+  report('health: service answers, phase 9, ten maps', !!(health && health.ok && health.phase === 9 && Object.keys(health.maps).length === 10),
     health ? `uptime ${health.uptime_s}s, phase ${health.phase}` : 'no response in 150s');
   if (!health) return finish();
 
@@ -259,22 +259,33 @@ async function main() {
     report('gateway travel: A and B walked Gateway -> Solstice Bay', true, 'map switch confirmed for both');
   } catch (e) { report('gateway travel: A and B walked Gateway -> Solstice Bay', false, e.message); return finish(); }
 
-  // ---- music: save -> perform -> vote -> payout
+  // ---- music: save -> burn CD -> perform -> vote -> payout (Phase 9 ritual)
   try {
     A.client.send({ type: 'mix-save', slot: 1, data: SHORT_MIX });
     const saved = await waitFor(() => lastOf(A.client, 'mix-saved'), 6000, 'mix saved');
     const mixId = saved.mix.id;
+    A.client.send({ type: 'buy-blanks' });
+    await waitFor(() => lastOf(A.client, 'cds', c => c.blanks >= 10), 6000, 'blank pack bought');
+    A.client.send({ type: 'burn-cd', mixId });
+    await waitFor(() => lastOf(A.client, 'cds', c => c.cds.some(cd => cd.mixId === mixId)), 6000, 'CD burned');
     A.client.send({ type: 'stage-join', mixId });
     await waitFor(() => lastOf(B.client, 'stage-queue', q => q.queue.some(e => e.userId === A.id)), 8000, 'B sees queue');
     const startB = await waitFor(() => lastOf(B.client, 'performance-start', s => s.performerId === A.id), 8000, 'performance start');
     if (JSON.stringify(startB.mix) !== JSON.stringify(SHORT_MIX)) throw new Error('audience received different mix data');
+    // Phase 9 audibility (the hard requirement): the PERFORMER's own
+    // client receives the same performance-start, identical timing.
+    const startA = await waitFor(() => lastOf(A.client, 'performance-start', s => s.performerId === A.id), 8000, 'performer start');
+    if (startA.startAt !== startB.startAt || JSON.stringify(startA.mix) !== JSON.stringify(startB.mix)) {
+      throw new Error('performer start differs from audience start');
+    }
+    report('audibility: performer + audience receive identical performance-start', true, `startAt match, mix data match`);
     B.client.send({ type: 'vote', value: 1 });
     await waitFor(() => lastOf(B.client, 'vote-ack'), 6000, 'vote ack');
     const end = await waitFor(() => lastOf(B.client, 'performance-end'), 35000, 'performance end');
     if (end.up !== 1 || end.earned !== 5) throw new Error(`end up=${end.up} earned=${end.earned}`);
-    const z = await waitFor(() => lastOf(A.client, 'zcoins', z => z.zcoins === 105), 6000, 'A paid');
-    report('music: save -> stage perform -> audience vote -> +5z payout', true, `earned=${end.earned} A balance=${z.zcoins}`);
-  } catch (e) { report('music: save -> stage perform -> audience vote -> +5z payout', false, e.message); }
+    const z = await waitFor(() => lastOf(A.client, 'zcoins', z => z.zcoins === 85), 6000, 'A paid');
+    report('music: save -> burn CD -> stage perform -> audience vote -> +5z payout', true, `earned=${end.earned} A balance=100-20(pack)+5=${z.zcoins}`);
+  } catch (e) { report('music: save -> burn CD -> stage perform -> audience vote -> +5z payout', false, e.message); }
 
   // ---- casino: slots
   const balA = async () => (await api('/api/me', { token: A.token })).json.avatar.zcoins;
@@ -304,8 +315,9 @@ async function main() {
     await sleep(1600); // slot cooldown
   } catch (e) { report('casino slots: spin settles with exact balance math', false, e.message); }
 
-  // ---- casino bar: drinks cost exactly 5z; the 10th passes A out
-  // for a REAL 20 seconds, then A wakes with the count reset to 2.
+  // ---- casino bar: the day's first drink is the Phase 9 treat
+  // (free + 10z tip); drinks after cost exactly 5z; the 10th passes
+  // A out for a REAL 20 seconds, then A wakes with the count reset to 2.
   try {
     await walkTo(A.client, 176, 528); // bar patron spot (movement stands A up from the stool)
     const b0 = await balA();
@@ -313,12 +325,12 @@ async function main() {
     A.client.send({ type: 'buy-drink' });
     const vs1 = await waitFor(() => lastOf(A.client, 'vice-state'), 6000, 'vice-state after drink 1');
     if (vs1.drinks !== 1) throw new Error(`drinks after 1st = ${vs1.drinks}`);
-    if ((await balA()) !== b0 - 5) throw new Error(`first drink did not charge exactly 5z (${b0} -> ${await balA()})`);
-    report('casino bar: a drink costs exactly 5z and the count is server-tracked', true, `balance ${b0} -> ${b0 - 5}, drinks=1`);
+    if ((await balA()) !== b0 + 10) throw new Error(`first drink of the day was not the free treat +10z tip (${b0} -> ${await balA()})`);
+    report('casino bar: first drink of the day is free + a 10z house tip (Phase 9 ritual)', true, `balance ${b0} -> ${b0 + 10}, drinks=1`);
     for (let i = 0; i < 9; i++) A.client.send({ type: 'buy-drink' });
     const vsOut = await waitFor(() => lastOf(A.client, 'vice-state', v => v.passedOut), 8000, 'A passed out at drink 10');
     if (vsOut.drinks !== 10) throw new Error(`drinks at pass-out = ${vsOut.drinks}`);
-    if ((await balA()) !== b0 - 50) throw new Error(`ten drinks did not cost exactly 50z (${b0} -> ${await balA()})`);
+    if ((await balA()) !== b0 + 10 - 45) throw new Error(`ten drinks math wrong (${b0} -> ${await balA()}, want ${b0 - 35}: treat +10, then 9 x 5z)`);
     const fallen = await waitFor(() => {
       const s = lastOf(A.client, 'snapshot');
       const me2 = s && s.players.find(p => p.id === A.id);
@@ -574,14 +586,40 @@ async function main() {
     C.client.ws.close();
   } catch (e) { report('hookah lounge: 10 puffs at 5z turn C hippy for 20s (broadcast), then revert', false, e.message); }
 
+  // ---- Phase 9: friends + join-friend + navigator travel
+  try {
+    A.client.send({ type: 'friend-request', username: B.name });
+    await waitFor(() => lastOf(B.client, 'friend-request', f => f.fromId === A.id), 6000, 'B got friend request');
+    B.client.send({ type: 'friend-respond', userId: A.id, accept: true });
+    await waitFor(() => lastOf(A.client, 'friends', f => f.friends.some(u => u.id === B.id && u.online)), 6000, 'A sees B as online friend');
+    B.client.send({ type: 'join-friend', userId: A.id });
+    const jm = await waitFor(() => lastOf(B.client, 'map', m => m.map.id === 'the-gateway'), 10000, 'B joins A in the Gateway');
+    if (jm.transferMs !== 3000) throw new Error(`join transferMs=${jm.transferMs}`);
+    report('friends + join: request/accept, presence, B joins A via the 3s transfer', true, 'B landed in the-gateway with A');
+  } catch (e) { report('friends + join: request/accept, presence, B joins A via the 3s transfer', false, e.message); }
+
+  try {
+    B.client.send({ type: 'navigator' });
+    const nav = await waitFor(() => lastOf(B.client, 'navigator'), 6000, 'navigator payload');
+    if (!nav.places || nav.places.length !== 10) throw new Error(`places=${nav.places && nav.places.length}`);
+    const gw = nav.places.find(p => p.id === 'the-gateway');
+    if (!gw || gw.count < 2) throw new Error(`gateway count=${gw && gw.count} (A and B are there)`);
+    if (!gw.friends.includes(A.name)) throw new Error('navigator does not mark A as a friend in the Gateway');
+    B.client.send({ type: 'navigate', mapId: 'frosthaven' });
+    const nm = await waitFor(() => lastOf(B.client, 'map', m => m.map.id === 'frosthaven'), 10000, 'B navigates to Frosthaven');
+    if (nm.transferMs !== 3000) throw new Error(`navigate transferMs=${nm.transferMs}`);
+    report('navigator: 10 places with live counts + friend markers, click-to-travel works', true, 'B travelled Gateway -> Frosthaven from the panel');
+  } catch (e) { report('navigator: 10 places with live counts + friend markers, click-to-travel works', false, e.message); }
+
   // ---- abrupt-drop reconnect
   try {
-    // B is in the Casino Lounge; kill the socket without a close handshake.
+    // B is in Frosthaven after the navigator check; kill the socket
+    // without a close handshake.
     B.client.ws.terminate();
     await sleep(1200);
     const re = await connectClient(B.token);
     B.client = re;
-    if (re.hello.map.id !== 'casino-lounge') throw new Error(`respawn map ${re.hello.map.id}`);
+    if (re.hello.map.id !== 'frosthaven') throw new Error(`respawn map ${re.hello.map.id}`);
     const meB = await api('/api/me', { token: B.token });
     if (re.hello.zcoins !== meB.json.avatar.zcoins) throw new Error('balance mismatch after reconnect');
     report('reconnect: abrupt WS drop -> reconnect with same token, state intact', true, `respawned in ${re.hello.map.id}, zcoins=${re.hello.zcoins}`);

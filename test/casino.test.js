@@ -456,7 +456,13 @@ test('slots: bet sizes, exact balance math, insufficient funds, cooldown, proxim
     assert.equal(res.reels.length, 3);
     // Payout recomputed from the PORTED paytable must match exactly.
     const syms = res.reels.map(id => casino.SLOT_SYMBOLS.find(s => s.id === id));
-    assert.equal(res.win, casino.slotPayout(syms, bet), 'win matches ported paytable');
+    if (res.reels.every(id => id === 'sun')) {
+      // Phase 9: three Suns pays the progressive pool, not the 50× line.
+      assert.equal(res.win, res.jackpotWin, 'sun×3 pays the jackpot pool');
+      assert.ok(res.jackpotWin >= 250, 'jackpot pays at least the 250z reseed');
+    } else {
+      assert.equal(res.win, casino.slotPayout(syms, bet), 'win matches ported paytable');
+    }
     expected = expected - bet + res.win;
     assert.equal(res.zcoins, expected, 'server balance math exact');
     assert.equal(await balanceOf(u), expected, 'DB balance matches');

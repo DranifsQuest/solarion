@@ -183,7 +183,9 @@ async function main() {
   for (const b of slotBots) {
     timers.push(setInterval(() => { if (!b.closed) send(b, { type: 'slots', action: 'spin', bet: pick([5, 10, 25]) }); }, 2600));
   }
-  // Stage: join at +3s, audience votes when the performance starts.
+  // Stage: buy blanks + burn a CD (Phase 9 ritual), join at +3s,
+  // audience votes when the performance starts.
+  setTimeout(() => { if (savedMix) { send(performer, { type: 'buy-blanks' }); send(performer, { type: 'burn-cd', mixId: savedMix.mix.id }); } }, 1500);
   setTimeout(() => { if (savedMix) send(performer, { type: 'stage-join', mixId: savedMix.mix.id }); }, 3000);
   const stageWatcher = setInterval(() => {
     for (const b of audience) {

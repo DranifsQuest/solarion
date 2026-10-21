@@ -51,7 +51,7 @@ const { WebSocketServer } = require('ws');
 
 const auth = require('./auth');
 const appearance = require('./appearance');
-const { Game, localDay } = require('./game');
+const { Game, localDay, DAY_CYCLE } = require('./game');
 const { MAPS, clientMap } = require('./maps');
 const { q } = require('./db');
 const music = require('./music');
@@ -103,6 +103,11 @@ casino.initFromMaps(MAPS);
 const studios = new StudioSystem(game);
 // Phase 9: friends / navigator / profiles (needs studios for home travel).
 const social = new SocialSystem(game, studios);
+// Phase 9: ambient NPCs ride the snapshot pipeline via npcProvider.
+const { NpcSystem } = require('./npcs');
+const npcs = new NpcSystem(game);
+game.npcProvider = (sceneId) => npcs.forScene(sceneId);
+npcs.start();
 // Phase 9: trophy fanfare — the record lands in the performer's home
 // inventory; tell them (and refresh the inventory if they're home).
 stages.onTrophy = (userId, kind, mixName) => {
@@ -216,7 +221,7 @@ app.get('/health', (req, res) => {
   res.json({
     ok: true,
     game: 'solarion',
-    phase: 8,
+    phase: 9,
     version: require('../package.json').version,
     uptime_s: Math.floor((Date.now() - startedAt) / 1000),
     players_online: total,
@@ -274,6 +279,7 @@ wss.on('connection', (ws, req) => {
     chat: game.historyFor(p.mapId),
     zcoins: q.avatarByUser.get(session.user.id).zcoins,
     bonusGranted,
+    dayCycle: DAY_CYCLE,
   });
   stages.syncPlayer(p);
   casino.syncPlayer(p);
@@ -334,6 +340,9 @@ wss.on('connection', (ws, req) => {
       case 'slots':
         casino.handleSlots(p, msg);
         break;
+      case 'table-chat':
+        casino.handleTableChat(p, msg.text);
+        break;
       case 'chat':
         game.handleChat(p, msg.text);
         break;
@@ -370,6 +379,9 @@ wss.on('connection', (ws, req) => {
       case 'studio-kick':
       case 'studio-state':
       case 'home-device':
+      case 'home-meta':
+      case 'home-set':
+      case 'home-expand':
       case 'studio-invite':
       case 'studio-invite-response':
         studios.handle(p, msg);

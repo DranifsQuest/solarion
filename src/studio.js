@@ -73,6 +73,67 @@ const STUDIO_DOOR = { x: 10, y: 13 };        // tile coords, south wall
 const MAX_PLACED = 100;                      // soul doc §5 room cap
 const KICK_BLOCK_MS = 10 * 60 * 1000;        // 10-minute re-entry block
 
+// ---------------------------------------------------------------- Phase 9: homes v2
+// Size tiers (expansion keeps the top-left origin, so every placed
+// item's tile coords stay valid), wall paints and floor styles.
+const HOME_TIERS = [
+  { name: 'Studio', w: 20, h: 14, price: 0 },
+  { name: 'Loft', w: 24, h: 17, price: 1500 },
+  { name: 'Penthouse', w: 28, h: 20, price: 4000 },
+];
+const WALL_STYLES = [
+  { name: 'Warm Wood', wall: '#4a3423' },
+  { name: 'Midnight', wall: '#10151f' },
+  { name: 'Sunset Plum', wall: '#4a2436' },
+  { name: 'Sage', wall: '#24382b' },
+  { name: 'Slate', wall: '#2b2f36' },
+];
+const FLOOR_STYLES = [
+  { name: 'Classic Wood', floor: '#8a6844', floorAlt: '#7f613e' },
+  { name: 'Marble', floor: '#cfd4da', floorAlt: '#bcc2ca' },
+  { name: 'Neon Grid', floor: '#1b2340', floorAlt: '#232c52' },
+  { name: 'Meadow', floor: '#3f7a3d', floorAlt: '#356b34' },
+];
+const HOME_NAME_MAX = 30;
+
+function buildStudioRows(w, h) {
+  const doorX = Math.floor(w / 2);
+  const rows = [];
+  for (let y = 0; y < h; y++) {
+    let row = '';
+    for (let x = 0; x < w; x++) {
+      if (y === h - 1 && x === doorX) row += '.';
+      else if (x === 0 || y === 0 || x === w - 1 || y === h - 1) row += '#';
+      else row += '.';
+    }
+    rows.push(row);
+  }
+  return rows;
+}
+
+let SQ_META = null;
+function getHomeMeta(ownerId) {
+  const row = SQ_META ? SQ_META.get.get(ownerId) : null;
+  return {
+    name: row && row.name ? row.name : null,
+    wall: row ? Math.min(WALL_STYLES.length - 1, Math.max(0, row.wall)) : 0,
+    floor: row ? Math.min(FLOOR_STYLES.length - 1, Math.max(0, row.floor)) : 0,
+    tier: row ? Math.min(HOME_TIERS.length - 1, Math.max(0, row.tier)) : 0,
+    locked: row ? Boolean(row.locked) : false,
+  };
+}
+
+function setHomeMeta(ownerId, patch) {
+  const cur = getHomeMeta(ownerId);
+  const next = { ...cur, ...patch };
+  SQ_META.set.run(ownerId, next.name, next.wall, next.floor, next.tier, next.locked ? 1 : 0);
+  return next;
+}
+
+function isHomeLocked(ownerId) {
+  return getHomeMeta(ownerId).locked;
+}
+
 const STUDIO_ROWS = (() => {
   const rows = [];
   for (let y = 0; y < STUDIO_H; y++) {
@@ -100,22 +161,27 @@ function isStudioId(sceneId) {
 /** Build the scene object for one owner's studio (data-shaped like a map). */
 function studioMapFor(ownerId, ownerName) {
   const name = ownerName || (q.userById.get(ownerId) || {}).username || 'Private';
+  const meta = getHomeMeta(ownerId);
+  const tier = HOME_TIERS[meta.tier];
+  const fl = FLOOR_STYLES[meta.floor];
+  const wl = WALL_STYLES[meta.wall];
+  const doorX = Math.floor(tier.w / 2);
   return {
     id: `studio:${ownerId}`,
-    name: `${name}'s Studio`,
-    tiles: { rows: STUDIO_ROWS, w: STUDIO_W, h: STUDIO_H },
+    name: meta.name || `${name}'s Studio`,
+    tiles: { rows: buildStudioRows(tier.w, tier.h), w: tier.w, h: tier.h },
     tileSize: TILE,
-    floor: '#8a6844',          // warm wood — cozy, distinct from all cities
-    floorAlt: '#7f613e',
-    wall: '#4a3423',
-    spawn: { x: STUDIO_DOOR.x * TILE + TILE / 2, y: 11 * TILE + TILE / 2 },
+    floor: fl.floor,
+    floorAlt: fl.floorAlt,
+    wall: wl.wall,
+    spawn: { x: doorX * TILE + TILE / 2, y: (tier.h - 3) * TILE + TILE / 2 },
     gateways: [],
     isStudio: true,
     ownerId,
     studio: {
       ownerId,
       ownerName: name,
-      door: { x: STUDIO_DOOR.x * TILE, y: STUDIO_DOOR.y * TILE, w: TILE, h: TILE },
+      door: { x: doorX * TILE, y: (tier.h - 1) * TILE, w: TILE, h: TILE },
     },
   };
 }
@@ -219,7 +285,21 @@ function init() {
     state TEXT NOT NULL,
     PRIMARY KEY (owner_id, instance_id)
   );
+  CREATE TABLE IF NOT EXISTS studio_meta (
+    owner_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT,
+    wall INTEGER NOT NULL DEFAULT 0,
+    floor INTEGER NOT NULL DEFAULT 0,
+    tier INTEGER NOT NULL DEFAULT 0,
+    locked INTEGER NOT NULL DEFAULT 0
+  );
   `);
+  SQ_META = {
+    get: db.prepare('SELECT * FROM studio_meta WHERE owner_id = ?'),
+    set: db.prepare(`INSERT INTO studio_meta (owner_id, name, wall, floor, tier, locked) VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(owner_id) DO UPDATE SET name = excluded.name, wall = excluded.wall,
+        floor = excluded.floor, tier = excluded.tier, locked = excluded.locked`),
+  };
   SQ = {
     debit: db.prepare('UPDATE avatars SET zcoins = zcoins - ? WHERE user_id = ? AND zcoins >= ?'),
     zOf: db.prepare('SELECT zcoins FROM avatars WHERE user_id = ?'),
@@ -479,6 +559,12 @@ class StudioSystem {
       return;
     }
     if (owner.id !== p.userId) {
+      // Phase 9: a locked home admits only the owner — everyone
+      // else needs an invite (invite-accept enters directly).
+      if (isHomeLocked(owner.id)) {
+        this.game.send(p, { type: 'notice', text: `🔒 ${owner.username}'s home is locked — ask them for an invite.` });
+        return;
+      }
       const until = blockedUntil(owner.id, p.userId);
       if (until) {
         const mins = Math.max(1, Math.ceil((until - Date.now()) / 60000));
@@ -656,11 +742,14 @@ class StudioSystem {
     }
     const { x, y } = msg;
     const rot = msg.rot === undefined ? 0 : msg.rot;
-    if (x === STUDIO_DOOR.x && y === STUDIO_DOOR.y) {
+    // Phase 9: bounds + doorway follow the home's CURRENT size tier.
+    const tier = HOME_TIERS[getHomeMeta(p.userId).tier];
+    const doorTile = { x: Math.floor(tier.w / 2), y: tier.h - 1 };
+    if (x === doorTile.x && y === doorTile.y) {
       this.game.send(p, { type: 'notice', text: 'Keep the doorway clear — nothing goes on the door tile.' });
       return;
     }
-    if (!Number.isInteger(x) || !Number.isInteger(y) || x < 1 || x > STUDIO_W - 2 || y < 1 || y > STUDIO_H - 2) {
+    if (!Number.isInteger(x) || !Number.isInteger(y) || x < 1 || x > tier.w - 2 || y < 1 || y > tier.h - 2) {
       this.game.send(p, { type: 'notice', text: 'That tile is outside the studio walls.' });
       return;
     }
@@ -839,6 +928,107 @@ class StudioSystem {
     this.game.send(p, { type: 'notice', text: `Kicked ${targetUser.username} — they can't re-enter for 10 minutes.` });
   }
 
+  // ------------------------------------------------------------ Phase 9: home settings
+
+  homeMetaPayload(ownerId) {
+    const meta = getHomeMeta(ownerId);
+    return {
+      type: 'home-meta',
+      ownerId,
+      name: meta.name || '',
+      wall: meta.wall, floor: meta.floor, tier: meta.tier, locked: meta.locked,
+      tiers: HOME_TIERS.map((t, i) => ({ index: i, name: t.name, w: t.w, h: t.h, price: t.price })),
+      walls: WALL_STYLES.map((s, i) => ({ index: i, name: s.name })),
+      floors: FLOOR_STYLES.map((s, i) => ({ index: i, name: s.name })),
+    };
+  }
+
+  sendHomeMeta(p) {
+    this.game.send(p, this.homeMetaPayload(p.userId));
+  }
+
+  /** Re-send the (possibly resized/repainted) room to everyone inside. */
+  refreshRoom(ownerId) {
+    const owner = q.userById.get(ownerId);
+    if (!owner) return;
+    const scene = studioMapFor(ownerId, owner.username);
+    const placed = getPlaced(ownerId);
+    const { clientMap } = require('./maps');
+    for (const occ of this.game.players.values()) {
+      if (occ.mapId !== scene.id) continue;
+      const occupants = this.game.playersInMap(scene.id);
+      this.game.send(occ, {
+        type: 'map',
+        map: clientMap(scene),
+        players: occupants,
+        chat: this.game.historyFor(scene.id),
+        you: occupants.find(x => x.id === occ.userId),
+        transferMs: 0,
+        studio: { ownerId, ownerName: owner.username, furniture: placed },
+        furniture: placed,
+        devices: devicesPayload(ownerId),
+      });
+      this.sendState(occ);
+    }
+  }
+
+  /** { type:'home-set', name?, wall?, floor?, locked? } — owner-only. */
+  handleHomeSet(p, msg) {
+    const patch = {};
+    if (msg.name !== undefined) {
+      if (typeof msg.name !== 'string') return;
+      const cleaned = msg.name.replace(/[<>&"]/g, '').trim().slice(0, HOME_NAME_MAX);
+      patch.name = cleaned || null;
+    }
+    if (msg.wall !== undefined) {
+      if (!Number.isInteger(msg.wall) || msg.wall < 0 || msg.wall >= WALL_STYLES.length) {
+        this.game.send(p, { type: 'notice', text: 'No such wall paint.' });
+        return;
+      }
+      patch.wall = msg.wall;
+    }
+    if (msg.floor !== undefined) {
+      if (!Number.isInteger(msg.floor) || msg.floor < 0 || msg.floor >= FLOOR_STYLES.length) {
+        this.game.send(p, { type: 'notice', text: 'No such floor style.' });
+        return;
+      }
+      patch.floor = msg.floor;
+    }
+    if (msg.locked !== undefined) patch.locked = Boolean(msg.locked);
+    if (!Object.keys(patch).length) return;
+    setHomeMeta(p.userId, patch);
+    this.game.send(p, { type: 'notice', text: '🏠 Home updated.' });
+    this.sendHomeMeta(p);
+    if (p.mapId === `studio:${p.userId}`) this.refreshRoom(p.userId);
+  }
+
+  /** { type:'home-expand' } — buy the next size tier. */
+  handleHomeExpand(p) {
+    const meta = getHomeMeta(p.userId);
+    const next = HOME_TIERS[meta.tier + 1];
+    if (!next) {
+      this.game.send(p, { type: 'notice', text: 'Your home is already at the largest size — the Penthouse.' });
+      return;
+    }
+    let paid = false;
+    try {
+      db.exec('BEGIN IMMEDIATE');
+      const debited = SQ.debit.run(next.price, p.userId, next.price);
+      if (debited.changes === 1) { paid = true; db.exec('COMMIT'); } else { db.exec('ROLLBACK'); }
+    } catch (e) {
+      try { db.exec('ROLLBACK'); } catch (e2) { /* ignore */ }
+    }
+    if (!paid) {
+      this.game.send(p, { type: 'notice', text: `Expanding to the ${next.name} (${next.w}×${next.h}) costs ${next.price}z.` });
+      return;
+    }
+    setHomeMeta(p.userId, { tier: meta.tier + 1 });
+    this.game.send(p, { type: 'zcoins', zcoins: zcoinsOf(p.userId) });
+    this.game.send(p, { type: 'notice', text: `🏠 Welcome to your ${next.name} — ${next.w}×${next.h} tiles! Your furniture stayed right where it was.` });
+    this.sendHomeMeta(p);
+    if (p.mapId === `studio:${p.userId}`) this.refreshRoom(p.userId);
+  }
+
   // ------------------------------------------------------------ dispatch
 
   handle(p, msg) {
@@ -853,6 +1043,9 @@ class StudioSystem {
       case 'home-device': this.handleDevice(p, msg); break;
       case 'studio-invite': this.handleInvite(p, msg); break;
       case 'studio-invite-response': this.handleInviteResponse(p, msg); break;
+      case 'home-meta': this.sendHomeMeta(p); break;
+      case 'home-set': this.handleHomeSet(p, msg); break;
+      case 'home-expand': this.handleHomeExpand(p); break;
       default: break;
     }
   }
@@ -866,4 +1059,5 @@ module.exports = {
   STUDIO_ROWS, studioMapFor, studioMapForId, parseStudioId, isStudioId,
   getPlaced, getInventory, getDevices, devicePayload, devicesPayload,
   blockVisitor, blockedUntil, unblockVisitor,
+  HOME_TIERS, WALL_STYLES, FLOOR_STYLES, getHomeMeta, setHomeMeta, isHomeLocked,
 };

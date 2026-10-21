@@ -274,7 +274,7 @@ test('/health reports status and counts', { timeout: 30000 }, async () => {
   const r = await fetch(`http://localhost:${serverPort}/health`).then(r => r.json());
   assert.equal(r.ok, true);
   assert.equal(r.game, 'solarion');
-  assert.equal(r.phase, 8);
+  assert.equal(r.phase, 9);
   assert.ok(r.uptime_s >= 0);
   for (const id of ['the-gateway', 'gateway-cafe', 'solstice-bay', 'casino-lounge', 'neon-district', 'neon-casino', 'cinder-mesa', 'hookah-lounge', 'frosthaven', 'verdant-hollow']) {
     assert.equal(typeof r.maps[id], 'number', `map ${id} counted`);

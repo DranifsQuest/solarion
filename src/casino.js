@@ -748,6 +748,12 @@ const SLOT_SYMBOLS = [
 const SLOT_BETS = [5, 10, 25];
 const SLOT_PAIR_PAY = 2;
 const SLOT_COOLDOWN_MS = 1200;
+// Phase 9 — progressive jackpot: 2% of every bet (both casinos, one
+// pool) feeds it; three Suns pay the WHOLE pool instead of the fixed
+// 50× line, then the house reseeds it at 250z. Pool kept in
+// hundredths of z (250z = 25000) so contributions are exact.
+const JACKPOT_CUT_PCT = 2;
+const JACKPOT_SEED_H = 250 * 100;
 const SLOT_TOTAL_W = SLOT_SYMBOLS.reduce((a, s) => a + s.w, 0);
 
 function slotRoll() {
@@ -786,6 +792,14 @@ function initLedger() {
   if (!cols.some((c) => c.name === 'casino_chips')) {
     db.exec('ALTER TABLE avatars ADD COLUMN casino_chips INTEGER NOT NULL DEFAULT 0');
   }
+  // Phase 9: the progressive slots jackpot — ONE pool shared by both
+  // casinos, stored in hundredths of a z coin so the 2%-of-bet
+  // contributions stay exact at any bet size.
+  db.exec(`CREATE TABLE IF NOT EXISTS slots_jackpot (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    pool_h INTEGER NOT NULL
+  );
+  INSERT OR IGNORE INTO slots_jackpot (id, pool_h) VALUES (1, ${JACKPOT_SEED_H});`);
   CQ = {
     // Atomic debit: changes === 1 iff the balance covered the amount.
     debit: db.prepare('UPDATE avatars SET zcoins = zcoins - ? WHERE user_id = ? AND zcoins >= ?'),
@@ -794,7 +808,15 @@ function initLedger() {
     setCasinoChips: db.prepare('UPDATE avatars SET casino_chips = ? WHERE user_id = ?'),
     getCasinoChips: db.prepare('SELECT casino_chips FROM avatars WHERE user_id = ?'),
     clearCasinoChips: db.prepare('UPDATE avatars SET zcoins = zcoins + casino_chips, casino_chips = 0 WHERE user_id = ? AND casino_chips > 0'),
+    jackpotGet: db.prepare('SELECT pool_h FROM slots_jackpot WHERE id = 1'),
+    jackpotSet: db.prepare('UPDATE slots_jackpot SET pool_h = ? WHERE id = 1'),
   };
+}
+
+/** Current jackpot pool in whole z (display + payout unit). */
+function jackpotPoolZ() {
+  const r = CQ.jackpotGet.get();
+  return Math.floor((r ? r.pool_h : JACKPOT_SEED_H) / 100);
 }
 
 // ------------------------------------------------------------------ system
@@ -939,7 +961,20 @@ class CasinoSystem {
     }
     this.slotCd.set(p.userId, now + SLOT_COOLDOWN_MS);
     const reels = [slotRoll(), slotRoll(), slotRoll()];
-    const win = slotPayout(reels, bet);
+    // Phase 9: feed the shared jackpot first (2% of the bet, exact
+    // in hundredths), then settle the spin.
+    const poolRow = CQ.jackpotGet.get();
+    let poolH = (poolRow ? poolRow.pool_h : JACKPOT_SEED_H) + bet * JACKPOT_CUT_PCT;
+    let jackpotWin = 0;
+    let win = slotPayout(reels, bet);
+    if (reels.every(s => s.id === 'sun')) {
+      // Three Suns: the pool replaces the fixed 50× line, then the
+      // house reseeds. (The spin's own contribution counts.)
+      jackpotWin = Math.floor(poolH / 100);
+      win = jackpotWin;
+      poolH = JACKPOT_SEED_H;
+    }
+    CQ.jackpotSet.run(poolH);
     if (win > 0) CQ.addZ.run(win, p.userId);
     const zcoins = this.zcoinsOf(p.userId);
     this.game.send(p, {
@@ -947,8 +982,14 @@ class CasinoSystem {
       reels: reels.map((s) => s.id),
       emoji: reels.map((s) => s.emoji),
       win, bet, zcoins,
+      jackpotWin,
+      jackpotPool: Math.floor(poolH / 100),
     });
     this.game.send(p, { type: 'zcoins', zcoins });
+    // Both casinos watch the same pool climb (and crash on a win).
+    for (const sceneId of ['casino-lounge', 'neon-casino']) {
+      this.game.broadcastToMap(sceneId, { type: 'jackpot', pool: Math.floor(poolH / 100) });
+    }
   }
 
   slotInfo() {
@@ -959,7 +1000,40 @@ class CasinoSystem {
       pairPay: SLOT_PAIR_PAY,
       cooldownMs: SLOT_COOLDOWN_MS,
       rtp: Math.round(theoreticalRTP() * 1000) / 1000,
+      jackpotPool: jackpotPoolZ(),
+      jackpotCutPct: JACKPOT_CUT_PCT,
     };
+  }
+
+  // ------------------------------------------------------------ Phase 9: table chat
+
+  /**
+   * { type:'table-chat', text } — chat scoped to one poker table:
+   * heard by everyone seated at it or standing within SIT_RADIUS,
+   * nobody else. Spectators included by design.
+   */
+  handleTableChat(p, rawText) {
+    if (typeof rawText !== 'string') return;
+    const text = rawText.replace(/[<>&"]/g, '').trim().slice(0, 200);
+    if (!text) return;
+    const lounge = this.loungeFor(p);
+    if (!lounge) return;
+    // The table the player is at: seated there, or standing near it.
+    let table = null;
+    for (const t of lounge.tables) {
+      if (t.findSeat(p.userId) || Math.hypot(p.x - t.x, p.y - t.y) <= SIT_RADIUS) { table = t; break; }
+    }
+    if (!table) {
+      this.game.send(p, { type: 'notice', text: 'Table chat is heard at a poker table — take a seat or stand by one.' });
+      return;
+    }
+    const msg = { type: 'table-chat', tableId: table.id, fromId: p.userId, name: p.name, text };
+    for (const other of this.game.players.values()) {
+      if (other.mapId !== p.mapId) continue;
+      if (table.findSeat(other.userId) || Math.hypot(other.x - table.x, other.y - table.y) <= SIT_RADIUS) {
+        this.game.send(other, msg);
+      }
+    }
   }
 
   // ------------------------------------------------------------ lifecycle
@@ -1025,8 +1099,9 @@ class CasinoSystem {
 module.exports = {
   CasinoSystem, PokerTable, initLedger,
   evaluate7, cmpHands, cardStr, newDeck,
-  slotRoll, slotPayout, theoreticalRTP,
+  slotRoll, slotPayout, theoreticalRTP, jackpotPoolZ,
   SLOT_SYMBOLS, SLOT_BETS, SLOT_PAIR_PAY, SLOT_COOLDOWN_MS,
+  JACKPOT_CUT_PCT, JACKPOT_SEED_H,
   CHIP_BUYIN_MIN, CHIP_BUYIN_MAX, SB, BB, SIT_RADIUS,
   HAND_NAMES,
 };

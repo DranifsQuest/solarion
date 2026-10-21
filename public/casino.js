@@ -41,6 +41,15 @@ const Casino = {
       };
     }
     $('slotSpin').onclick = () => this.spin();
+    $('tableChatBtn').onclick = () => {
+      const inp = $('tableChatInput');
+      const text = inp.value.trim();
+      if (text) { this.hooks.send({ type: 'table-chat', text }); inp.value = ''; }
+    };
+    $('tableChatInput').addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') $('tableChatBtn').click();
+    });
     const drinkBtn = $('drinkBtn');
     if (drinkBtn) drinkBtn.onclick = () => this.hooks.send({ type: 'buy-drink' });
     this.el.viceInfo = $('viceInfo');
@@ -165,9 +174,20 @@ const Casino = {
         this.slotSymbols = {};
         for (const s of m.symbols || []) this.slotSymbols[s.id] = s.emoji;
         if (!this._reelsInit) { this._reelsInit = true; this.setReels(['sun', 'zcoin', 'palm']); }
+        this.setJackpot(m.jackpotPool);
+        break;
+      case 'jackpot':
+        this.setJackpot(m.pool);
         break;
       case 'slot-result':
         this.animateReels(m);
+        break;
+      case 'table-chat':
+        // Phase 9: table-scoped chat lands in the main chat log with
+        // a table tag — only players at/near the table receive it.
+        if (typeof chatLine === 'function') {
+          chatLine(`<span class="dim">🎰 Table ${this.hooks.esc(String(m.tableId).split('-').pop())} ·</span> <b>${this.hooks.esc(m.name)}:</b> ${this.hooks.esc(m.text)}`);
+        }
         break;
       case 'vice-state':
         // Phase B amendment: drink/puff tally for the bar box.
@@ -183,6 +203,11 @@ const Casino = {
       default:
         break;
     }
+  },
+
+  setJackpot(pool) {
+    const el = document.getElementById('slotJackpot');
+    if (el && Number.isFinite(pool)) el.textContent = `💰 JACKPOT (both casinos): ${pool}z — three ☀️ take it all!`;
   },
 
   setReels(ids) {
@@ -203,9 +228,12 @@ const Casino = {
         clearInterval(iv);
         this.setReels(m.reels);
         this.spinning = false;
-        this.el.slotMsg.textContent = m.win > 0
-          ? `🎉 You win ${m.win}z! (bet ${m.bet}z)`
-          : `No win — bet ${m.bet}z. Balance ${m.zcoins}z`;
+        if (Number.isFinite(m.jackpotPool)) this.setJackpot(m.jackpotPool);
+        this.el.slotMsg.textContent = m.jackpotWin > 0
+          ? `☀️☀️☀️ THREE SUNS — THE JACKPOT! You win ${m.jackpotWin}z!!`
+          : m.win > 0
+            ? `🎉 You win ${m.win}z! (bet ${m.bet}z)`
+            : `No win — bet ${m.bet}z. Balance ${m.zcoins}z`;
         if (m.win >= m.bet * 4 && m.win > 0) this.hooks.toast(`🎰 JACKPOT! +${m.win}z on the slots!`);
       }
     }, 70);

@@ -95,6 +95,7 @@ const AVATAR_V2_COLUMNS = [
   ['shoe_color', "TEXT NOT NULL DEFAULT '#23262b'"],
   ['accessory', "TEXT NOT NULL DEFAULT 'none'"],
   ['created', 'INTEGER NOT NULL DEFAULT 0'],
+  ['last_bar_day', 'TEXT'], // Phase 9: bartender's daily ritual (first drink free + tip)
 ];
 {
   const prevRow = db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get();
@@ -143,6 +144,7 @@ const q = {
      WHERE user_id = ?`
   ),
   setZCoins: db.prepare('UPDATE avatars SET zcoins = ? WHERE user_id = ?'),
+  setLastBarDay: db.prepare('UPDATE avatars SET last_bar_day = ? WHERE user_id = ?'),
 
   insertSession: db.prepare('INSERT INTO sessions (token, user_id, created_at, expires_at, last_ip) VALUES (?, ?, ?, ?, ?)'),
   sessionByToken: db.prepare('SELECT * FROM sessions WHERE token = ?'),

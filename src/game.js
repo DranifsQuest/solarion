@@ -19,8 +19,10 @@ const { db, q } = require('./db');
 // as the casino's ledger: the WHERE guard makes overspend impossible).
 const VQ = {
   debit: db.prepare('UPDATE avatars SET zcoins = zcoins - ? WHERE user_id = ? AND zcoins >= ?'),
+  credit: db.prepare('UPDATE avatars SET zcoins = zcoins + ? WHERE user_id = ?'),
   zOf: db.prepare('SELECT zcoins FROM avatars WHERE user_id = ?'),
 };
+const BAR_TIP_Z = 10; // Phase 9: the house's daily tip to its regulars
 // NOTE: studio is required lazily inside methods (not at the top) to
 // keep the require graph acyclic: studio.js requires maps.js only,
 // and studio-system handlers call back into Game via the instance.
@@ -28,9 +30,10 @@ function studioOf(sceneId) {
   return require('./studio').studioMapForId(sceneId);
 }
 
-const PLAYER_RADIUS = 12;
-const SPEED = 175;              // px per second
-const RUN_MULT = 1.55;          // Phase 9: run-toggle speed multiplier
+// Phase 9 — the world clock: a 12-minute day/night cycle, anchored
+// to a fixed epoch so every client (and the server) agrees on the
+// phase from the payload alone. Phase 0.0 = sunrise, 0.5 = sunset.
+const DAY_CYCLE = { periodMs: 12 * 60 * 1000, anchor: 1767225600000 };
 const TICK_HZ = 20;             // simulation
 const SNAPSHOT_HZ = 10;         // broadcast
 const CHAT_LIMIT = 6;           // messages ...
@@ -300,6 +303,8 @@ class Game {
   playersInMap(sceneId) {
     const out = [];
     for (const p of this.players.values()) if (p.mapId === sceneId) out.push(this.publicPlayer(p));
+    // Phase 9: ambient NPCs ride the same pipeline.
+    if (this.npcProvider) out.push(...this.npcProvider(sceneId));
     return out;
   }
 
@@ -313,6 +318,7 @@ class Game {
     }
     for (const inScene of byScene.values()) {
       const players = inScene.map(p => this.publicPlayer(p));
+      if (this.npcProvider) players.push(...this.npcProvider(inScene[0].mapId));
       for (const p of inScene) this.send(p, { type: 'snapshot', players });
     }
   }
@@ -551,6 +557,7 @@ class Game {
       chat: this.historyFor(scene.id),
       you: this.publicPlayer(p),
       transferMs: TRANSFER_MS,
+      dayCycle: DAY_CYCLE,
       ...(opts.extra || {}),
     });
     this.sendVice(p);
@@ -641,14 +648,31 @@ class Game {
       this.send(p, { type: 'notice', text: 'Head to the bar — the bartender pours there.' });
       return;
     }
-    const debited = VQ.debit.run(VICE.DRINK_COST, p.userId, VICE.DRINK_COST);
-    if (debited.changes !== 1) {
-      this.send(p, { type: 'notice', text: `A drink costs ${VICE.DRINK_COST}z — you don't have enough.` });
-      return;
+    // Phase 9 — the bartender's daily ritual: the FIRST drink of
+    // the day (at either bartender) is on the house AND the house
+    // tips YOU 10z ("regulars eat free once a day"). Server-enforced
+    // via avatars.last_bar_day; independent of the login bonus.
+    const today = localDay();
+    const av = q.avatarByUser.get(p.userId);
+    const dailyTreat = Boolean(av && av.last_bar_day !== today);
+    if (!dailyTreat) {
+      const debited = VQ.debit.run(VICE.DRINK_COST, p.userId, VICE.DRINK_COST);
+      if (debited.changes !== 1) {
+        this.send(p, { type: 'notice', text: `A drink costs ${VICE.DRINK_COST}z — you don't have enough.` });
+        return;
+      }
+    } else {
+      q.setLastBarDay.run(today, p.userId);
+      VQ.credit.run(BAR_TIP_Z, p.userId);
     }
     const count = this.viceAdd(p, 'drinks', now);
     this.send(p, { type: 'zcoins', zcoins: this.zcoinsOf(p.userId) });
-    this.send(p, { type: 'notice', text: `🍸 Drink #${count} slides across the bar (${VICE.DRINK_COST}z).` });
+    this.send(p, {
+      type: 'notice',
+      text: dailyTreat
+        ? `🍸 The bartender waves off your coins — "First one's on the house, regular." And slips you a ${BAR_TIP_Z}z tip back?! (Drink #${count}.)`
+        : `🍸 Drink #${count} slides across the bar (${VICE.DRINK_COST}z).`,
+    });
     if (count >= VICE.THRESHOLD) {
       p.passedOutUntil = now + VICE.PASSOUT_MS;
       p.keys = {};
@@ -733,4 +757,4 @@ class Game {
   }
 }
 
-module.exports = { Game, localDay, PLAYER_RADIUS, SPEED, RUN_MULT, CHAT_LIMIT, TRANSFER_MS, VICE, EMOTES };
+module.exports = { Game, localDay, PLAYER_RADIUS, SPEED, RUN_MULT, CHAT_LIMIT, TRANSFER_MS, VICE, EMOTES, BAR_TIP_Z, DAY_CYCLE };

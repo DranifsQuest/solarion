@@ -7,6 +7,15 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <!-- cold-start / reconnect screen (Phase 9): the free-tier server
+       can take a while to wake; nobody should ever stare at a dead
+       page. Shown until the world is live; returns on reconnects. -->
+  <div id="wakeScreen">
+    <h1>☀️ SOLARION</h1>
+    <div id="wakeStatus">Waking the world…</div>
+    <div id="wakeBarWrap"><div id="wakeBar"></div></div>
+    <div id="wakeTip"></div>
+  </div>
 <div id="app">
   <!-- auth screen -->
   <div id="auth" class="overlay-card">
@@ -90,6 +99,7 @@
       </div>
       <div class="slotBox">
         <div class="spTitle">🎰 SLOTS</div>
+        <div id="slotJackpot" class="pkWin">💰 JACKPOT (both casinos): …z — three ☀️ take it all!</div>
         <div id="slotReels"><span class="reel">☀️</span><span class="reel">🪙</span><span class="reel">🌴</span></div>
         <div class="spRow">
           <button class="slotBetBtn" data-bet="5">5z</button>
@@ -98,6 +108,14 @@
           <button id="slotSpin">SPIN</button>
         </div>
         <div id="slotMsg" class="pkDim">Pair pays 2× · three of a kind up to 50×</div>
+      </div>
+      <div class="slotBox">
+        <div class="spTitle">💬 TABLE CHAT — heard at your poker table</div>
+        <div class="spRow">
+          <input id="tableChatInput" placeholder="Say it to the table…" maxlength="200">
+          <button id="tableChatBtn">Say</button>
+        </div>
+        <div class="pkDim">Works seated or standing by a table — spectators welcome. Watching a hand? The panel above shows every table live.</div>
       </div>
       <div class="slotBox">
         <div class="spTitle">🍸 BAR</div>
@@ -129,6 +147,22 @@
         <div id="deviceList"></div>
       </div>
       <div id="studioOwner" class="hidden">
+        <div class="spTitle">🎨 HOME — name, paint, floors, size, lock</div>
+        <div id="homeSettings">
+          <div class="spRow">
+            <input id="homeName" placeholder="Home name…" maxlength="30">
+            <button id="homeNameGo">Set name</button>
+          </div>
+          <div class="spRow">
+            <label>Walls <select id="homeWall"></select></label>
+            <label>Floor <select id="homeFloor"></select></label>
+          </div>
+          <div class="spRow">
+            <span id="homeSize" class="pkDim"></span>
+            <button id="homeExpand">Expand</button>
+            <button id="homeLock">🔓 Lock home</button>
+          </div>
+        </div>
         <div class="spTitle">🛋️ CATALOG</div>
         <div id="catalogList"></div>
         <div class="spTitle">🎒 MY ITEMS — click Place, then click a tile</div>

@@ -200,7 +200,8 @@ test('drinks: exactly 5z a round, count tracked + visible, 10th drink passes you
     const vs = await waitFor(() => u.client.msgs.filter(m => m.type === 'vice-state').pop(),
       5000, `vice-state after drink ${i}`);
     assert.equal(vs.drinks, i, `drink count is ${i}`);
-    assert.equal(await balanceOf(u.token), 200 - 5 * i, `drink ${i} charged exactly 5z`);
+    // Phase 9: the day's FIRST drink is free AND tips +10z; the rest cost 5z.
+    assert.equal(await balanceOf(u.token), 215 - 5 * i, `drink ${i} balance (first free + 10z tip, then 5z each)`);
   }
   // The count is broadcast state: the watcher sees it in snapshots.
   const seen = await waitFor(() => {
@@ -214,7 +215,7 @@ test('drinks: exactly 5z a round, count tracked + visible, 10th drink passes you
   const out = await waitFor(() => u.client.msgs.filter(m => m.type === 'vice-state' && m.passedOut).pop(),
     8000, 'passed out at the 10th drink');
   assert.equal(out.drinks, 10);
-  assert.equal(await balanceOf(u.token), 200 - 50, 'ten drinks cost exactly 50z');
+  assert.equal(await balanceOf(u.token), 165, 'ten drinks: first free (+10z tip), nine at 5z = net −35z from 200');
   const fallenSeen = await waitFor(() => {
     const p = selfIn(watcher.client, u.id);
     return p && p.fallen ? p : null;
@@ -242,7 +243,7 @@ test('drinks: exactly 5z a round, count tracked + visible, 10th drink passes you
   const refused = await waitFor(() => u.client.msgs.filter(m => m.type === 'notice' && /out cold/.test(m.text)).pop(),
     5000, 'no drinks while passed out');
   assert.ok(refused);
-  assert.equal(await balanceOf(u.token), 150);
+  assert.equal(await balanceOf(u.token), 165);
 
   // Wake (test hook fast-forwards the 20s window): up again, and
   // the count resets to the documented low value of 2.

@@ -52,6 +52,15 @@ const Studio = {
       devicesBox: $('studioDevices'), deviceList: $('deviceList'),
       inviteName: $('inviteName'),
       invitePrompt: $('invitePrompt'), inviteText: $('inviteText'),
+      homeName: $('homeName'), homeWall: $('homeWall'), homeFloor: $('homeFloor'),
+      homeSize: $('homeSize'), homeLock: $('homeLock'),
+    };
+    $('homeNameGo').onclick = () => this.hooks.send({ type: 'home-set', name: this.el.homeName.value });
+    $('homeExpand').onclick = () => this.hooks.send({ type: 'home-expand' });
+    this.el.homeWall.onchange = () => this.hooks.send({ type: 'home-set', wall: Number(this.el.homeWall.value) });
+    this.el.homeFloor.onchange = () => this.hooks.send({ type: 'home-set', floor: Number(this.el.homeFloor.value) });
+    this.el.homeLock.onclick = () => {
+      if (this.homeMeta) this.hooks.send({ type: 'home-set', locked: !this.homeMeta.locked });
     };
     $('studioBtn').onclick = () => {
       this.panelOpen = !this.panelOpen;
@@ -180,6 +189,21 @@ const Studio = {
     this.render();
   },
 
+  /** Phase 9: home settings (name / paint / floor / size / lock). */
+  renderHomeSettings() {
+    const hm = this.homeMeta;
+    if (!hm || !this.el.homeWall) return;
+    const esc = this.hooks.esc;
+    if (document.activeElement !== this.el.homeName) this.el.homeName.value = hm.name || '';
+    this.el.homeWall.innerHTML = hm.walls.map(w => `<option value="${w.index}" ${w.index === hm.wall ? 'selected' : ''}>${esc(w.name)}</option>`).join('');
+    this.el.homeFloor.innerHTML = hm.floors.map(f => `<option value="${f.index}" ${f.index === hm.floor ? 'selected' : ''}>${esc(f.name)}</option>`).join('');
+    const tier = hm.tiers[hm.tier];
+    const next = hm.tiers[hm.tier + 1];
+    this.el.homeSize.textContent = `${tier.name} — ${tier.w}×${tier.h}` + (next ? ` · next: ${next.name} ${next.w}×${next.h} (${next.price}z)` : ' · largest size');
+    document.getElementById('homeExpand').classList.toggle('hidden', !next);
+    this.el.homeLock.textContent = hm.locked ? '🔒 Locked — tap to unlock' : '🔓 Lock home';
+  },
+
   render() {
     if (!this.el || !this.el.panel) return;
     const esc = this.hooks.esc;
@@ -193,8 +217,10 @@ const Studio = {
       : '<div class="pkDim">No furniture placed yet.</div>';
     this.el.ownerBox.classList.toggle('hidden', !(this.inStudio && this.isOwner));
     if (this.inStudio && this.isOwner) {
+      if (!this.homeMeta) this.hooks.send({ type: 'home-meta' });
+      this.renderHomeSettings();
       this.el.catalog.innerHTML = this.catalog.map(c =>
-        `<button class="pkSit" data-buy="${esc(c.id)}">${esc(c.icon || '📦')} ${esc(c.name)} — ${c.price}z</button>`).join('') ||
+        `<button class="pkSit" data-buy="${esc(c.id)}">${esc(c.icon || '📦')} ${esc(c.name)} — ${(c.awardOnly || c.id === 'gold-record') ? '🏆 earned on stage' : c.price + 'z'}</button>`).join('') ||
         '<div class="pkDim">Catalog loading…</div>';
       for (const b of this.el.catalog.querySelectorAll('[data-buy]')) {
         b.onclick = () => this.hooks.send({ type: 'studio-buy', itemId: b.dataset.buy });
@@ -370,6 +396,10 @@ const Studio = {
       case 'map':
         // Phase 8: studio entry payloads carry device states.
         if (m.devices) this.setDevices(m.devices);
+        break;
+      case 'home-meta':
+        this.homeMeta = m;
+        this.render();
         break;
       case 'studio-state':
         this.ownerId = m.ownerId;

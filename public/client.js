@@ -27,6 +27,18 @@ const bubbles = new Map();   // id -> { text, until }
 let keys = { up: false, down: false, left: false, right: false };
 let lastSentKeys = '';
 let coins = 0;
+let dayCycle = null; // Phase 9: { periodMs, anchor } — world clock
+let lastDarkness = -1;
+
+/** Phase 9: 0 (full day) → ~0.42 (deep night) from the world clock. */
+function darknessNow() {
+  if (!dayCycle) return 0;
+  const ph = (((Date.now() - dayCycle.anchor) % dayCycle.periodMs) + dayCycle.periodMs) % dayCycle.periodMs / dayCycle.periodMs;
+  if (ph < 0.46 || ph > 0.97) return 0;                    // day (soft edges)
+  if (ph < 0.54) return (ph - 0.46) / 0.08 * 0.42;         // dusk falls
+  if (ph < 0.90) return 0.42;                              // night
+  return Math.max(0, 0.42 * (1 - (ph - 0.90) / 0.07));     // dawn
+}
 let camState = { x: 0, y: 0, init: false, map: null }; // Phase 9 eased camera
 let curArea = null; // Phase 9: named-area nameplate state
 
@@ -141,11 +153,59 @@ $('authGo').onclick = async () => {
 $('password').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('authGo').click(); });
 
 // ------------------------------------------------------------------ net
+// Phase 9 — the wake screen: progress + rotating tips while the
+// world loads or the connection heals. Never a dead page.
+const WAKE_TIPS = [
+  '💿 Burn a mix to a CD before you perform — no CD, no stage.',
+  '🏆 25 lifetime thumbs-ups on one mix earns a Gold Record for your wall. 100 earns Platinum.',
+  '🍸 The first drink of the day at any bartender is free — and the house tips you 10z.',
+  '🎰 The slots jackpot is shared by BOTH casinos. Three suns take it all.',
+  '🧭 The Navigator (top bar) shows every place, how busy it is, and where your friends are.',
+  '🏠 Expand your home: Studio → Loft → Penthouse. Your furniture keeps its spot.',
+  '☀️ Logging in daily pays 100z. Performing pays 5z per thumbs-up.',
+  '🕺 Emotes live on the right edge. Dancing works anywhere. Especially the stage.',
+  '📻 A home radio plays your own mixes — everyone in the room hears them, you included.',
+  '🗺️ Click or tap anywhere to walk there. The 🏃 button runs.',
+];
+const Wake = {
+  tipIdx: 0,
+  timer: null,
+  show(label) {
+    const el = $('wakeScreen');
+    el.classList.remove('hidden');
+    el.style.display = 'flex';
+    if (label) $('wakeStatus').textContent = label;
+    if (!this.timer) {
+      this.timer = setInterval(() => {
+        this.tipIdx = (this.tipIdx + 1) % WAKE_TIPS.length;
+        $('wakeTip').textContent = WAKE_TIPS[this.tipIdx];
+      }, 4200);
+      $('wakeTip').textContent = WAKE_TIPS[this.tipIdx];
+    }
+  },
+  progress(pct, label) {
+    $('wakeBar').style.width = `${pct}%`;
+    if (label) $('wakeStatus').textContent = label;
+  },
+  hide() {
+    const el = $('wakeScreen');
+    el.style.display = 'none';
+    el.classList.add('hidden');
+    if (this.timer) { clearInterval(this.timer); this.timer = null; }
+  },
+};
+window.SolarionWake = Wake;
+
 function connect() {
+  Wake.show('Connecting to Solarion…');
+  Wake.progress(35);
   ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws?token=${encodeURIComponent(token)}`);
+  ws.onopen = () => Wake.progress(55, 'Connected — loading the world…');
   ws.onmessage = (ev) => {
     let m;
     try { m = JSON.parse(ev.data); } catch (e) { return; }
+    if (m.type === 'hello') Wake.progress(80, 'Almost there…');
+    if (m.type === 'snapshot' || m.type === 'map') { Wake.progress(100); setTimeout(() => Wake.hide(), 250); }
     handle(m);
   };
   ws.onclose = (ev) => {
@@ -156,6 +216,8 @@ function connect() {
       return;
     }
     if ($('game').classList.contains('hidden')) return;
+    Wake.show('Connection lost — reconnecting…');
+    Wake.progress(30);
     setTimeout(() => { if (!ws || ws.readyState !== 1) connect(); }, 2000);
   };
 }
@@ -235,6 +297,7 @@ function handle(m) {
     case 'hello': {
       me = { ...m.you };
       coins = m.zcoins;
+      if (m.dayCycle) dayCycle = m.dayCycle;
       $('coins').textContent = coins;
       players = m.players;
       sceneFurniture = m.furniture || [];
@@ -257,6 +320,7 @@ function handle(m) {
       break;
     }
     case 'map': {
+      if (m.dayCycle) dayCycle = m.dayCycle;
       beginTransfer(m);
       break;
     }
@@ -477,8 +541,16 @@ function drawTile(ch, tx, ty) {
     ctx.closePath(); ctx.stroke();
     return;
   }
-  if (ch === '%') { // water
+  if (ch === '%') { // water — Phase 9: animated shimmer
     diamond(cx, cy, hw, hh, (tx + ty) % 2 ? '#2f8fb8' : '#2b84ad');
+    const t = performance.now() / 620 + tx * 0.9 + ty * 0.6;
+    ctx.strokeStyle = `rgba(255,255,255,${0.10 + 0.08 * Math.sin(t)})`;
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    const off = Math.sin(t * 0.7) * hw * 0.18;
+    ctx.moveTo(cx - hw * 0.5 + off, cy - 1);
+    ctx.quadraticCurveTo(cx + off, cy - hh * 0.42, cx + hw * 0.5 + off, cy - 1);
+    ctx.stroke();
     return;
   }
   // solid block ('#' wall, '|' stall/tree) drawn as an extruded cube
@@ -1034,6 +1106,30 @@ function draw() {
       ctx.restore();
     }
   }
+
+  // Phase 9 — day/night: lay the darkness over the world, then let
+  // the lamps punch back through it (arches, doors, stage rig).
+  const dark = darknessNow();
+  if (dark > 0.01) {
+    ctx.fillStyle = `rgba(8,12,40,${dark})`;
+    ctx.fillRect(camX, camY, W, H);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const glow = (wx, wy, r, a) => {
+      const [gx, gy] = proj(wx, wy);
+      const g = ctx.createRadialGradient(gx, gy, 2, gx, gy, r);
+      g.addColorStop(0, `rgba(255,205,110,${a})`);
+      g.addColorStop(1, 'rgba(255,205,110,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(gx, gy, r, 0, Math.PI * 2);
+      ctx.fill();
+    };
+    for (const gwd of mapDef.gateways || []) glow(gwd.x + gwd.w / 2, gwd.y + gwd.h / 2, 90, 0.30);
+    for (const d of mapDef.doors || []) glow(d.x + d.w / 2, d.y + d.h / 2, 70, 0.26);
+    if (mapDef.stage) glow(mapDef.stage.x + mapDef.stage.w / 2, mapDef.stage.y + mapDef.stage.h / 2, 130, 0.18);
+    ctx.restore();
+  }
   ctx.restore();
 }
 requestAnimationFrame(draw);
@@ -1051,9 +1147,13 @@ if (window.SolarionMixer) {
 
 // resume an existing session on load
 if (token) {
+  Wake.show('Waking the world…');
+  Wake.progress(15);
   api('/api/me', { token })
     .then((r) => enterWorld(r.avatar))
-    .catch(() => { localStorage.removeItem('solarion_token'); token = null; });
+    .catch(() => { localStorage.removeItem('solarion_token'); token = null; Wake.hide(); });
+} else {
+  Wake.hide(); // fresh visit: the auth card is the front door
 }
 setMode('login');
 

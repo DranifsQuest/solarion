@@ -1,7 +1,7 @@
 {
   "name": "solarion",
   "version": "0.1.0",
-  "description": "Solarion — multiplayer browser social game (Phase 8: player homes — 44-item furniture catalog, TVs with fake shows, radios playing loops or the owner's mixes, room invites). Re-Launch Studios.",
+  "description": "Solarion — multiplayer browser social game (Phase 9: adjustments — mix audibility, click-to-move, Navigator, friends, burn-to-CD ritual + trophies + Top-40, homes v2, bartender daily, casino jackpot, NPCs, day/night). Re-Launch Studios.",
   "private": true,
   "license": "UNLICENSED",
   "main": "src/server.js",

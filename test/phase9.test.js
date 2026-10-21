@@ -44,7 +44,7 @@ function startServer(port, dbPath) {
   }
   const child = spawn('node', ['src/server.js'], {
     cwd: ROOT,
-    env: { ...process.env, SOLARION_PORT: String(port), SOLARION_DB_PATH: dbPath, SOLARION_TEST: '1' },
+    env: { ...process.env, SOLARION_PORT: String(port), SOLARION_DB_PATH: dbPath, SOLARION_TEST: '1', SOLARION_TEST_NO_ABUSE_LIMITS: '1' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   children.push(child);
@@ -129,6 +129,190 @@ async function toBay(user) {
     () => user.client.msgs.filter(m => m.type === 'map' && m.map.id === 'solstice-bay').pop(),
     5000, `${user.name} arrives in solstice-bay`);
 }
+
+// ------------------------------------------------------------ item 10: homes v2
+
+test('homes v2: name/paint/floor persist, expansion keeps furniture, lock + invite rules', { timeout: 120000 }, async () => {
+  const owner = await makeUser('homeowner_p9');
+  const guest = await makeUser('homeguest_p9');
+  const studioId = `studio:${owner.id}`;
+  async function enterStudio(u, ownerName) {
+    u.client.send({ type: 'enter-studio', owner: ownerName });
+    return waitFor(() => {
+      const m = [...u.client.msgs].reverse().find(x => x.type === 'map');
+      return m && m.map.id.startsWith('studio:') ? m : null;
+    }, 8000, `${u.name} enters a studio`);
+  }
+  await enterStudio(owner, owner.name);
+
+  // Default meta: tier 0 'Studio', unlocked.
+  owner.client.send({ type: 'home-meta' });
+  const meta0 = await waitFor(() => owner.client.msgs.filter(m => m.type === 'home-meta').pop(), 5000, 'default home meta');
+  assert.equal(meta0.tier, 0);
+  assert.equal(meta0.locked, false);
+  assert.deepEqual(meta0.tiers.map(t => t.price), [0, 1500, 4000], 'documented tier prices');
+
+  // Buy + place a chair at the tier-0 far corner (18,12).
+  owner.client.send({ type: 'studio-buy', itemId: 'cozy-chair' });
+  const st1 = await waitFor(() => owner.client.msgs.filter(m => m.type === 'studio-state' && m.inventory && m.inventory.length).pop(), 5000, 'chair in inventory');
+  const chair = st1.inventory.find(i => i.itemId === 'cozy-chair');
+  owner.client.send({ type: 'studio-place', instanceItemId: chair.instanceId, x: 18, y: 12, rot: 0 });
+  await waitFor(() => owner.client.msgs.filter(m => m.type === 'studio-state' && m.furniture && m.furniture.some(f => f.x === 18 && f.y === 12)).pop(),
+    5000, 'chair placed at (18,12)');
+
+  // Name + paint + floor: the room refresh carries the new identity.
+  owner.client.send({ type: 'home-set', name: 'Casa P9', wall: 2, floor: 1 });
+  const renamed = await waitFor(() => {
+    const m = [...owner.client.msgs].reverse().find(x => x.type === 'map' && x.map.id === studioId);
+    return m && m.map.name === 'Casa P9' ? m : null;
+  }, 5000, 'room renamed via refresh');
+  assert.equal(renamed.map.floor, '#cfd4da', 'Marble floor applied');
+  assert.equal(renamed.map.wall, '#4a2436', 'Sunset Plum walls applied');
+
+  // Expansion needs 1500z: refused at 60z, works when funded.
+  owner.client.send({ type: 'home-expand' });
+  const poor = await waitFor(() => owner.client.msgs.filter(m => m.type === 'notice' && /costs 1500z/.test(m.text)).pop(), 5000, 'expansion refused when broke');
+  assert.ok(poor);
+  owner.client.send({ type: 'debug-casino', action: 'set-balance', amount: 5000 });
+  await waitFor(() => owner.client.msgs.filter(m => m.type === 'zcoins' && m.zcoins === 5000).pop(), 5000, 'funded');
+  owner.client.send({ type: 'home-expand' });
+  const big = await waitFor(() => {
+    const m = [...owner.client.msgs].reverse().find(x => x.type === 'map' && x.map.id === studioId);
+    return m && m.map.w === 24 && m.map.h === 17 ? m : null;
+  }, 5000, 'room expands to Loft 24×17');
+  assert.ok(big);
+  const stBig = await waitFor(() => owner.client.msgs.filter(m => m.type === 'studio-state' && m.furniture && m.furniture.some(f => f.x === 18 && f.y === 12)).pop(),
+    5000, 'chair survived expansion at the same tile');
+  assert.ok(stBig);
+
+  // Lock: the guest is refused at the door…
+  owner.client.send({ type: 'home-set', locked: true });
+  await waitFor(() => owner.client.msgs.filter(m => m.type === 'home-meta' && m.locked).pop(), 5000, 'lock set');
+  guest.client.send({ type: 'enter-studio', owner: owner.name });
+  const lockedOut = await waitFor(() => guest.client.msgs.filter(m => m.type === 'notice' && /locked/.test(m.text)).pop(), 5000, 'guest locked out');
+  assert.ok(lockedOut);
+  assert.equal(guest.client.msgs.filter(m => m.type === 'map' && m.map.id === studioId).length, 0, 'guest never entered');
+
+  // …but an accepted invite walks straight through the lock.
+  owner.client.send({ type: 'studio-invite', username: guest.name });
+  const inv = await waitFor(() => guest.client.msgs.filter(m => m.type === 'studio-invite').pop(), 5000, 'guest invited');
+  guest.client.send({ type: 'studio-invite-response', ownerId: inv.ownerId || owner.id, accept: true });
+  await waitFor(() => guest.client.msgs.filter(m => m.type === 'map' && m.map.id === studioId).pop(), 8000, 'invited guest enters locked home');
+  guest.client.send({ type: 'leave-studio' });
+  await waitFor(() => {
+    const m = [...guest.client.msgs].reverse().find(x => x.type === 'map');
+    return m && !m.map.id.startsWith('studio:') ? m : null;
+  }, 8000, 'guest leaves');
+
+  // Unlock: the door opens again.
+  owner.client.send({ type: 'home-set', locked: false });
+  await waitFor(() => owner.client.msgs.filter(m => m.type === 'home-meta' && !m.locked).pop(), 5000, 'unlocked');
+  await enterStudio(guest, owner.name);
+  owner.client.ws.close(); guest.client.ws.close();
+});
+
+// ------------------------------------------------------------ items 11 + 12
+
+test('bartender daily: first drink free + 10z tip, once per day across BOTH bars', { timeout: 90000 }, async () => {
+  const u = await makeUser('barfly_p9');
+  async function atBar(mapId) {
+    u.client.send({ type: 'navigate', mapId });
+    await waitFor(() => {
+      const m = [...u.client.msgs].reverse().find(x => x.type === 'map');
+      return m && m.map.id === mapId ? m : null;
+    }, 8000, `arrives in ${mapId}`);
+    u.client.send({ type: 'debug-teleport', x: 176, y: 528 }); // patron spot, both bars
+    await sleep(350);
+  }
+  await atBar('casino-lounge');
+  u.client.send({ type: 'buy-drink' });
+  const treat = await waitFor(() => u.client.msgs.filter(m => m.type === 'notice' && /on the house/.test(m.text)).pop(), 5000, 'first drink on the house');
+  assert.ok(treat);
+  await waitFor(() => u.client.msgs.filter(m => m.type === 'zcoins' && m.zcoins === 110).pop(), 5000, 'free drink + 10z tip: 100 → 110');
+  u.client.send({ type: 'buy-drink' });
+  await waitFor(() => u.client.msgs.filter(m => m.type === 'zcoins' && m.zcoins === 105).pop(), 5000, 'second drink charged 5z');
+
+  // The OTHER bartender, same day: no second treat.
+  await atBar('neon-casino');
+  u.client.send({ type: 'buy-drink' });
+  await waitFor(() => u.client.msgs.filter(m => m.type === 'zcoins' && m.zcoins === 100).pop(), 5000, 'neon drink charged — daily treat already claimed');
+  assert.equal(u.client.msgs.filter(m => m.type === 'notice' && /on the house/.test(m.text)).length, 1, 'exactly one treat per day');
+  u.client.ws.close();
+});
+
+test('casino social: table chat reaches the table only; jackpot accrues 2% per bet', { timeout: 120000 }, async () => {
+  const a = await makeUser('table_a_p9');
+  const b = await makeUser('table_b_p9'); // spectator at the same table
+  const c = await makeUser('table_c_p9'); // same casino, far away
+  for (const u of [a, b, c]) {
+    u.client.send({ type: 'navigate', mapId: 'casino-lounge' });
+    await waitFor(() => u.client.msgs.filter(m => m.type === 'map' && m.map.id === 'casino-lounge').pop(), 8000, `${u.name} in the lounge`);
+  }
+  const loungeMap = a.client.msgs.filter(m => m.type === 'map' && m.map.id === 'casino-lounge').pop();
+  const t1 = loungeMap.map.casino.tables[0];
+  // A + B stand at table 1; C stands in the foyer, far from every table.
+  for (const [u, x, y] of [[a, t1.x, t1.y + 40], [b, t1.x + 60, t1.y - 30], [c, 800, 560]]) {
+    u.client.send({ type: 'debug-teleport', x, y });
+  }
+  await sleep(400);
+  // Spectator B sees the table's public state without a seat.
+  assert.ok(b.client.msgs.some(m => m.type === 'poker-state' && m.id === t1.id), 'spectator receives poker-state');
+  a.client.send({ type: 'table-chat', text: 'nice flop, eh?' });
+  const heard = await waitFor(() => b.client.msgs.filter(m => m.type === 'table-chat' && m.text === 'nice flop, eh?').pop(), 5000, 'B hears table chat');
+  assert.equal(heard.name, a.name);
+  assert.ok(a.client.msgs.some(m => m.type === 'table-chat' && m.text === 'nice flop, eh?'), 'speaker hears own table chat');
+  await sleep(500);
+  assert.equal(c.client.msgs.filter(m => m.type === 'table-chat').length, 0, 'far side of the room hears nothing');
+
+  // Jackpot accrual: pool starts at the 250z seed (fresh DB); each
+  // 25z spin adds exactly 0.50z. slot-info reports the pool.
+  const spinner = a;
+  const slot = loungeMap.map.casino.slots[0];
+  spinner.client.send({ type: 'debug-teleport', x: slot.ix, y: slot.iy });
+  await sleep(3600); // outlast the transfer lock so sitting registers cleanly
+  spinner.client.send({ type: 'interact' });
+  await waitFor(() => spinner.client.msgs.filter(m => m.type === 'sit-state' && m.seated).pop(), 5000, 'seated at the slot');
+  const info = spinner.client.msgs.filter(m => m.type === 'slot-info').pop();
+  assert.equal(info.jackpotPool, 250, 'pool seeded at 250z');
+  let expectedPoolH = 25000;
+  for (let i = 0; i < 3; i++) {
+    spinner.client.msgs = spinner.client.msgs.filter(m => m.type !== 'slot-result');
+    spinner.client.send({ type: 'slots', action: 'spin', bet: 25 });
+    const res = await waitFor(() => spinner.client.msgs.filter(m => m.type === 'slot-result').pop(), 5000, `spin ${i + 1}`);
+    expectedPoolH += 50; // 2% of 25z, in hundredths
+    if (res.jackpotWin > 0) {
+      assert.ok(res.jackpotWin >= 250, 'jackpot pays at least the seed');
+      assert.equal(res.win, res.jackpotWin, 'sun×3 win IS the pool');
+      expectedPoolH = 25000;
+    }
+    assert.equal(res.jackpotPool, Math.floor(expectedPoolH / 100), `pool after spin ${i + 1}`);
+    await sleep(1400); // slot cooldown
+  }
+  a.client.ws.close(); b.client.ws.close(); c.client.ws.close();
+});
+
+// ------------------------------------------------------------ item 13: ambient life
+
+test('ambient life: NPCs wander the Gateway snapshots; the world clock ships in hello', { timeout: 60000 }, async () => {
+  const u = await makeUser('ambient_p9');
+  assert.ok(u.client.hello.dayCycle && u.client.hello.dayCycle.periodMs === 720000, 'hello carries the 12-minute world clock');
+  const withNpc = await waitFor(() => {
+    const s = u.client.msgs.filter(m => m.type === 'snapshot').pop();
+    return s && s.players.some(p => p.npc) ? s : null;
+  }, 8000, 'snapshot includes NPCs');
+  const maple = withNpc.players.find(p => p.npc && p.name === 'Maple the Guide');
+  assert.ok(maple, 'Maple the Guide is on duty');
+  assert.ok(maple.gender && maple.hair_style, 'NPC carries a full look');
+  // She actually wanders: her position changes over a few seconds.
+  const p0 = { x: maple.x, y: maple.y };
+  const moved = await waitFor(() => {
+    const s = u.client.msgs.filter(m => m.type === 'snapshot').pop();
+    const n = s && s.players.find(p => p.npc && p.name === 'Maple the Guide');
+    return n && Math.hypot(n.x - p0.x, n.y - p0.y) > 24 ? n : null;
+  }, 30000, 'Maple wanders her route');
+  assert.ok(moved);
+  u.client.ws.close();
+});
 
 // ------------------------------------------------------------ item 5: ritual
 
