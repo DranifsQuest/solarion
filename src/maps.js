@@ -68,7 +68,14 @@ function gridOf(g) {
  * on row ty, passage extends south/into the map) or 'S' (trigger on
  * row ty, passage extends north). `spawnOut` (tile coords) is where
  * a player arriving into THIS map through this gatehouse lands:
- * just outside the passage mouth, clear of every trigger.
+ * outside the passage mouth, a full tile BEYOND the flank-tower line
+ * (spawnOutTy = tower row ± 2). That clearance matters: with the
+ * doorstep only one tile out, a traveller leaving the gatehouse
+ * diagonally (e.g. NE toward the next arch) clips the tower's inner
+ * corner, gets deflected along its face, and grazes the trigger
+ * rect's own corner — bouncing straight back through the gatehouse
+ * they just exited. One more tile of clearance makes diagonal
+ * departures pass clear of the towers entirely.
  */
 function arch(tx, ty, target, label, dir, spawnOutTy) {
   return {
@@ -157,7 +164,7 @@ function buildGateway() {
   }
   // Market terraces: stall posts + trees instead of the old blocks.
   g[6][5] = '|'; g[8][7] = '|'; g[6][64] = '|'; g[8][66] = '|';
-  g[4][8] = 'T'; g[9][3] = 'T'; g[4][63] = 'T'; g[9][68] = 'T';
+  g[4][8] = 'T'; g[9][3] = 'T'; g[4][64] = 'T'; g[9][68] = 'T';
   // E terrace dressing: trees + a planter where the E block stood.
   g[19][66] = 'T'; g[25][68] = 'T'; g[22][65] = 'P';
   // Plaza shade trees.
@@ -171,11 +178,11 @@ function buildGateway() {
     floor: '#2e3a52', floorAlt: '#33415c', wall: '#10151f',
     spawn: { x: cx(36), y: cy(28) },
     gateways: [
-      arch(6, 1, 'neon-district', 'Neon District', 'N', 3),
-      arch(20, 1, 'cinder-mesa', 'Cinder Mesa', 'N', 3),
-      arch(34, 1, 'solstice-bay', 'Solstice Bay', 'N', 3),
-      arch(48, 1, 'frosthaven', 'Frosthaven', 'N', 3),
-      arch(62, 1, 'verdant-hollow', 'Verdant Hollow', 'N', 3),
+      arch(6, 1, 'neon-district', 'Neon District', 'N', 4),
+      arch(20, 1, 'cinder-mesa', 'Cinder Mesa', 'N', 4),
+      arch(34, 1, 'solstice-bay', 'Solstice Bay', 'N', 4),
+      arch(48, 1, 'frosthaven', 'Frosthaven', 'N', 4),
+      arch(62, 1, 'verdant-hollow', 'Verdant Hollow', 'N', 4),
     ],
     buildings: [
       building(3, 18, 4, 9, 'Homes', 'home'),
@@ -298,7 +305,7 @@ function buildSolsticeBay() {
     id, name: 'Solstice Bay', tiles: gridOf(g), tileSize: TILE,
     floor: '#e8cf9a', floorAlt: '#e2c588', wall: '#2b6f8f',
     spawn: { x: cx(36), y: cy(41) },
-    gateways: [arch(35, 43, 'the-gateway', 'The Gateway', 'S', 41)],
+    gateways: [arch(35, 43, 'the-gateway', 'The Gateway', 'S', 40)],
     buildings: [
       building(3, 33, 12, 10, 'Casino Lounge', 'casino'),
     ],
@@ -561,7 +568,7 @@ function buildNeonDistrict() {
     id, name: 'Neon District', tiles: gridOf(g), tileSize: TILE,
     floor: '#17102b', floorAlt: '#1e1438', wall: '#ff2e88',
     spawn: { x: cx(36), y: cy(41) },
-    gateways: [arch(35, 43, 'the-gateway', 'The Gateway', 'S', 41)],
+    gateways: [arch(35, 43, 'the-gateway', 'The Gateway', 'S', 40)],
     buildings: [
       building(56, 30, 12, 8, 'Neon Casino', 'neon'),
     ],
@@ -633,7 +640,7 @@ function buildCinderMesa() {
     id, name: 'Cinder Mesa', tiles: gridOf(g), tileSize: TILE,
     floor: '#c47b3a', floorAlt: '#bb7031', wall: '#6e2418',
     spawn: { x: cx(4), y: cy(41) },
-    gateways: [arch(3, 43, 'the-gateway', 'The Gateway', 'S', 41)],
+    gateways: [arch(3, 43, 'the-gateway', 'The Gateway', 'S', 40)],
     buildings: [
       building(26, 32, 9, 6, 'Hookah Lounge', 'hookah'),
     ],
@@ -691,7 +698,7 @@ function buildFrosthaven() {
     id, name: 'Frosthaven', tiles: gridOf(g), tileSize: TILE,
     floor: '#d7edf7', floorAlt: '#c6e3f2', wall: '#2f5d8a',
     spawn: { x: cx(36), y: cy(4) },
-    gateways: [arch(35, 1, 'the-gateway', 'The Gateway', 'N', 3)],
+    gateways: [arch(35, 1, 'the-gateway', 'The Gateway', 'N', 4)],
     doors: [],
     props: [
       // The hero: a great ice sculpture on its plinth, NE grounds.
@@ -748,7 +755,7 @@ function buildVerdantHollow() {
     id, name: 'Verdant Hollow', tiles: gridOf(g), tileSize: TILE,
     floor: '#2e5d33', floorAlt: '#26502b', wall: '#4a3520',
     spawn: { x: cx(67), y: cy(41) },
-    gateways: [arch(66, 43, 'the-gateway', 'The Gateway', 'S', 41)],
+    gateways: [arch(66, 43, 'the-gateway', 'The Gateway', 'S', 40)],
     doors: [],
     props: [
       // The hero: the Great Tree at the clearing's NW shoulder.

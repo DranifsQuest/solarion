@@ -39,7 +39,11 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const { MAPS, TILE, collides, WALKABLE } = require('../src/maps');
 
-const KNOWN_CHARS = new Set(['.', '#', '%', '|', 'W', 'C']);
+// The tile alphabet exactly as documented in src/maps.js (header):
+// '#'=solid, '%'=water, '|'=post, 'W'=casino wall, 'T'=tree, 'P'=planter,
+// 'R'=rock (all solid); '.'=ground, 'C'=casino floor, 'b'=boardwalk,
+// 's'=stone, 'p'=path (walkable — see WALKABLE in src/maps.js).
+const KNOWN_CHARS = new Set(['.', '#', '%', '|', 'W', 'C', 'T', 'P', 'R', 'b', 's', 'p']);
 const errors = [];
 const warnings = [];
 const notes = [];

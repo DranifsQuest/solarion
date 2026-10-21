@@ -212,9 +212,10 @@ test('gateway travel: Gateway -> Solstice Bay -> Gateway; Phase 4 cities open', 
   const toBay = await waitFor(() => a.msgs.filter(m => m.type === 'map' && m.map.id === 'solstice-bay').pop(), 5000, 'map switch to solstice-bay');
   assert.equal(toBay.map.name, 'Solstice Bay');
   // Lane C: gateway arrival lands OUTSIDE the matching gatehouse —
-  // the Bay's gatehouse spawnOut is (1152,1328), one step west of
-  // the map's generic spawn (1168,1328) — never on its trigger.
-  assert.ok(Math.abs(toBay.you.x - 1152) < 2 && Math.abs(toBay.you.y - 1328) < 2, 'spawned outside the bay gatehouse');
+  // the Bay's gatehouse spawnOut is (1152,1296), a full tile clear
+  // of the tower line so diagonal departures can't clip the trigger
+  // rect's corner and bounce back — never on its trigger.
+  assert.ok(Math.abs(toBay.you.x - 1152) < 2 && Math.abs(toBay.you.y - 1296) < 2, 'spawned outside the bay gatehouse');
   assert.ok(toBay.map.gateways.some(g => g.label === 'The Gateway' && g.active), 'return gateway listed');
   // B still in the-gateway must stop seeing A (fresh snapshots only —
   //  older ones in the buffer legitimately still show her pre-travel)

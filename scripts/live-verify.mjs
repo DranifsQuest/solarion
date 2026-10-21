@@ -563,6 +563,15 @@ async function main() {
   ];
   for (const c of cities) {
     try {
+      // Approach along the terrace lane in front of the gatehouses
+      // (y=176, row 5½), then turn north into the arch. A beeline
+      // from the previous gatehouse's doorstep runs along the tower
+      // row instead: it presses intermediate towers and the slide
+      // funnels it through an intermediate gatehouse's passage into
+      // the WRONG city. A player walks the lane, not the wall line —
+      // so the bot does the same. The check is unchanged: A still
+      // walks into the arch and the map switch must fire.
+      await walkTo(A.client, c.arch[0], 176, { arrive: 16 });
       const m = await travel(A.client, c.arch[0], c.arch[1], c.id, `gateway -> ${c.id}`);
       if (m.map.name !== c.name) throw new Error(`name ${m.map.name}`);
       if (!m.map.stage) throw new Error('no stage in city payload');
