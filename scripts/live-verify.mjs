@@ -135,7 +135,7 @@ async function main() {
     try { const r = await fetch(`${BASE}/health`); if (r.ok) { health = await r.json(); break; } } catch (e) {}
     await sleep(3000);
   }
-  report('health: service answers, phase 9, ten maps', !!(health && health.ok && health.phase === 9 && Object.keys(health.maps).length === 10),
+  report('health: service answers, phase 10, ten maps', !!(health && health.ok && health.phase === 10 && Object.keys(health.maps).length === 10),
     health ? `uptime ${health.uptime_s}s, phase ${health.phase}` : 'no response in 150s');
   if (!health) return finish();
 
@@ -525,6 +525,11 @@ async function main() {
     if (Math.abs(out.you.x - 240) > 3 || Math.abs(out.you.y - 752) > 3) {
       throw new Error(`landed at ${out.you.x},${out.you.y} instead of outside the front door`);
     }
+    // Step away from the doorstep before the tours: the door stands
+    // in the x~240 column, and a beeline north from the doorstep
+    // crosses its own pad (a door working as a door should) — walk
+    // east into the plaza first so tour routes start clear of it.
+    await walkTo(A.client, 700, 752, { arrive: 16 });
     report('home door: Gateway front door -> home -> out the home door, landing outside it', true, 'real doors both ways, no warp pads');
   } catch (e) { report('home door: Gateway front door -> home -> out the home door, landing outside it', false, e.message); }
 

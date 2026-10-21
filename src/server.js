@@ -222,7 +222,7 @@ app.get('/health', (req, res) => {
   res.json({
     ok: true,
     game: 'solarion',
-    phase: 9,
+    phase: 10,
     version: require('../package.json').version,
     uptime_s: Math.floor((Date.now() - startedAt) / 1000),
     players_online: total,
