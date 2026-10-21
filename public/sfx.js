@@ -41,6 +41,7 @@ const Sfx = {
     if (typeof AE !== 'undefined' && AE.ensure()) AE.ctx.resume();
     this.apply();
     this._applyAmbience();
+    this._applyHearth();
   },
 
   setVolume(v) {
@@ -98,6 +99,14 @@ const Sfx = {
       case 'click': tone(660, t, 0.07, 'triangle', 0.12); break;
       case 'pop': tone(320, t, 0.1, 'sine', 0.18, 660); break;
       case 'chime': tone(880, t, 0.35, 'sine', 0.14); tone(1318, t + 0.09, 0.4, 'sine', 0.12); break;
+      case 'door': {
+        // Phase 10: a real wooden door — low creak sweeping down,
+        // then the latch click as it settles.
+        tone(150, t, 0.3, 'sawtooth', 0.045, 84);
+        tone(96, t + 0.04, 0.32, 'triangle', 0.07, 62);
+        noise(t + 0.3, 0.05, 0.09, 2400, 1.2);
+        break;
+      }
       case 'coin': tone(988, t, 0.09, 'square', 0.08); tone(1319, t + 0.08, 0.22, 'square', 0.08); break;
       case 'boo': tone(196, t, 0.4, 'sawtooth', 0.06, 147); break;
       case 'applause': {
@@ -177,6 +186,70 @@ const Sfx = {
     try { this._amb.src.stop(); } catch (e) { /* already stopped */ }
     if (this._amb.lfo) { try { this._amb.lfo.stop(); } catch (e) { /* ignore */ } }
     this._amb = null;
+  },
+
+  // ---------------------------------------------------------- hearth
+  // Phase 10: the crackle bed — a low brown-noise fire loop plus
+  // randomized soft pops on a timer. Independent of the zone
+  // ambience layer (a café can have both its room tone and its
+  // fire). Client toggles it via setHearth() from the render loop.
+  _hearth: null,
+  _wantHearth: false,
+
+  setHearth(on) {
+    const want = Boolean(on);
+    if (want === this._wantHearth && (want || !this._hearth)) {
+      if (want) this._applyHearth(); // engine may have unlocked since
+      return;
+    }
+    this._wantHearth = want;
+    this._applyHearth();
+  },
+
+  _applyHearth() {
+    if (!this._wantHearth || this.muted) { this._stopHearth(); return; }
+    if (this._hearth) return;
+    if (typeof AE === 'undefined' || !AE.ctx || AE.ctx.state !== 'running') return;
+    const ctx = AE.ctx;
+    const len = ctx.sampleRate * 2;
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    let last = 0;
+    for (let i = 0; i < len; i++) { // brown-ish noise = fire body
+      const white = Math.random() * 2 - 1;
+      last = (last + 0.02 * white) / 1.02;
+      d[i] = last * 3.5;
+    }
+    const src = ctx.createBufferSource();
+    src.buffer = buf; src.loop = true;
+    const f = ctx.createBiquadFilter();
+    f.type = 'lowpass'; f.frequency.value = 420;
+    const g = ctx.createGain();
+    g.gain.value = 0.05;
+    src.connect(f); f.connect(g); g.connect(AE.master);
+    src.start();
+    const pop = () => {
+      if (!this._hearth || Math.random() >= 0.55) return;
+      const plen = Math.max(1, Math.floor(ctx.sampleRate * 0.03));
+      const pb = ctx.createBuffer(1, plen, ctx.sampleRate);
+      const pd = pb.getChannelData(0);
+      for (let i = 0; i < plen; i++) pd[i] = (Math.random() * 2 - 1) * (1 - i / plen);
+      const ps = ctx.createBufferSource(); ps.buffer = pb;
+      const pf = ctx.createBiquadFilter();
+      pf.type = 'bandpass'; pf.frequency.value = 700 + Math.random() * 1400; pf.Q.value = 2;
+      const pg = ctx.createGain(); pg.gain.value = 0.04 + Math.random() * 0.05;
+      ps.connect(pf); pf.connect(pg); pg.connect(AE.master);
+      try { ps.start(); } catch (e) { /* engine went away */ }
+    };
+    const timer = setInterval(pop, 240);
+    this._hearth = { src, timer };
+  },
+
+  _stopHearth() {
+    if (!this._hearth) return;
+    clearInterval(this._hearth.timer);
+    try { this._hearth.src.stop(); } catch (e) { /* already stopped */ }
+    this._hearth = null;
   },
 };
 

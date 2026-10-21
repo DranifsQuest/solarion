@@ -85,6 +85,189 @@ function checkArea() {
   }
 }
 
+// ------------------------------------------------------------------ doors (Phase 10)
+// REAL doors, not warp pads: every door renders as a framed wooden
+// door that SWINGS OPEN as anyone approaches (with a soft creak) and
+// closes behind them. The scene transfer still triggers server-side
+// on the door tile — the opening door + stepping into the darkened
+// threshold + the warm load screen mask the swap, and on arrival the
+// destination's door starts open and swings shut behind you.
+const doorAnims = new Map(); // "x,y" -> { open: 0..1, near: bool }
+let lastDoorTick = 0;
+const INTERIOR_IDS = new Set(['casino-lounge', 'neon-casino', 'gateway-cafe', 'hookah-lounge']);
+
+function doorKeyOf(d) { return `${d.x},${d.y}`; }
+
+/** All renderable doors in the current scene (incl. a home's own door). */
+function currentDoors() {
+  if (!mapDef) return [];
+  const list = [...(mapDef.doors || [])];
+  if (mapDef.studio && mapDef.studio.door) {
+    list.push({ ...mapDef.studio.door, label: mapDef.name, home: true });
+  }
+  return list;
+}
+
+/** Advance door swing animations; returns [{ d, open }] for the draw pass. */
+function tickDoors() {
+  const nowMs = performance.now();
+  const dt = Math.min(0.06, lastDoorTick ? (nowMs - lastDoorTick) / 1000 : 0.016);
+  lastDoorTick = nowMs;
+  const out = [];
+  for (const d of currentDoors()) {
+    const key = doorKeyOf(d);
+    let st = doorAnims.get(key);
+    if (!st) { st = { open: 0, near: false }; doorAnims.set(key, st); }
+    const dcx = d.x + d.w / 2, dcy = d.y + d.h / 2;
+    let near = false;
+    for (const rp of renderPos.values()) {
+      if (Math.hypot(rp.x - dcx, rp.y - dcy) < 62) { near = true; break; }
+    }
+    let myDist = 1e9;
+    const mine = me ? renderPos.get(me.id) : null;
+    if (mine) myDist = Math.hypot(mine.x - dcx, mine.y - dcy);
+    if (near && !st.near && myDist < 340 && window.SolarionSfx) {
+      window.SolarionSfx.play('door');
+    }
+    st.near = near;
+    const target = near ? 1 : 0;
+    const step = dt * 2.4; // a swing takes ~0.45s
+    st.open += Math.max(-step, Math.min(step, target - st.open));
+    out.push({ d, open: st.open });
+  }
+  return out;
+}
+
+function drawDoor(d, open) {
+  const [cx, cy] = proj(d.x + d.w / 2, d.y + d.h / 2);
+  const doorW = Math.max(d.w, 32) * ZOOM * 0.68;
+  const doorH = 47;
+  const top = cy - doorH;
+  // welcome mat in front of the threshold
+  diamond(cx, cy + 9, doorW * 0.62, doorW * 0.3, '#9c4034');
+  diamond(cx, cy + 9, doorW * 0.42, doorW * 0.2, '#c96f4a');
+  // darkened interior behind the leaf — you step INTO somewhere
+  ctx.fillStyle = '#140b06';
+  ctx.fillRect(cx - doorW / 2, top + 3, doorW, doorH - 3);
+  // the swinging leaf: hinged on the left post, foreshortens open
+  const leafW = doorW * Math.max(0.07, Math.cos(open * 1.25));
+  const shade = 1 - open * 0.25;
+  ctx.fillStyle = `rgb(${Math.round(138 * shade)},${Math.round(90 * shade)},${Math.round(43 * shade)})`;
+  ctx.fillRect(cx - doorW / 2, top + 3, leafW, doorH - 3);
+  ctx.strokeStyle = 'rgba(46,29,16,.8)';
+  ctx.lineWidth = 1.5;
+  if (leafW > 9) {
+    ctx.strokeRect(cx - doorW / 2 + 3.5, top + 8, leafW - 7, doorH * 0.34);
+    ctx.strokeRect(cx - doorW / 2 + 3.5, top + doorH * 0.56, leafW - 7, doorH * 0.28);
+  }
+  if (leafW > 13) { // brass knob rides the leaf's free edge
+    ctx.beginPath(); ctx.arc(cx - doorW / 2 + leafW - 5, top + doorH * 0.52, 2.4, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffd23f'; ctx.fill();
+  }
+  // frame: posts + lintel in warm dark wood
+  ctx.fillStyle = '#4a3423';
+  ctx.fillRect(cx - doorW / 2 - 5, top, 5, doorH);
+  ctx.fillRect(cx + doorW / 2, top, 5, doorH);
+  ctx.fillRect(cx - doorW / 2 - 5, top - 6, doorW + 10, 6);
+  // a little lamp beside a home's door
+  if (d.home) {
+    ctx.beginPath(); ctx.arc(cx + doorW / 2 + 10, top + 9, 3.2, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffca7a'; ctx.fill();
+    ctx.strokeStyle = '#4a3423'; ctx.lineWidth = 1; ctx.stroke();
+  }
+  // the name over the lintel — a welcome sign, not a HUD tag
+  ctx.font = 'bold 12px system-ui';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#fff6e6';
+  ctx.strokeStyle = 'rgba(30,18,8,.75)';
+  ctx.lineWidth = 3;
+  const label = d.home ? `🏠 ${d.label}` : d.label;
+  ctx.strokeText(label, cx, top - 12);
+  ctx.fillText(label, cx, top - 12);
+}
+
+// ------------------------------------------------------------------ warm props (Phase 10)
+function drawHearthAt(x, y, seed) {
+  const t = Date.now();
+  diamond(x, y + 2, 40, 15, '#5a4636'); // stone base
+  ctx.fillStyle = '#6e4a3a';
+  ctx.fillRect(x - 18, y - 32, 36, 30); // brick body
+  ctx.fillStyle = '#54382a';
+  ctx.fillRect(x - 18, y - 32, 36, 5);  // mantel
+  ctx.fillStyle = '#ffd9a0';
+  ctx.fillRect(x - 18, y - 27, 36, 2);
+  ctx.fillStyle = '#160b06';
+  ctx.fillRect(x - 10, y - 22, 20, 20); // firebox
+  ctx.fillStyle = '#3a2415';
+  ctx.fillRect(x - 8, y - 6, 16, 3);    // logs
+  ctx.fillRect(x - 6, y - 9, 13, 3);
+  const tongue = (i, w, h, col) => {
+    const fx = x + Math.sin(t / 130 + seed * 3 + i * 2.2) * 1.6;
+    const fh = h * (0.85 + 0.3 * Math.abs(Math.sin(t / 170 + seed + i * 1.7)));
+    ctx.beginPath();
+    ctx.ellipse(fx, y - 4 - fh / 2, w, fh / 2, 0, Math.PI * 2);
+    ctx.fillStyle = col; ctx.fill();
+  };
+  tongue(0, 7.5, 17, 'rgba(255,110,26,.9)');
+  tongue(1, 5, 13, 'rgba(255,176,66,.95)');
+  tongue(2, 2.8, 9, 'rgba(255,233,163,1)');
+}
+
+function drawStringLights(x, y, seed) {
+  const x0 = x - 34, x1 = x + 34, topY = y - 30;
+  const pts = [];
+  for (let i = 0; i <= 12; i++) {
+    const tt = i / 12;
+    pts.push([x0 + (x1 - x0) * tt, topY + Math.sin(tt * Math.PI) * 9]);
+  }
+  ctx.strokeStyle = 'rgba(30,20,12,.85)';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  pts.forEach(([px2, py2], i) => { if (i === 0) ctx.moveTo(px2, py2); else ctx.lineTo(px2, py2); });
+  ctx.stroke();
+  const cols = ['#ffd9a0', '#ffb84d', '#ff9d7a', '#ffe9a3'];
+  const night = darknessNow() > 0.03;
+  for (let i = 1; i < 12; i++) {
+    const [bx, by] = pts[i];
+    ctx.beginPath(); ctx.arc(bx, by + 2.5, night ? 3 : 2.4, 0, Math.PI * 2);
+    ctx.fillStyle = cols[(i + seed) % cols.length];
+    ctx.globalAlpha = night ? 1 : 0.75;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+}
+
+function drawLampAt(x, y, lantern) {
+  ctx.strokeStyle = '#2e2019';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y - 24); ctx.stroke();
+  if (lantern) {
+    ctx.fillStyle = '#3a2a1c';
+    ctx.fillRect(x - 4.5, y - 31, 9, 10);
+    ctx.fillStyle = '#ffca7a';
+    ctx.fillRect(x - 2.8, y - 29, 5.6, 6);
+  } else {
+    ctx.beginPath(); ctx.arc(x, y - 27, 5, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffe9a3'; ctx.fill();
+    ctx.strokeStyle = '#8a5a2b'; ctx.lineWidth = 1.2; ctx.stroke();
+  }
+}
+
+function drawProp(pr) {
+  const [px2, py2] = proj(pr.x, pr.y);
+  switch (pr.kind) {
+    case 'rug':
+      diamond(px2, py2, 34, 15, '#9c4034');
+      diamond(px2, py2, 22, 9.5, '#d9a05a');
+      break;
+    case 'lamp': drawLampAt(px2, py2, false); break;
+    case 'lantern': drawLampAt(px2, py2, true); break;
+    case 'stringlights': drawStringLights(px2, py2, Math.round(pr.x / 32) % 4); break;
+    case 'hearth': drawHearthAt(px2, py2, (pr.x + pr.y) % 7); break;
+    default: break;
+  }
+}
+
 // ------------------------------------------------------------------ dom
 const $ = (id) => document.getElementById(id);
 const cv = $('cv');
@@ -258,16 +441,32 @@ function showGame() {
 let transfer = null; // { startedAt, ms, snapshotSeen }
 
 function beginTransfer(m) {
-  transfer = { startedAt: performance.now(), ms: m.transferMs || 3000, snapshotSeen: false };
+  transfer = {
+    startedAt: performance.now(), ms: m.transferMs || 3000, snapshotSeen: false,
+    interior: Boolean(m.map.studio) || INTERIOR_IDS.has(m.map.id),
+  };
   keys = { up: false, down: false, left: false, right: false };
   lastSentKeys = JSON.stringify(keys);
   send({ type: 'input', keys });
-  $('loadText').textContent = `Traveling to ${m.map.name}…`;
+  // Phase 10: the load screen is a doorway now — warm wood, a lamp,
+  // and the destination's name like a welcome sign over the lintel.
+  $('loadText').textContent = `🚪 ${m.map.name}`;
+  const sub = $('loadSub');
+  if (sub) sub.textContent = m.map.studio ? 'welcome in — make yourself at home' : 'come on in — the fire’s lit…';
   $('loadScreen').classList.remove('hidden');
   sceneFurniture = m.furniture || (m.studio && m.studio.furniture) || [];
   sceneDevices = {};
   for (const d of m.devices || []) sceneDevices[d.instanceId] = d;
   setMap(m.map, m.you, m.chat || []);
+  // You arrive THROUGH the new scene's door: it starts open and
+  // swings shut behind you as you walk away from it.
+  doorAnims.clear();
+  let bestD = null, bestDist = 90;
+  for (const d of currentDoors()) {
+    const dist = Math.hypot(d.x + d.w / 2 - m.you.x, d.y + d.h / 2 - m.you.y);
+    if (dist < bestDist) { bestDist = dist; bestD = d; }
+  }
+  if (bestD) doorAnims.set(doorKeyOf(bestD), { open: 1, near: true });
   players = m.players;
   chatLine(`<span class="sys">You arrived in ${esc(m.map.name)}.</span>`);
   // Fallback: never trap the player behind the screen if snapshots stall.
@@ -276,9 +475,12 @@ function beginTransfer(m) {
 }
 
 function finishTransfer() {
+  const wasInterior = transfer && transfer.interior;
   transfer = null;
   $('loadScreen').classList.add('hidden');
-  if (window.SolarionSfx) window.SolarionSfx.play('chime'); // door chime (Phase 9)
+  // Phase 10: stepping through a door gets the door sound; gateway
+  // arches keep their chime.
+  if (window.SolarionSfx) window.SolarionSfx.play(wasInterior ? 'door' : 'chime');
 }
 
 setInterval(() => {
@@ -934,6 +1136,23 @@ function draw() {
       ctx.restore();
       continue;
     }
+    // Phase 10: the warm furniture — a lit hearth, a swag of string
+    // lights, a porch lantern (all three join the night-glow pass).
+    if (f.type === 'hearth') {
+      drawHearthAt(fx, fy + 1, f.instanceId % 7);
+      ctx.restore();
+      continue;
+    }
+    if (f.type === 'lights') {
+      drawStringLights(fx, fy + 6, f.instanceId % 4);
+      ctx.restore();
+      continue;
+    }
+    if (f.type === 'lantern') {
+      drawLampAt(fx, fy + 2, true);
+      ctx.restore();
+      continue;
+    }
     diamond(fx, fy - 3, TS3 * ZOOM * 0.92, TS3 * ZOOM * 0.46, f.color || '#888');
     ctx.font = '15px system-ui';
     ctx.textAlign = 'center';
@@ -994,23 +1213,15 @@ function draw() {
     ctx.fillText(label, cx, cy - g.w * ZOOM * 0.36 - 6);
   }
 
-  // doors (Phase B): interior sub-areas — the Casino Lounge door in
-  // Solstice Bay, the Gateway Café, and the doors back out of both.
-  for (const d of mapDef.doors || []) {
-    const [cx, cy] = proj(d.x + d.w / 2, d.y + d.h / 2);
-    const hw2 = Math.max(d.w, 32) * ZOOM * 0.62;
-    diamond(cx, cy, hw2, hw2 * 0.5, '#8a5a2b');
-    diamond(cx, cy - 2, hw2 * 0.78, hw2 * 0.39, '#c89b62');
-    ctx.font = 'bold 13px system-ui';
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#fff8ec';
-    ctx.fillText('🚪', cx, cy + 3);
-    ctx.fillStyle = '#fff';
-    ctx.strokeStyle = 'rgba(0,0,0,.7)';
-    ctx.lineWidth = 3;
-    ctx.strokeText(d.label, cx, cy - hw2 * 0.5 - 8);
-    ctx.fillText(d.label, cx, cy - hw2 * 0.5 - 8);
-  }
+  // warm map dressing (Phase 10): hearths, lamps, lanterns, string
+  // lights and nook rugs baked into the map data.
+  for (const pr of mapDef.props || []) drawProp(pr);
+
+  // doors (Phase 10): REAL doors — framed, swinging, named. They
+  // open as anyone approaches and close behind them; the transfer
+  // itself still fires server-side on the door tile, masked by the
+  // swing + the warm load screen.
+  for (const { d, open } of tickDoors()) drawDoor(d, open);
 
   // entities, depth-sorted by x+y
   const now = Date.now();
@@ -1155,7 +1366,33 @@ function draw() {
     for (const gwd of mapDef.gateways || []) glow(gwd.x + gwd.w / 2, gwd.y + gwd.h / 2, 90, 0.30);
     for (const d of mapDef.doors || []) glow(d.x + d.w / 2, d.y + d.h / 2, 70, 0.26);
     if (mapDef.stage) glow(mapDef.stage.x + mapDef.stage.w / 2, mapDef.stage.y + mapDef.stage.h / 2, 130, 0.18);
+    // Phase 10: hearths, lamps, lanterns and string lights — in the
+    // map dressing, in placed home furniture, and beside a home's
+    // own door — all punch warm holes in the night.
+    for (const pr of mapDef.props || []) {
+      if (pr.kind === 'hearth') glow(pr.x, pr.y - 12, 95, 0.30);
+      else if (pr.kind === 'lamp' || pr.kind === 'lantern' || pr.kind === 'stringlights') glow(pr.x, pr.y - 14, 62, 0.24);
+    }
+    if (mapDef.studio && mapDef.studio.door) {
+      const sd = mapDef.studio.door;
+      glow(sd.x + sd.w / 2, sd.y, 80, 0.30);
+    }
+    const TSg = mapDef.tileSize || 32;
+    for (const f of sceneFurniture) {
+      if (f.type === 'hearth') glow((f.x + 0.5) * TSg, (f.y + 0.5) * TSg - 10, 90, 0.30);
+      else if (f.type === 'lamp' || f.type === 'lantern' || f.type === 'lights') {
+        glow((f.x + 0.5) * TSg, (f.y + 0.5) * TSg - 12, 60, 0.22);
+      }
+    }
     ctx.restore();
+  }
+
+  // Phase 10: the crackle follows the fire — café and hookah-lounge
+  // hearths are always lit; in a home, a placed fireplace lights it.
+  if (window.SolarionSfx) {
+    const hearthHere = mapDef.id === 'gateway-cafe' || mapDef.id === 'hookah-lounge'
+      || Boolean(mapDef.studio && sceneFurniture.some(f => f.type === 'hearth'));
+    window.SolarionSfx.setHearth(hearthHere);
   }
   ctx.restore();
 }

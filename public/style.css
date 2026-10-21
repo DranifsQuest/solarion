@@ -1,56 +1,56 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
-html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; background: #0e1220; color: #eef; }
+html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; background: #17100a; color: #eef; }
 .hidden { display: none !important; }
 
 #app { height: 100%; }
 
 .overlay-card {
-  max-width: 360px; margin: 8vh auto; background: #1a2238; border: 1px solid #33415c;
+  max-width: 360px; margin: 8vh auto; background: #2b1d12; border: 1px solid #6b4a2a;
   border-radius: 14px; padding: 28px 24px; text-align: center;
   box-shadow: 0 12px 40px rgba(0,0,0,.5);
 }
 .overlay-card h1 { font-size: 32px; letter-spacing: 3px; color: #ffd23f; }
-.tag { color: #9fb2d8; margin: 6px 0 18px; font-size: 13px; }
+.tag { color: #d8b98f; margin: 6px 0 18px; font-size: 13px; }
 .tabs { display: flex; gap: 6px; margin-bottom: 14px; }
-.tabs button { flex: 1; padding: 8px; border-radius: 8px; border: 1px solid #33415c;
-  background: #232f4d; color: #cdd9f5; cursor: pointer; }
-.tabs button.active { background: #ffd23f; color: #1a2238; font-weight: 700; }
+.tabs button { flex: 1; padding: 8px; border-radius: 8px; border: 1px solid #6b4a2a;
+  background: #3a2817; color: #f0dcbc; cursor: pointer; }
+.tabs button.active { background: #ffd23f; color: #2b1d12; font-weight: 700; }
 .overlay-card input[type=text], .overlay-card input:not([type=color]) {
   width: 100%; padding: 10px 12px; margin-bottom: 10px; border-radius: 8px;
-  border: 1px solid #33415c; background: #121827; color: #eef; font-size: 15px;
+  border: 1px solid #6b4a2a; background: #1d130b; color: #eef; font-size: 15px;
 }
 /* ------------------------------------------------ Phase 6: character creation + shared look editor */
 #create { max-width: 560px; margin: 3vh auto; max-height: 94vh; overflow-y: auto; text-align: center; }
-#createStage { background: radial-gradient(ellipse at 50% 88%, #2a3a5f 0%, #141b2e 62%);
-  border: 1px solid #33415c; border-radius: 12px; padding: 10px 6px 4px; margin-bottom: 12px; }
+#createStage { background: radial-gradient(ellipse at 50% 88%, #4a3220 0%, #1d130b 62%);
+  border: 1px solid #6b4a2a; border-radius: 12px; padding: 10px 6px 4px; margin-bottom: 12px; }
 #createPreview { display: block; margin: 0 auto; }
 .createBtns { display: flex; gap: 6px; justify-content: center; padding: 6px 0 8px; }
-.createBtns button { padding: 6px 12px; border-radius: 8px; border: 1px solid #33415c;
-  background: #232f4d; color: #cdd9f5; cursor: pointer; font-size: 13px; }
+.createBtns button { padding: 6px 12px; border-radius: 8px; border: 1px solid #6b4a2a;
+  background: #3a2817; color: #f0dcbc; cursor: pointer; font-size: 13px; }
 .createBtns button:hover { border-color: #ffd23f; color: #ffd23f; }
-.createBtns button.sel { background: #ffd23f; color: #1a2238; font-weight: 700; }
+.createBtns button.sel { background: #ffd23f; color: #2b1d12; font-weight: 700; }
 #createGo { width: 100%; padding: 12px; border-radius: 8px; border: none; background: #ffd23f;
-  color: #1a2238; font-size: 16px; font-weight: 700; cursor: pointer; margin-top: 12px; }
+  color: #2b1d12; font-size: 16px; font-weight: 700; cursor: pointer; margin-top: 12px; }
 #createErr, #lookErr { color: #ff7b7b; min-height: 18px; margin-top: 8px; font-size: 14px; }
 .lookGroup { text-align: left; margin-bottom: 10px; }
 .lookGroupTitle { color: #ffd23f; font-size: 12px; font-weight: 800; letter-spacing: 1.5px;
   text-transform: uppercase; margin-bottom: 6px; }
 .lookRow { display: flex; gap: 8px; margin-bottom: 7px; align-items: flex-start; }
-.lookLabel { flex: 0 0 86px; color: #9fb2d8; font-size: 13px; padding-top: 5px; }
+.lookLabel { flex: 0 0 86px; color: #d8b98f; font-size: 13px; padding-top: 5px; }
 .lookOpts { flex: 1; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
-.chip { padding: 4px 9px; border-radius: 999px; border: 1px solid #33415c; background: #121827;
-  color: #cdd9f5; cursor: pointer; font-size: 12px; }
+.chip { padding: 4px 9px; border-radius: 999px; border: 1px solid #6b4a2a; background: #1d130b;
+  color: #f0dcbc; cursor: pointer; font-size: 12px; }
 .chip:hover { border-color: #ffd23f; }
-.chip.sel { background: #ffd23f; color: #1a2238; font-weight: 700; border-color: #ffd23f; }
-.sw { width: 22px; height: 22px; border-radius: 50%; border: 2px solid #33415c; cursor: pointer; padding: 0; }
+.chip.sel { background: #ffd23f; color: #2b1d12; font-weight: 700; border-color: #ffd23f; }
+.sw { width: 22px; height: 22px; border-radius: 50%; border: 2px solid #6b4a2a; cursor: pointer; padding: 0; }
 .sw.sel { border-color: #ffd23f; box-shadow: 0 0 0 2px rgba(255,210,63,.35); }
 .customColor { width: 30px; height: 24px; border: none; background: none; cursor: pointer; padding: 0; }
 .genderRow { display: flex; gap: 8px; }
-.genderBtn { flex: 1; padding: 10px; border-radius: 10px; border: 1px solid #33415c;
-  background: #121827; color: #cdd9f5; cursor: pointer; font-size: 15px; }
-.genderBtn.sel { background: #ffd23f; color: #1a2238; font-weight: 800; border-color: #ffd23f; }
+.genderBtn { flex: 1; padding: 10px; border-radius: 10px; border: 1px solid #6b4a2a;
+  background: #1d130b; color: #f0dcbc; cursor: pointer; font-size: 15px; }
+.genderBtn.sel { background: #ffd23f; color: #2b1d12; font-weight: 800; border-color: #ffd23f; }
 #authGo { width: 100%; padding: 11px; border-radius: 8px; border: none; background: #ffd23f;
-  color: #1a2238; font-size: 16px; font-weight: 700; cursor: pointer; }
+  color: #2b1d12; font-size: 16px; font-weight: 700; cursor: pointer; }
 #authErr { color: #ff7b7b; min-height: 18px; margin-top: 10px; font-size: 14px; }
 
 #game { position: relative; height: 100%; overflow: hidden; }
@@ -58,18 +58,18 @@ html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; ba
 
 #hud { position: absolute; top: 10px; left: 10px; right: 10px; display: flex;
   justify-content: space-between; pointer-events: none; }
-#coinPill { background: rgba(10,14,26,.75); border: 1px solid #ffd23f; color: #ffd23f;
+#coinPill { background: rgba(26,16,9,.75); border: 1px solid #ffd23f; color: #ffd23f;
   padding: 6px 14px; border-radius: 999px; font-weight: 700; }
-#mapName { background: rgba(10,14,26,.75); padding: 6px 14px; border-radius: 999px; color: #cdd9f5; }
+#mapName { background: rgba(26,16,9,.75); padding: 6px 14px; border-radius: 999px; color: #f0dcbc; }
 
 #chatPanel { position: absolute; left: 10px; bottom: 10px; width: min(360px, 72vw);
-  background: rgba(10,14,26,.78); border: 1px solid #33415c; border-radius: 10px; overflow: hidden; }
+  background: rgba(26,16,9,.78); border: 1px solid #6b4a2a; border-radius: 10px; overflow: hidden; }
 #chatLog { height: 120px; overflow-y: auto; padding: 8px; font-size: 13px; line-height: 1.45; }
 #chatLog .who { color: #ffd23f; font-weight: 700; }
-#chatLog .sys { color: #8ea3c9; font-style: italic; }
-#chatForm { display: flex; border-top: 1px solid #33415c; }
+#chatLog .sys { color: #cfa879; font-style: italic; }
+#chatForm { display: flex; border-top: 1px solid #6b4a2a; }
 #chatInput { flex: 1; padding: 9px; border: none; background: transparent; color: #eef; font-size: 14px; }
-#chatForm button { width: 44px; border: none; background: #ffd23f; color: #1a2238; font-size: 16px; cursor: pointer; }
+#chatForm button { width: 44px; border: none; background: #ffd23f; color: #2b1d12; font-size: 16px; cursor: pointer; }
 
 #joystick { position: absolute; right: 24px; bottom: 24px; width: 110px; height: 110px;
   border-radius: 50%; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.25);
@@ -79,44 +79,52 @@ html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; ba
 @media (pointer: coarse) { #joystick { display: block; } }
 
 #toast { position: absolute; top: 56px; left: 50%; transform: translateX(-50%);
-  background: rgba(20,28,48,.92); border: 1px solid #ffd23f; color: #ffd23f;
+  background: rgba(43,29,18,.92); border: 1px solid #ffd23f; color: #ffd23f;
   padding: 10px 20px; border-radius: 999px; font-weight: 700; opacity: 0;
   transition: opacity .3s; pointer-events: none; }
 #toast.show { opacity: 1; }
 
 /* ------------------------------------------------ Phase 8: homes */
 #invitePrompt { position: absolute; bottom: 170px; left: 50%; transform: translateX(-50%);
-  background: rgba(20,28,48,.95); border: 1px solid #ffd23f; color: #eef;
+  background: rgba(43,29,18,.95); border: 1px solid #ffd23f; color: #eef;
   padding: 12px 16px; border-radius: 12px; z-index: 25; text-align: center;
   box-shadow: 0 6px 24px rgba(0,0,0,.5); }
 #invitePrompt .spRow { justify-content: center; margin-top: 8px; }
 #studioDevices .qItem button { margin-left: 4px; }
 
-#loadScreen { position: absolute; inset: 0; background: #080a12; z-index: 30;
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; }
-#loadScreen .spin { width: 44px; height: 44px; border-radius: 50%;
-  border: 5px solid #33415c; border-top-color: #ffd23f; animation: sp 0.8s linear infinite; }
+/* Phase 10: the doorway — dark wood, a glowing lantern, the
+   destination's name hung like a welcome sign. */
+#loadScreen { position: absolute; inset: 0; z-index: 30;
+  background: radial-gradient(ellipse at 50% 26%, rgba(255,170,80,.22), rgba(0,0,0,0) 55%),
+    linear-gradient(#2a1a10, #170f08);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; }
+#loadScreen .spin { width: 40px; height: 40px; border-radius: 50%;
+  border: 5px solid #5a4028; border-top-color: #ffb84d; animation: sp 0.8s linear infinite; }
 @keyframes sp { to { transform: rotate(360deg); } }
-#loadText { color: #cdd9f5; letter-spacing: 2px; }
+#loadScreen .loadLamp { font-size: 46px; text-shadow: 0 0 26px rgba(255,170,80,.85), 0 0 60px rgba(255,140,50,.4);
+  animation: lampFlicker 1.6s ease-in-out infinite; }
+@keyframes lampFlicker { 0%,100% { opacity: 1; } 45% { opacity: .86; } 60% { opacity: .95; } }
+#loadText { color: #ffd9a0; letter-spacing: 2px; font-size: 22px; font-weight: 700; margin: 0; }
+#loadSub { color: #d8b98f; font-style: italic; margin: 0 0 8px; }
 
 /* ------------------------------------------------ Phase 2: music */
-#musicBtn { pointer-events: auto; background: rgba(10,14,26,.75); border: 1px solid #33415c;
+#musicBtn { pointer-events: auto; background: rgba(26,16,9,.75); border: 1px solid #6b4a2a;
   color: #eef; padding: 6px 14px; border-radius: 999px; font-weight: 700; cursor: pointer; }
 #musicBtn:hover { border-color: #ffd23f; color: #ffd23f; }
 #chatLog .sing { color: #ffb3e2; font-weight: 700; }
 
 #stagePanel { position: absolute; top: 56px; right: 10px; width: 230px;
-  background: rgba(10,14,26,.82); border: 1px solid #ffd23f; border-radius: 10px; padding: 10px; z-index: 5; }
+  background: rgba(26,16,9,.82); border: 1px solid #ffd23f; border-radius: 10px; padding: 10px; z-index: 5; }
 .spTitle { color: #ffd23f; font-weight: 800; letter-spacing: 2px; font-size: 13px; margin-bottom: 6px; }
 #queueList { font-size: 13px; line-height: 1.5; max-height: 130px; overflow-y: auto; margin-bottom: 8px; }
 .qNow { color: #ffb3e2; }
-.qEmpty { color: #8ea3c9; font-style: italic; }
+.qEmpty { color: #cfa879; font-style: italic; }
 .qItem { color: #dfe6f5; }
 .spRow { display: flex; gap: 6px; }
-.spRow select { flex: 1; min-width: 0; padding: 6px; border-radius: 6px; border: 1px solid #33415c;
-  background: #121827; color: #eef; font-size: 13px; }
+.spRow select { flex: 1; min-width: 0; padding: 6px; border-radius: 6px; border: 1px solid #6b4a2a;
+  background: #1d130b; color: #eef; font-size: 13px; }
 .spRow button { padding: 6px 10px; border-radius: 6px; border: none; background: #ffd23f;
-  color: #1a2238; font-weight: 700; cursor: pointer; font-size: 13px; }
+  color: #2b1d12; font-weight: 700; cursor: pointer; font-size: 13px; }
 
 #nowPlaying { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
   background: rgba(20,16,40,.92); border: 1px solid #ff8bd1; color: #ffe3f4; z-index: 6;
@@ -127,7 +135,7 @@ html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; ba
 #nowPlaying button:disabled { opacity: .4; cursor: default; }
 
 #perfResult { position: absolute; top: 56px; left: 50%; transform: translateX(-50%); z-index: 6;
-  background: rgba(20,28,48,.94); border: 1px solid #ffd23f; color: #eef; text-align: center;
+  background: rgba(43,29,18,.94); border: 1px solid #ffd23f; color: #eef; text-align: center;
   padding: 12px 22px; border-radius: 12px; font-size: 15px; line-height: 1.6;
   box-shadow: 0 8px 30px rgba(0,0,0,.55); }
 
@@ -137,23 +145,23 @@ html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; ba
   box-shadow: 0 18px 60px rgba(0,0,0,.7); }
 .mxHead { display: flex; justify-content: space-between; align-items: center;
   color: #ffd23f; font-weight: 800; letter-spacing: 1px; margin-bottom: 10px; }
-.mxHead button { background: none; border: 1px solid #33415c; color: #eef; border-radius: 6px;
+.mxHead button { background: none; border: 1px solid #6b4a2a; color: #eef; border-radius: 6px;
   padding: 4px 10px; cursor: pointer; }
 #mixSlots { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
-.slotBtn { flex: 1; min-width: 130px; padding: 8px; border-radius: 8px; border: 1px solid #33415c;
-  background: #232f4d; color: #cdd9f5; cursor: pointer; text-align: left; }
-.slotBtn span { display: block; font-size: 12px; color: #9fb2d8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.slotBtn { flex: 1; min-width: 130px; padding: 8px; border-radius: 8px; border: 1px solid #6b4a2a;
+  background: #3a2817; color: #f0dcbc; cursor: pointer; text-align: left; }
+.slotBtn span { display: block; font-size: 12px; color: #d8b98f; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .slotBtn.active { border-color: #ffd23f; background: #2e3c63; }
-.mxRow { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 10px 0; font-size: 13px; color: #9fb2d8; }
-.mxRow input[type=text], .mxRow input:not([type=range]) { background: #121827; border: 1px solid #33415c;
+.mxRow { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 10px 0; font-size: 13px; color: #d8b98f; }
+.mxRow input[type=text], .mxRow input:not([type=range]) { background: #1d130b; border: 1px solid #6b4a2a;
   color: #eef; border-radius: 6px; padding: 7px 9px; }
 #mixName { flex: 1; min-width: 160px; font-size: 14px; }
-.mxRow button { padding: 8px 14px; border-radius: 8px; border: 1px solid #33415c;
-  background: #232f4d; color: #eef; cursor: pointer; font-weight: 600; }
-#mixSave { background: #ffd23f; color: #1a2238; border: none; }
+.mxRow button { padding: 8px 14px; border-radius: 8px; border: 1px solid #6b4a2a;
+  background: #3a2817; color: #eef; cursor: pointer; font-weight: 600; }
+#mixSave { background: #ffd23f; color: #2b1d12; border: none; }
 .mxSpacer { flex: 1; }
-#editTitle { font-size: 12px; color: #8ea3c9; margin: 4px 0; }
-#mixGrid { background: #10182b; border: 1px solid #33415c; border-radius: 8px; padding: 6px; overflow-x: auto; }
+#editTitle { font-size: 12px; color: #cfa879; margin: 4px 0; }
+#mixGrid { background: #10182b; border: 1px solid #6b4a2a; border-radius: 8px; padding: 6px; overflow-x: auto; }
 .gridRow, .gridHead { display: flex; gap: 3px; margin-bottom: 3px; align-items: stretch; }
 .gcell { flex: 1; min-width: 26px; height: 26px; border-radius: 4px; background: #1b2745;
   font-size: 10px; color: #dfe6f5; display: flex; align-items: center; justify-content: center;
@@ -162,14 +170,14 @@ html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; ba
 .gcell.filled { background: #3aa7e0; color: #0b1526; font-weight: 700; }
 .gcell.repeat { background: #24486e; color: #8ec9ee; }
 .rowLabel { width: 110px; flex: none; font-size: 11px; padding: 0 6px; border-radius: 4px;
-  border: 1px solid #33415c; background: #232f4d; color: #cdd9f5; cursor: pointer;
+  border: 1px solid #6b4a2a; background: #3a2817; color: #f0dcbc; cursor: pointer;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #genreRow { display: flex; gap: 6px; margin: 12px 0 6px; flex-wrap: wrap; }
-.genreBtn { padding: 6px 14px; border-radius: 999px; border: 1px solid #33415c;
-  background: #232f4d; color: #cdd9f5; cursor: pointer; font-weight: 600; }
-.genreBtn.active { background: #ffd23f; color: #1a2238; border-color: #ffd23f; }
+.genreBtn { padding: 6px 14px; border-radius: 999px; border: 1px solid #6b4a2a;
+  background: #3a2817; color: #f0dcbc; cursor: pointer; font-weight: 600; }
+.genreBtn.active { background: #ffd23f; color: #2b1d12; border-color: #ffd23f; }
 /* ------------------------------------------------ Phase 4: studio + look */
-#studioBtn, #lookBtn { pointer-events: auto; background: rgba(10,14,26,.75); border: 1px solid #33415c;
+#studioBtn, #lookBtn { pointer-events: auto; background: rgba(26,16,9,.75); border: 1px solid #6b4a2a;
   color: #eef; padding: 6px 14px; border-radius: 999px; font-weight: 700; cursor: pointer; }
 #studioBtn:hover, #lookBtn:hover { border-color: #ffd23f; color: #ffd23f; }
 #studioPanel { position: absolute; left: 10px; bottom: 160px; width: 290px; max-height: 62vh; overflow-y: auto;
@@ -177,20 +185,20 @@ html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; ba
   box-shadow: 0 8px 30px rgba(0,0,0,.6); }
 #studioPanel .spRow { margin-bottom: 6px; }
 #studioPanel .spRow input { flex: 1; min-width: 0; padding: 6px; border-radius: 6px;
-  border: 1px solid #33415c; background: #121827; color: #eef; font-size: 13px; }
+  border: 1px solid #6b4a2a; background: #1d130b; color: #eef; font-size: 13px; }
 #studioFurnList { font-size: 12px; margin: 6px 0; }
 #catalogList .pkSit, #inventoryList button { margin: 2px 0; }
-#inventoryList button { padding: 3px 8px; border-radius: 6px; border: 1px solid #33415c;
-  background: #232f4d; color: #eef; cursor: pointer; font-size: 12px; }
+#inventoryList button { padding: 3px 8px; border-radius: 6px; border: 1px solid #6b4a2a;
+  background: #3a2817; color: #eef; cursor: pointer; font-size: 12px; }
 #studioPanel .qItem button { margin-left: 4px; }
 #lookPanel { position: absolute; right: 10px; top: 56px; width: 330px; max-height: 86vh; overflow-y: auto;
-  background: rgba(20,28,48,.94); border: 1px solid #ffd23f; border-radius: 10px; padding: 12px; z-index: 20;
+  background: rgba(43,29,18,.94); border: 1px solid #ffd23f; border-radius: 10px; padding: 12px; z-index: 20;
   box-shadow: 0 8px 30px rgba(0,0,0,.6); }
-#lookPreview { display: block; margin: 4px auto 8px; background: radial-gradient(ellipse at 50% 88%, #2a3a5f 0%, #141b2e 65%);
+#lookPreview { display: block; margin: 4px auto 8px; background: radial-gradient(ellipse at 50% 88%, #4a3220 0%, #1d130b 65%);
   border-radius: 10px; }
-#lookPanel .spRow button { padding: 7px 12px; border-radius: 8px; border: 1px solid #33415c;
-  background: #232f4d; color: #eef; cursor: pointer; }
-#lookPanel #lookApply { background: #ffd23f; color: #1a2238; font-weight: 700; border-color: #ffd23f; }
+#lookPanel .spRow button { padding: 7px 12px; border-radius: 8px; border: 1px solid #6b4a2a;
+  background: #3a2817; color: #eef; cursor: pointer; }
+#lookPanel #lookApply { background: #ffd23f; color: #2b1d12; font-weight: 700; border-color: #ffd23f; }
 /* ------------------------------------------------ Phase 3: casino */
 #casinoPanel { position: absolute; top: 56px; left: 10px; width: 300px; max-height: 78vh; overflow-y: auto;
   background: rgba(16,10,30,.92); border: 2px solid #ffd23f; border-radius: 10px; padding: 10px; z-index: 5;
@@ -205,7 +213,7 @@ html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; ba
 .pkChairs { font-size: 12px; line-height: 1.6; }
 .pkChair.acting { color: #ffd23f; font-weight: 700; }
 .pkChair.mine { color: #8ef0b3; }
-.pkDim { color: #8ea3c9; font-size: 12px; font-style: italic; }
+.pkDim { color: #cfa879; font-size: 12px; font-style: italic; }
 .pkSit { display: block; width: 100%; text-align: left; margin: 2px 0; padding: 5px 8px;
   border-radius: 6px; border: 1px solid #4a2f6e; background: #241533; color: #e9ddff;
   cursor: pointer; font-size: 12px; font-weight: 700; }
@@ -214,29 +222,29 @@ html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; ba
 #myCards { font-size: 13px; color: #eef; margin: 4px 0; }
 #pokerActions { display: flex; flex-wrap: wrap; gap: 5px; margin: 6px 0; }
 #pokerActions button { padding: 6px 10px; border-radius: 6px; border: 2px solid #171126;
-  background: #ffd23f; color: #1a2238; font-weight: 800; cursor: pointer; font-size: 12px;
+  background: #ffd23f; color: #2b1d12; font-weight: 800; cursor: pointer; font-size: 12px;
   box-shadow: 0 3px 0 #171126; }
 #pokerActions button:disabled { opacity: .35; cursor: default; box-shadow: none; }
 #pokerActions button:active:not(:disabled) { transform: translateY(2px); box-shadow: 0 1px 0 #171126; }
 #pokerStand { background: #ff5d8f !important; color: #fff !important; }
 #raiseAmt { width: 84px; padding: 6px; border-radius: 6px; border: 1px solid #4a2f6e;
-  background: #121827; color: #eef; font-size: 12px; }
+  background: #1d130b; color: #eef; font-size: 12px; }
 .slotBox { border: 1px solid #4a2f6e; border-radius: 8px; padding: 8px; background: rgba(10,6,20,.65); }
 #slotReels { display: flex; gap: 6px; justify-content: center; margin: 6px 0; }
 #slotReels .reel { font-size: 26px; background: #f5f0e6; border-radius: 8px; padding: 4px 8px;
   box-shadow: inset 0 -4px 0 rgba(0,0,0,.2); }
 .slotBetBtn { padding: 6px 10px; border-radius: 6px; border: 1px solid #4a2f6e;
   background: #241533; color: #e9ddff; font-weight: 700; cursor: pointer; }
-.slotBetBtn.active { background: #ffd23f; color: #1a2238; border-color: #ffd23f; }
+.slotBetBtn.active { background: #ffd23f; color: #2b1d12; border-color: #ffd23f; }
 #slotSpin { padding: 6px 14px; border-radius: 6px; border: 2px solid #171126; background: #ff5d8f;
   color: #fff; font-weight: 800; cursor: pointer; box-shadow: 0 3px 0 #171126; }
 #slotSpin:active { transform: translateY(2px); box-shadow: 0 1px 0 #171126; }
 #slotMsg { margin-top: 5px; text-align: center; }
 
 #loopBrowser { display: flex; gap: 6px; flex-wrap: wrap; }
-.loopBtn { padding: 7px 11px; border-radius: 8px; border: 1px solid #33415c;
-  background: #1c2745; color: #eef; cursor: pointer; font-size: 13px; }
-.loopBtn small { color: #8ea3c9; }
+.loopBtn { padding: 7px 11px; border-radius: 8px; border: 1px solid #6b4a2a;
+  background: #33241a; color: #eef; cursor: pointer; font-size: 13px; }
+.loopBtn small { color: #cfa879; }
 .loopBtn.active { border-color: #ff8bd1; background: #33254d; }
 
 /* ------------------------------------------------ Phase 9 UI */
@@ -249,38 +257,39 @@ html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; ba
   12% { opacity: 1; transform: translateX(-50%) translateY(0); }
   80% { opacity: 1; } 100% { opacity: 0; } }
 .sidePanel { position: absolute; top: 56px; right: 10px; width: 300px; max-width: calc(100vw - 20px);
-  max-height: calc(100vh - 130px); overflow-y: auto; background: rgba(13,18,34,.94);
-  border: 1px solid #33415c; border-radius: 12px; padding: 12px; z-index: 40; color: #eef; }
+  max-height: calc(100vh - 130px); overflow-y: auto; background: rgba(29,19,11,.94);
+  border: 1px solid #6b4a2a; border-radius: 12px; padding: 12px; z-index: 40; color: #eef; }
 .sidePanel .spTitle { margin-bottom: 8px; }
 .navRow, .friendRow { display: flex; align-items: center; gap: 7px; padding: 6px 7px;
   border-radius: 8px; background: rgba(255,255,255,.05); margin-bottom: 5px; font-size: 13px; }
 .navRow button, .friendRow button { margin-left: auto; padding: 4px 9px; border-radius: 6px;
-  border: 1px solid #4a5f8a; background: #22304a; color: #eef; cursor: pointer; font-size: 12px; }
+  border: 1px solid #8a6a45; background: #3a2a18; color: #eef; cursor: pointer; font-size: 12px; }
 .navRow button:hover, .friendRow button:hover { border-color: #ffd23f; color: #ffd23f; }
 .fullDots { color: #ffd23f; letter-spacing: 1px; font-size: 11px; }
 #profileCard { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
-  width: 300px; max-width: calc(100vw - 24px); background: rgba(13,18,34,.97);
+  width: 300px; max-width: calc(100vw - 24px); background: rgba(29,19,11,.97);
   border: 1px solid #ffd23f; border-radius: 14px; padding: 16px; z-index: 60; color: #eef;
   text-align: center; box-shadow: 0 18px 50px rgba(0,0,0,.6); }
-#profileCard canvas { background: #1c2745; border-radius: 10px; }
+#profileCard canvas { background: #33241a; border-radius: 10px; }
 #profileCard .pfRow { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; margin-top: 8px; }
-#profileCard button { padding: 6px 10px; border-radius: 7px; border: 1px solid #4a5f8a;
-  background: #22304a; color: #eef; cursor: pointer; font-size: 12px; font-weight: 700; }
+#profileCard button { padding: 6px 10px; border-radius: 7px; border: 1px solid #8a6a45;
+  background: #3a2a18; color: #eef; cursor: pointer; font-size: 12px; font-weight: 700; }
 #profileCard button:hover { border-color: #ffd23f; color: #ffd23f; }
 #emoteBar { position: absolute; right: 10px; bottom: 150px; display: flex; flex-direction: column;
   gap: 5px; z-index: 35; }
-#emoteBar button { width: 42px; height: 42px; border-radius: 50%; border: 1px solid #33415c;
-  background: rgba(13,18,34,.9); font-size: 19px; cursor: pointer; }
+#emoteBar button { width: 42px; height: 42px; border-radius: 50%; border: 1px solid #6b4a2a;
+  background: rgba(29,19,11,.9); font-size: 19px; cursor: pointer; }
 #emoteBar button:hover { border-color: #ffd23f; }
-#wakeScreen { position: fixed; inset: 0; background: #0b0e18; z-index: 200;
+#wakeScreen { position: fixed; inset: 0; z-index: 200;
+  background: radial-gradient(ellipse at 50% 30%, rgba(255,170,80,.16), rgba(0,0,0,0) 55%), #140d07;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   color: #eef; text-align: center; padding: 20px; }
 #wakeScreen h1 { font-size: 34px; letter-spacing: 3px; margin: 0 0 6px; }
 #wakeBarWrap { width: min(420px, 80vw); height: 10px; border-radius: 6px;
-  background: #1c2745; overflow: hidden; margin: 18px 0 10px; }
-#wakeBar { height: 100%; width: 8%; background: linear-gradient(90deg, #ffd23f, #ff5d8f);
+  background: #33241a; overflow: hidden; margin: 18px 0 10px; }
+#wakeBar { height: 100%; width: 8%; background: linear-gradient(90deg, #ffd23f, #ff8c42);
   border-radius: 6px; transition: width .5s ease; }
-#wakeTip { color: #8ea3c9; font-size: 14px; max-width: 440px; min-height: 40px; }
+#wakeTip { color: #cfa879; font-size: 14px; max-width: 440px; min-height: 40px; }
 #dayTint { position: absolute; inset: 0; pointer-events: none; z-index: 5;
   background: #0a1030; opacity: 0; }
 .voteFloat { position: absolute; font-size: 22px; pointer-events: none; z-index: 25;
@@ -288,13 +297,13 @@ html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; ba
 @keyframes voteUp { 0% { opacity: 0; transform: translateY(6px) scale(.7); }
   20% { opacity: 1; transform: translateY(0) scale(1.15); }
   100% { opacity: 0; transform: translateY(-46px) scale(1); } }
-#hud button.active { background: #ffd23f; color: #1a2238; border-color: #ffd23f; }
+#hud button.active { background: #ffd23f; color: #2b1d12; border-color: #ffd23f; }
 @media (max-width: 640px) {
   .sidePanel { top: 104px; }
   #chatPanel { width: calc(100vw - 150px); }
   #hud { flex-wrap: wrap; }
 }
 #stageFloats { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 24; }
-#cdBox button, #chartBtn { padding: 3px 8px; border-radius: 6px; border: 1px solid #4a5f8a;
-  background: #22304a; color: #eef; cursor: pointer; font-size: 11px; margin-left: 6px; }
+#cdBox button, #chartBtn { padding: 3px 8px; border-radius: 6px; border: 1px solid #8a6a45;
+  background: #3a2a18; color: #eef; cursor: pointer; font-size: 11px; margin-left: 6px; }
 #cdBox button:hover, #chartBtn:hover { border-color: #ffd23f; color: #ffd23f; }
