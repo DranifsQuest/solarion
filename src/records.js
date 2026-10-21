@@ -10,7 +10,8 @@
  *  - Blank CDs come in packs of 10 for 20z (anywhere — the Stage
  *    panel sells them; there is no shop NPC to walk to).
  *  - { type:'burn-cd', mixId } consumes one blank and mints a CD of
- *    one of YOUR mixes. Performing consumes the CD at set start.
+ *    one of YOUR mixes. (v1.1: performing no longer consumes
+ *    the CD — CDs are reusable collection pieces until deleted.)
  *  - Every finished performance is recorded (perf_history). Lifetime
  *    up-votes ON ONE MIX earn its performer wall trophies:
  *    Gold record at 25, Platinum record at 100 (awarded once each,
@@ -61,6 +62,7 @@ function init() {
     stock: db.prepare('SELECT blanks FROM cd_stock WHERE user_id = ?'),
     setStock: db.prepare('INSERT INTO cd_stock (user_id, blanks) VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE SET blanks = excluded.blanks'),
     addCd: db.prepare('INSERT INTO cds (user_id, mix_id, created_at) VALUES (?, ?, ?)'),
+    cdById: db.prepare('SELECT * FROM cds WHERE id = ?'),
     cdsOf: db.prepare('SELECT * FROM cds WHERE user_id = ? ORDER BY id'),
     cdFor: db.prepare('SELECT * FROM cds WHERE user_id = ? AND mix_id = ? ORDER BY id LIMIT 1'),
     delCd: db.prepare('DELETE FROM cds WHERE id = ?'),
@@ -130,7 +132,7 @@ function burnCd(userId, mixId) {
 }
 
 function listCds(userId, mixNameOf) {
-  return SQ.cdsOf.all(userId).map(c => ({ id: c.id, mixId: c.mix_id, name: mixNameOf ? mixNameOf(c.mix_id) : null }));
+  return SQ.cdsOf.all(userId).map(c => ({ id: c.id, mixId: c.mix_id, createdAt: c.created_at, name: mixNameOf ? mixNameOf(c.mix_id) : null }));
 }
 
 function findCd(userId, mixId) {
@@ -139,6 +141,20 @@ function findCd(userId, mixId) {
 
 function consumeCd(cdId) {
   SQ.delCd.run(cdId);
+}
+
+/**
+ * v1.1 collection management: delete exactly one CD, only ever the
+ * owner's own. The underlying mix is NOT touched. (Performing no
+ * longer consumes CDs — this is the only way a CD leaves a
+ * collection besides its mix being deleted.)
+ */
+function deleteCd(userId, cdId) {
+  if (!Number.isInteger(cdId)) return { ok: false, error: 'Pick a CD to remove.' };
+  const cd = SQ.cdById.get(cdId);
+  if (!cd || cd.user_id !== userId) return { ok: false, error: 'That CD is not in your collection.' };
+  SQ.delCd.run(cdId);
+  return { ok: true };
 }
 
 /** A deleted mix takes its unplayed CDs with it. */
@@ -171,7 +187,7 @@ function chart(now = Date.now()) {
 }
 
 module.exports = {
-  init, blankCount, buyBlanks, burnCd, listCds, findCd, consumeCd,
+  init, blankCount, buyBlanks, burnCd, listCds, findCd, consumeCd, deleteCd,
   onMixDeleted, recordPerformance, chart,
   BLANK_PACK_COUNT, BLANK_PACK_PRICE, TROPHY_GOLD_VOTES, TROPHY_PLATINUM_VOTES,
   CHART_WINDOW_MS, CHART_SIZE,

@@ -170,6 +170,10 @@ test('homes v2: name/paint/floor persist, expansion keeps furniture, lock + invi
   assert.equal(renamed.map.wall, '#4a2436', 'Sunset Plum walls applied');
 
   // Expansion needs 1500z: refused at 60z, works when funded.
+  // (v1.1: the welcome bonus leaves new accounts rich — drain to
+  // the documented 60z first, same hook the funding step below uses.)
+  owner.client.send({ type: 'debug-casino', op: 'set-balance', zcoins: 60 });
+  await waitFor(() => owner.client.msgs.filter(m => m.type === 'zcoins' && m.zcoins === 60).pop(), 5000, 'drained to 60z');
   owner.client.send({ type: 'home-expand' });
   const poor = await waitFor(() => owner.client.msgs.filter(m => m.type === 'notice' && /costs 1500z/.test(m.text)).pop(), 5000, 'expansion refused when broke');
   assert.ok(poor);
@@ -228,14 +232,14 @@ test('bartender daily: first drink free + 10z tip, once per day across BOTH bars
   u.client.send({ type: 'buy-drink' });
   const treat = await waitFor(() => u.client.msgs.filter(m => m.type === 'notice' && /on the house/.test(m.text)).pop(), 5000, 'first drink on the house');
   assert.ok(treat);
-  await waitFor(() => u.client.msgs.filter(m => m.type === 'zcoins' && m.zcoins === 110).pop(), 5000, 'free drink + 10z tip: 100 → 110');
+  await waitFor(() => u.client.msgs.filter(m => m.type === 'zcoins' && m.zcoins === 5010).pop(), 5000, 'free drink + 10z tip: 5000 → 5010');
   u.client.send({ type: 'buy-drink' });
-  await waitFor(() => u.client.msgs.filter(m => m.type === 'zcoins' && m.zcoins === 105).pop(), 5000, 'second drink charged 5z');
+  await waitFor(() => u.client.msgs.filter(m => m.type === 'zcoins' && m.zcoins === 5005).pop(), 5000, 'second drink charged 5z');
 
   // The OTHER bartender, same day: no second treat.
   await atBar('neon-casino');
   u.client.send({ type: 'buy-drink' });
-  await waitFor(() => u.client.msgs.filter(m => m.type === 'zcoins' && m.zcoins === 100).pop(), 5000, 'neon drink charged — daily treat already claimed');
+  await waitFor(() => u.client.msgs.filter(m => m.type === 'zcoins' && m.zcoins === 5000).pop(), 5000, 'neon drink charged — daily treat already claimed');
   assert.equal(u.client.msgs.filter(m => m.type === 'notice' && /on the house/.test(m.text)).length, 1, 'exactly one treat per day');
   u.client.ws.close();
 });
@@ -321,7 +325,7 @@ test('ambient life: no NPCs ride snapshots anymore; the world clock ships in hel
 
 // ------------------------------------------------------------ item 5: ritual
 
-test('burn-to-CD: stage refuses without a CD; burning works; the CD is spent at set start', { timeout: 90000 }, async () => {
+test('burn-to-CD: stage refuses without a CD; CDs are reusable + deletable, mixes survive (v1.1)', { timeout: 120000 }, async () => {
   const u = await makeUser('ritual_p9');
   const other = await makeUser('ritual_other_p9');
   const mix = await saveMix(u, 1, SHORT_MIX);
@@ -351,11 +355,42 @@ test('burn-to-CD: stage refuses without a CD; burning works; the CD is spent at 
   assert.equal(burned.blanks, 9);
   assert.equal(burned.cds[0].name, 'P9 Banger', 'CD carries the mix title');
 
-  // Now the stage takes us; when the set starts the CD is consumed.
+  // v1.1 (Zan): performing does NOT spend the CD. Set #1 in the Bay…
   u.client.send({ type: 'stage-join', mixId: mix.id });
-  await waitFor(() => u.client.msgs.filter(m => m.type === 'performance-start').pop(), 8000, 'performance starts with CD');
-  const after = await waitFor(() => u.client.msgs.filter(m => m.type === 'cds' && m.cds.length === 0).pop(), 5000, 'CD consumed at set start');
-  assert.equal(after.blanks, 9);
+  await waitFor(() => u.client.msgs.filter(m => m.type === 'performance-start').pop(), 8000, 'performance #1 starts with CD');
+  await waitFor(() => u.client.msgs.filter(m => m.type === 'performance-end').pop(), 30000, 'performance #1 ends');
+
+  // …then the SAME CD performs again across town (per-map cooldown),
+  // and the collection sync on arrival still lists exactly one CD.
+  u.client.send({ type: 'navigate', mapId: 'neon-district' });
+  await waitFor(() => u.client.msgs.filter(m => m.type === 'map' && m.map.id === 'neon-district').pop(), 8000, 'arrives in neon');
+  const sync = await waitFor(() => u.client.msgs.filter(m => m.type === 'cds' && m.cds.length === 1).pop(), 5000, 'CD still in the collection after set #1');
+  assert.equal(sync.cds[0].id, burned.cds[0].id, 'same physical CD');
+  u.client.send({ type: 'stage-join', mixId: mix.id });
+  await waitFor(() => u.client.msgs.filter(m => m.type === 'performance-start').pop(), 8000, 'performance #2 starts — same CD reused');
+
+  // Delete it from the collection: exactly that CD goes… (wait
+  // for the delete NOTICE first — a length-0 cds payload also
+  // exists from the earlier blank-pack purchase, and the delete's
+  // own push is what proves the server state.)
+  u.client.send({ type: 'delete-cd', cdId: burned.cds[0].id });
+  await waitFor(() => u.client.msgs.filter(m => m.type === 'notice' && /removed from your collection/.test(m.text)).pop(), 5000, 'delete confirmed');
+  const emptied = await waitFor(() => u.client.msgs.filter(m => m.type === 'cds' && m.cds.length === 0).pop(), 5000, 'CD deleted from collection');
+  assert.equal(emptied.blanks, 9, 'blanks untouched by the delete');
+  // …the mix survives…
+  u.client.send({ type: 'mix-list' });
+  const mixes = await waitFor(() => u.client.msgs.filter(m => m.type === 'mixes').pop(), 5000, 'mix list after CD delete');
+  assert.ok(mixes.mixes.some(m => m.id === mix.id), 'deleting a CD never deletes the mix');
+  // …and the deleted CD can no longer be performed. (Asked from
+  // Cinder Mesa: a fresh stage, so the per-map cooldown can't mask
+  // the missing-CD refusal.)
+  await waitFor(() => u.client.msgs.filter(m => m.type === 'performance-end').pop(), 30000, 'performance #2 ends');
+  u.client.send({ type: 'navigate', mapId: 'cinder-mesa' });
+  await waitFor(() => u.client.msgs.filter(m => m.type === 'map' && m.map.id === 'cinder-mesa').pop(), 8000, 'arrives in the mesa');
+  u.client.send({ type: 'stage-join', mixId: mix.id });
+  const refused2 = await waitFor(() => u.client.msgs.filter(m => m.type === 'notice' && /Burn .* to a CD first/.test(m.text)).pop(),
+    5000, 'stage refuses the deleted CD');
+  assert.ok(refused2);
   u.client.ws.close(); other.client.ws.close();
 });
 

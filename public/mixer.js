@@ -23,6 +23,11 @@
 
 const AE = {
   ctx: null,
+  // v1.1: alternate output tap — the zone-music scheduler points
+  // this at its own bus for the duration of a scheduling call so
+  // background music gets its own fader under the master. Null =
+  // straight to master (performances, radios, auditions unaffected).
+  out: null,
   master: null,
   noiseBuf: null,
   scheduled: [],     // sources to stop on AE.stop()
@@ -63,7 +68,7 @@ const AE = {
     const g = this.ctx.createGain();
     g.gain.setValueAtTime(gain, t);
     g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-    src.connect(f); f.connect(g); g.connect(this.master);
+    src.connect(f); f.connect(g); g.connect(this.out || this.master);
     src.start(t); src.stop(t + dur + 0.05);
     return this.track(src);
   },
@@ -77,7 +82,7 @@ const AE = {
     g.gain.setValueAtTime(0.0001, t);
     g.gain.exponentialRampToValueAtTime(gain, t + attack);
     g.gain.exponentialRampToValueAtTime(0.001, t + Math.max(dur, attack + 0.02));
-    o.connect(g); g.connect(this.master);
+    o.connect(g); g.connect(this.out || this.master);
     o.start(t); o.stop(t + dur + 0.05);
     return this.track(o);
   },
@@ -90,7 +95,7 @@ const AE = {
     const g = this.ctx.createGain();
     g.gain.setValueAtTime(0.5, t);
     g.gain.exponentialRampToValueAtTime(0.001, t + 0.24);
-    o.connect(g); g.connect(this.master);
+    o.connect(g); g.connect(this.out || this.master);
     o.start(t); o.stop(t + 0.26);
     this.track(o);
   },
@@ -148,7 +153,7 @@ const AE = {
           g.gain.linearRampToValueAtTime(0.045, bt + Math.min(0.35, barDur * 0.3));
           g.gain.setValueAtTime(0.045, bt + barDur * 0.7);
           g.gain.linearRampToValueAtTime(0.0001, bt + barDur);
-          o.connect(g); g.connect(this.master);
+          o.connect(g); g.connect(this.out || this.master);
           o.start(bt); o.stop(bt + barDur + 0.05);
           this.track(o);
         }
@@ -188,6 +193,79 @@ const AE = {
       }
     }
     return t0 + mix.bars * barDur;
+  },
+
+  // ---------------------------------------------------------------
+  // v1.1 audibility (Item 5): stage performances are scheduled ONLY
+  // once the AudioContext is actually RUNNING. The old code scheduled
+  // onto ctx.currentTime unconditionally — on a suspended context
+  // (the performer who queued, waited, and whose browser idled or
+  // interrupted the context) currentTime is FROZEN, so the whole set
+  // sat on a clock that never advanced: total silence, no error.
+  // Now: if the context isn't running, we ask it to resume and keep
+  // retrying (statechange + poll + the client's gesture hook). When
+  // it runs in time, the set starts exactly at startAt, in sync with
+  // the room. If it wakes LATE, the performer joins from the top of
+  // their mix right away — a performance is one pass, so there is no
+  // later grid point to join on; hearing the set a beat behind the
+  // room beats not hearing it at all.
+  _perfWait: null,
+
+  playPerformance(mix, startAt, durationMs) {
+    this.cancelPerformanceWait();
+    if (!mix) return;
+    const attempt = () => {
+      if (!this.ctx || this.ctx.state !== 'running') return false;
+      const now = Date.now();
+      const elapsed = now - startAt;
+      if (elapsed >= durationMs) return true; // the set is over — nothing to join
+      this.stop();
+      if (elapsed <= 50) {
+        // On time: start on the shared grid point, exactly synced.
+        this.playMix(mix, this.ctx.currentTime + Math.max(0.03, (startAt - now) / 1000));
+      } else {
+        // Late wake: play the set from the top, now.
+        this.playMix(mix, this.ctx.currentTime + 0.05);
+      }
+      return true;
+    };
+    if (this.ensure() && attempt()) return;
+    const wait = this._perfWait = { done: false, timer: null, onState: null, tryNow: null };
+    wait.tryNow = () => {
+      if (wait.done) return;
+      if (this.ensure()) { try { this.ctx.resume(); } catch (e) { /* stays cold */ } }
+      if (attempt() || Date.now() > startAt + durationMs) {
+        wait.done = true;
+        this._clearPerfWait();
+      }
+    };
+    if (this.ctx && this.ctx.addEventListener) {
+      wait.onState = () => wait.tryNow();
+      this.ctx.addEventListener('statechange', wait.onState);
+    }
+    wait.timer = setInterval(wait.tryNow, 400);
+    wait.tryNow();
+  },
+
+  _clearPerfWait() {
+    const w = this._perfWait;
+    if (!w) return;
+    if (w.timer) clearInterval(w.timer);
+    if (w.onState && this.ctx && this.ctx.removeEventListener) {
+      try { this.ctx.removeEventListener('statechange', w.onState); } catch (e) { /* gone */ }
+    }
+    if (this._perfWait === w) this._perfWait = null;
+  },
+
+  cancelPerformanceWait() {
+    const w = this._perfWait;
+    if (w) { w.done = true; this._clearPerfWait(); }
+  },
+
+  /** The client's global gesture listener pokes this: a real user
+   *  gesture is the one thing that reliably un-suspends a context. */
+  notifyGesture() {
+    if (this._perfWait) this._perfWait.tryNow();
   },
 };
 
@@ -241,6 +319,7 @@ const Mixer = {
       joinSel: $('joinMixSel'), nowPlaying: $('nowPlaying'),
       npText: $('npText'), result: $('perfResult'),
       cdBox: $('cdBox'), chartBox: $('chartBox'),
+      tipBox: $('tipBox'), tipAmt: $('tipAmt'), tipBtn: $('tipBtn'),
     };
     $('musicBtn').onclick = () => { AE.ensure(); this.openPanel(); };
     $('mixerClose').onclick = () => this.closePanel();
@@ -250,10 +329,15 @@ const Mixer = {
     $('mixDelete').onclick = () => this.deleteSlot();
     $('mixAddTrackHint').onclick = () => this.hooks.toast('Pick a loop below, then click a track row to place it.');
     $('stageJoinBtn').onclick = () => {
-      const id = Number(this.el.joinSel.value);
-      if (!id) { this.hooks.toast('Save a mix first — open the 🎵 Mixer.'); return; }
+      // v1.1: the drop-down lists burned CDs; the selected CD is
+      // what Perform plays (its mix goes on the wire, as before).
+      const cd = this.cds.cds.find(c => c.id === Number(this.el.joinSel.value));
+      if (!cd) { this.hooks.toast('Burn a CD first — open the 🎵 Mixer to make one.'); return; }
       AE.ensure();
-      this.hooks.send({ type: 'stage-join', mixId: id });
+      this.hooks.send({ type: 'stage-join', mixId: cd.mixId });
+    };
+    if (this.el.tipBtn) this.el.tipBtn.onclick = () => {
+      this.hooks.send({ type: 'tip', amount: Number(this.el.tipAmt.value) });
     };
     $('stageLeaveBtn').onclick = () => this.hooks.send({ type: 'stage-leave' });
     $('voteUp').onclick = () => this.vote(1);
@@ -304,9 +388,8 @@ const Mixer = {
     for (const b of this.el.slots.querySelectorAll('.slotBtn')) {
       b.onclick = () => this.selectSlot(Number(b.dataset.slot));
     }
-    // stage join select mirrors saved mixes
-    const opts = this.myMixes.map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('');
-    this.el.joinSel.innerHTML = opts || '<option value="">— no mixes yet —</option>';
+    // (The stage join drop-down is the CD collection — renderCds
+    // owns it since v1.1.)
   },
 
   renderBrowser() {
@@ -327,7 +410,8 @@ const Mixer = {
         this.renderBrowser();
         this.auditionLoop(b.dataset.id);
       };
-      b.ondblclick = () => this.placeSelected(0);
+      // (v1.1: the old dblclick called a placeSelected() that never
+      // existed — removed; placing lives in the grid, one click.)
     }
   },
 
@@ -335,7 +419,7 @@ const Mixer = {
     if (!this.draft) return;
     const esc = this.hooks.esc;
     const bars = this.draft.bars;
-    this.el.editTitle.textContent = `Editing slot ${this.editSlot} — click a row to place the selected loop; click a block to remove it`;
+    this.el.editTitle.textContent = `Editing slot ${this.editSlot} — one click places ONE bubble; click the bubble again to take it back`;
     let html = '<div class="gridHead">';
     for (let b = 0; b < bars; b++) html += `<div class="gcell head">${b + 1}</div>`;
     html += '</div>';
@@ -346,8 +430,12 @@ const Mixer = {
         let cls = 'gcell', label = '';
         if (tr) {
           const loop = this.loopsById.get(tr.loopId);
-          if (loop && b >= tr.startBar && b < tr.startBar + loop.bars) { cls += ' filled start' + (b === tr.startBar ? ' first' : ''); label = b === tr.startBar ? esc(loop.name) : '·'; }
-          else if (loop && b > tr.startBar) { cls += ' repeat'; label = '↻'; }
+          // v1.1 (Zan): exactly ONE filled bubble per track — the
+          // placement cell. The loop's span is a faint underline so
+          // it can never be mistaken for more filled bubbles, and
+          // the repeat tail draws nothing at all.
+          if (loop && b === tr.startBar) { cls += ' filled bubble'; label = esc(loop.name); }
+          else if (loop && b > tr.startBar && b < tr.startBar + loop.bars) { cls += ' span'; }
         }
         html += `<div class="${cls}" data-bar="${b}">${label}</div>`;
       }
@@ -365,16 +453,28 @@ const Mixer = {
   },
 
   gridClick(row, bar) {
+    // v1.1 toggle contract (Zan: "fill one bubble at a time per
+    // selection; click a second time to remove the bubble"):
+    //  - one click places exactly ONE bubble (the track's startBar);
+    //  - clicking that bubble with the SAME loop selected removes it;
+    //  - clicking it with a DIFFERENT loop selected swaps the loop
+    //    in place (still one bubble);
+    //  - clicking anywhere else in the row moves the one bubble;
+    //  - with nothing selected, clicking the bubble removes it too.
     if (!this.draft) return;
+    const at = Math.max(0, Math.min(bar, this.draft.bars - 1));
     const existing = this.draft.tracks[row];
-    if (existing && !this.selLoopId) { this.draft.tracks.splice(row, 1); this.renderGrid(); return; }
-    if (!this.selLoopId) { this.hooks.toast('Pick a loop from the browser first (click = hear it).'); return; }
-    if (existing && existing.loopId === this.selLoopId) {
-      existing.startBar = Math.max(0, Math.min(bar, this.draft.bars - 1));
-    } else if (existing && bar >= existing.startBar && bar < existing.startBar + (this.loopsById.get(existing.loopId) || { bars: 1 }).bars) {
-      this.draft.tracks.splice(row, 1); // clicked the block itself → remove
+    if (!this.selLoopId) {
+      if (existing && bar === existing.startBar) { this.draft.tracks.splice(row, 1); this.renderGrid(); }
+      else if (existing) { this.hooks.toast('Click the filled bubble to remove it, or pick a loop to move it.'); }
+      else this.hooks.toast('Pick a loop from the browser first (click = hear it).');
+      return;
+    }
+    if (existing && bar === existing.startBar) {
+      if (existing.loopId === this.selLoopId) this.draft.tracks.splice(row, 1); // toggle OFF
+      else existing.loopId = this.selLoopId;                                     // swap in place
     } else {
-      this.draft.tracks[row] = { loopId: this.selLoopId, startBar: Math.max(0, Math.min(bar, this.draft.bars - 1)) };
+      this.draft.tracks[row] = { loopId: this.selLoopId, startBar: at };         // place / move the one bubble
     }
     this.draft.tracks = this.draft.tracks.filter(Boolean);
     this.renderGrid();
@@ -409,7 +509,11 @@ const Mixer = {
   // ---------------------------------------------------------- stage UI
 
   vote(v) {
-    if (!this.perf.active || this.myVote) return;
+    // v1.1: one ACTIVE vote — clicking the opposite thumb switches
+    // it (the old client locked both buttons after any vote).
+    if (!this.perf.active || this.myVote === v) return;
+    const me = this.hooks.getMe();
+    if (me && me.id === this.perf.performerId) return;
     this.myVote = v;
     this.hooks.send({ type: 'vote', value: v });
     this.renderNowPlaying();
@@ -421,11 +525,17 @@ const Mixer = {
       this.el.nowPlaying.classList.remove('hidden');
       const mine = this.hooks.getMe() && this.hooks.getMe().id === this.perf.performerId;
       this.el.npText.innerHTML = `🎤 <b>${esc(this.perf.performerName)}</b> is performing <b>${esc(this.perf.mixName)}</b>` +
-        (mine ? ' — that\'s you!' : this.myVote ? ` — you voted ${this.myVote > 0 ? '👍' : '👎'}` : ' — vote!');
-      document.getElementById('voteUp').disabled = mine || !!this.myVote;
-      document.getElementById('voteDown').disabled = mine || !!this.myVote;
+        ` · <span class="npCounts">👍 ${this.perf.up || 0} 👎 ${this.perf.down || 0}</span>` +
+        (mine ? ' — that\'s you!' : this.myVote ? ` — you voted ${this.myVote > 0 ? '👍' : '👎'} (other thumb switches)` : ' — vote!');
+      const up = document.getElementById('voteUp'), dn = document.getElementById('voteDown');
+      up.disabled = Boolean(mine);
+      dn.disabled = Boolean(mine);
+      up.classList.toggle('mine', !mine && this.myVote === 1);
+      dn.classList.toggle('mine', !mine && this.myVote === -1);
+      if (this.el.tipBox) this.el.tipBox.classList.toggle('hidden', Boolean(mine));
     } else {
       this.el.nowPlaying.classList.add('hidden');
+      if (this.el.tipBox) this.el.tipBox.classList.add('hidden');
     }
   },
 
@@ -448,7 +558,7 @@ const Mixer = {
   onMapChanged(mapDef) {
     const hasStage = Boolean(mapDef && mapDef.stage);
     this.el.stagePanel.classList.toggle('hidden', !hasStage);
-    if (!hasStage) { AE.stop(); this.perf.active = false; this.renderNowPlaying(); }
+    if (!hasStage) { AE.stop(); AE.cancelPerformanceWait(); this.perf.active = false; this.renderNowPlaying(); }
   },
 
   // ---------------------------------------------------------- Phase 9: CDs + chart + vote juice
@@ -456,16 +566,30 @@ const Mixer = {
   renderCds() {
     if (!this.el.cdBox) return;
     const esc = this.hooks.esc;
-    const cdFor = new Set(this.cds.cds.map(c => c.mixId));
-    const rows = this.myMixes.map(m => cdFor.has(m.id)
-      ? `<div class="qItem">💿 <b>${esc(m.name)}</b> — CD ready to perform</div>`
-      : `<div class="qItem">🎵 <b>${esc(m.name)}</b> <button data-burn="${m.id}">🔥 Burn CD</button></div>`).join('');
+    // v1.1: CDs are a permanent collection (performing no longer
+    // spends them). The stage join drop-down lists CDs — duplicates
+    // of one mix told apart by CD number — and each CD row carries
+    // its own Delete (the mix itself is never touched).
+    if (this.el.joinSel) {
+      const prev = this.el.joinSel.value;
+      this.el.joinSel.innerHTML = this.cds.cds.map(c =>
+        `<option value="${c.id}">💿 ${esc(c.name || 'mix')} · CD #${c.id}</option>`).join('') ||
+        '<option value="">— burn a CD to perform —</option>';
+      if (this.cds.cds.some(c => String(c.id) === prev)) this.el.joinSel.value = prev;
+    }
+    const cdRows = this.cds.cds.map(c =>
+      `<div class="qItem">💿 <b>${esc(c.name || 'mix')}</b> · CD #${c.id} <button data-delcd="${c.id}">🗑 Delete</button></div>`).join('');
+    const burnRows = this.myMixes.map(m =>
+      `<div class="qItem">🎵 <b>${esc(m.name)}</b> <button data-burn="${m.id}">🔥 Burn CD</button></div>`).join('');
     this.el.cdBox.innerHTML = `
       <div class="qDim" style="margin-top:8px">💿 Blank CDs: <b>${this.cds.blanks}</b>
         <button data-buyblanks="1">Buy pack of 10 — 20z</button></div>
-      ${rows || '<div class="qDim">Save a mix, burn it to a CD, then perform it.</div>'}`;
+      ${cdRows}${burnRows || '<div class="qDim">Save a mix, burn it to a CD, then perform it.</div>'}`;
     for (const b of this.el.cdBox.querySelectorAll('[data-burn]')) {
       b.onclick = () => { AE.ensure(); this.hooks.send({ type: 'burn-cd', mixId: Number(b.dataset.burn) }); };
+    }
+    for (const b of this.el.cdBox.querySelectorAll('[data-delcd]')) {
+      b.onclick = () => this.hooks.send({ type: 'delete-cd', cdId: Number(b.dataset.delcd) });
     }
     const buy = this.el.cdBox.querySelector('[data-buyblanks]');
     if (buy) buy.onclick = () => this.hooks.send({ type: 'buy-blanks' });
@@ -513,7 +637,17 @@ const Mixer = {
         break;
       case 'vote-fx':
         // Someone in the room voted — float it for everyone (item 9).
+        // v1.1: the broadcast carries live tallies — the performer
+        // watches the 👍/👎 counts move while they play.
+        if (this.perf.active && m.performerId === this.perf.performerId) {
+          if (Number.isFinite(m.up)) this.perf.up = m.up;
+          if (Number.isFinite(m.down)) this.perf.down = m.down;
+          this.renderNowPlaying();
+        }
         if (!this.perf.active || m.performerId === this.perf.performerId) this.voteFloat(m.value);
+        break;
+      case 'vote-ack':
+        if (this.perf.active) { this.myVote = m.value; this.renderNowPlaying(); }
         break;
       case 'mix-saved':
         this.hooks.toast(`💾 Saved "${m.mix.name}" to slot ${m.mix.slot}`);
@@ -526,21 +660,31 @@ const Mixer = {
         this.renderQueue();
         break;
       case 'performance-start': {
-        this.perf = { active: true, performerId: m.performerId, performerName: m.performerName, mixName: m.mixName, endsAt: m.startAt + m.durationMs };
+        this.perf = {
+          active: true, performerId: m.performerId, performerName: m.performerName,
+          mixName: m.mixName, endsAt: m.startAt + m.durationMs, startAt: m.startAt,
+          bpm: m.mix ? m.mix.bpm : 112, bars: m.mix ? m.mix.bars : 8, up: 0, down: 0,
+        };
         this.myVote = 0;
         this.el.result.classList.add('hidden');
         this.renderNowPlaying();
         this.renderQueue();
-        if (AE.ensure()) {
-          AE.stop();
-          const delay = Math.max(0.05, (m.startAt - Date.now()) / 1000);
-          AE.playMix(m.mix, AE.ctx.currentTime + delay);
-          const totalMs = (m.startAt - Date.now()) + m.durationMs + 10000;
-          AE.stopTimers.push(setTimeout(() => { this.perf.active = false; this.renderNowPlaying(); }, Math.max(0, totalMs)));
-        }
+        // v1.1 (Item 5): AE.playPerformance schedules ONLY on a
+        // running context (deferring if it starts cold) — the old
+        // code scheduled unconditionally onto
+        // ctx.currentTime, which is frozen on a suspended context,
+        // so a performer whose browser had idled heard silence.
+        // The UI end timer is Mixer-owned now (AE.stop() would have
+        // cleared an AE.stopTimers entry when a deferred join lands).
+        AE.playPerformance(m.mix, m.startAt, m.durationMs);
+        clearTimeout(this._perfUiTimer);
+        const totalMs = (m.startAt - Date.now()) + m.durationMs + 10000;
+        this._perfUiTimer = setTimeout(() => { this.perf.active = false; this.renderNowPlaying(); }, Math.max(0, totalMs));
         break;
       }
       case 'performance-end': {
+        AE.cancelPerformanceWait();
+        clearTimeout(this._perfUiTimer);
         this.perf.active = false;
         this.renderNowPlaying();
         const mine = this.hooks.getMe() && this.hooks.getMe().id === m.performerId;

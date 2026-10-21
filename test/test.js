@@ -9,7 +9,7 @@
  *   3. two simultaneous clients in the same map see each other
  *   4. server-authoritative movement + wall collision
  *   5. gateway travel Gateway -> Solstice Bay -> Gateway; sealed gateways stay sealed
- *   6. daily +100z bonus credited exactly once per day across relogs
+ *   6. welcome bonus: 5,000z on the first-ever claim, +100z daily after, exactly once per day
  *   7. per-map chat + rate limiting
  *   8. /health reports status and map/player counts
  *
@@ -248,17 +248,27 @@ test('gateway travel: Gateway -> Solstice Bay -> Gateway; Phase 4 cities open', 
   await waitFor(() => a.msgs.filter(m => m.type === 'map' && m.map.id === 'the-gateway').pop(), 5000, 'map switch back from neon');
 });
 
-test('daily +100z bonus credited exactly once per day', { timeout: 30000 }, async () => {
+test('welcome bonus: 5,000z on first-ever claim, once per day, +100z the next day', { timeout: 30000 }, async () => {
   await registerUser('carol_p1');
   const c1 = await connectClient(serverPort, users.carol_p1.token);
   assert.equal(c1.hello.bonusGranted, true);
-  assert.equal(c1.hello.zcoins, 100);
+  assert.equal(c1.hello.bonusAmount, 5000, 'first-ever claim is the 5,000z welcome bonus');
+  assert.equal(c1.hello.zcoins, 5000);
+  // Rewind the bonus day (test hook): the NEXT claim is a normal day.
+  c1.send({ type: 'debug-bonus', op: 'rewind-day' });
+  await sleep(300);
   c1.ws.close();
   await sleep(300);
   const c2 = await connectClient(serverPort, users.carol_p1.token);
-  assert.equal(c2.hello.bonusGranted, false, 'no second bonus same day');
-  assert.equal(c2.hello.zcoins, 100, 'balance unchanged');
+  assert.equal(c2.hello.bonusGranted, true, 'a new day grants again');
+  assert.equal(c2.hello.bonusAmount, 100, 'second-day claim is the regular +100z');
+  assert.equal(c2.hello.zcoins, 5100, 'welcome 5,000 + daily 100');
   c2.ws.close();
+  await sleep(300);
+  const c3 = await connectClient(serverPort, users.carol_p1.token);
+  assert.equal(c3.hello.bonusGranted, false, 'no second bonus same day');
+  assert.equal(c3.hello.zcoins, 5100, 'balance unchanged');
+  c3.ws.close();
 });
 
 test('per-map chat with rate limiting', { timeout: 30000 }, async () => {
@@ -298,14 +308,14 @@ test('session survives a full server restart (same token, avatar + z coins intac
   assert.equal(cre.status, 200, `create dave_p1: ${JSON.stringify(cre.json)}`);
   const avatarId = cre.json.avatar.id;
   const c1 = await connectClient(PORT_RESTART, token);
-  assert.equal(c1.hello.zcoins, 100);
+  assert.equal(c1.hello.zcoins, 5000);
   c1.ws.close();
   await stopServer(child1);
   await startServer(PORT_RESTART2, DB_RESTART, false);
   const c2 = await connectClient(PORT_RESTART2, token);
   assert.equal(c2.hello.you.id, avatarId, 'same avatar after restart');
   assert.equal(c2.hello.you.name, 'dave_p1');
-  assert.equal(c2.hello.zcoins, 100, 'z-coin balance intact after restart');
+  assert.equal(c2.hello.zcoins, 5000, 'z-coin balance intact after restart');
   assert.equal(c2.hello.bonusGranted, false, 'no duplicate daily bonus after restart');
   assert.equal(c2.hello.map.id, 'the-gateway');
   c2.ws.close();

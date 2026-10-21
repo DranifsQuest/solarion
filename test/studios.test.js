@@ -217,7 +217,7 @@ test('stage performance works in Neon District (Phase 2 protocol, new city)', { 
   assert.equal(end.up, 1);
   assert.equal(end.earned, 5, 'performer paid +5z in a new city');
   const zMsg = await waitFor(() => perf.client.msgs.filter(m => m.type === 'zcoins').pop(), 5000, 'perf zcoins update');
-  assert.equal(zMsg.zcoins, 85, '100 − 20 (blank pack) + 5 earned = 85');
+  assert.equal(zMsg.zcoins, 4985, '5000 − 20 (blank pack) + 5 earned = 4985');
   perf.client.ws.close(); fan.client.ws.close();
 });
 
@@ -237,7 +237,11 @@ test('studio: buy/place/persist, visitor limits, kick + block, isolation', { tim
   const state0 = await waitFor(() => owner.client.msgs.filter(m => m.type === 'studio-state' && m.isOwner).pop(), 5000, 'owner studio-state');
   assert.ok(state0.catalog.length >= 12, `catalog has 12+ items, got ${state0.catalog.length}`);
   assert.deepEqual(state0.inventory, []);
-  assert.equal(owner.client.hello.zcoins, 100);
+  assert.equal(owner.client.hello.zcoins, 5000, 'welcome bonus on first login');
+  // v1.1: drain to the documented 100z so the insufficient-funds
+  // flow below runs at the balances it was written for.
+  owner.client.send({ type: 'debug-casino', op: 'set-balance', zcoins: 100 });
+  await waitFor(() => owner.client.msgs.filter(m => m.type === 'zcoins' && m.zcoins === 100).pop(), 5000, 'drained to 100z');
 
   // Insufficient funds first: jukebox is 250z, balance is 100z.
   owner.client.send({ type: 'studio-buy', itemId: 'jukebox' });
@@ -245,7 +249,7 @@ test('studio: buy/place/persist, visitor limits, kick + block, isolation', { tim
     5000, 'insufficient-funds rejection');
   // Buy a chair for exactly 40z: balance and inventory must move exactly.
   owner.client.send({ type: 'studio-buy', itemId: 'cozy-chair' });
-  const zAfterChair = await waitFor(() => owner.client.msgs.filter(m => m.type === 'zcoins').pop(), 5000, 'zcoins after chair buy');
+  const zAfterChair = await waitFor(() => owner.client.msgs.filter(m => m.type === 'zcoins' && m.zcoins === 60).pop(), 5000, 'zcoins after chair buy');
   assert.equal(zAfterChair.zcoins, 60, 'chair debited exactly 40z from 100z (failed jukebox buy left balance untouched)');
   const state1 = await waitFor(() => owner.client.msgs.filter(m => m.type === 'studio-state' && m.inventory.length === 1).pop(),
     5000, 'chair in inventory');
@@ -376,7 +380,7 @@ test('studio furniture persists across a full server restart', { timeout: 60000 
   await waitFor(() => u.client.msgs.filter(m => m.type === 'map' && m.map.id === `studio:${u.id}`).pop(), 5000, 'enter studio (pre-restart)');
   u.client.send({ type: 'studio-buy', itemId: 'glow-lamp' }); // 55z
   const zMsg = await waitFor(() => u.client.msgs.filter(m => m.type === 'zcoins').pop(), 5000, 'lamp buy');
-  assert.equal(zMsg.zcoins, 45);
+  assert.equal(zMsg.zcoins, 4945);
   const st = await waitFor(() => u.client.msgs.filter(m => m.type === 'studio-state' && m.inventory.length === 1).pop(), 5000, 'lamp in inventory');
   const lamp = st.inventory[0];
   u.client.send({ type: 'studio-place', instanceItemId: lamp.instanceId, x: 3, y: 4, rot: 2 });
@@ -386,7 +390,7 @@ test('studio furniture persists across a full server restart', { timeout: 60000 
 
   await startServer(PORT_R2, DB_RESTART, false); // same DB, no wipe
   const u2 = await connectClient(PORT_R2, u.token);
-  assert.equal(u2.hello.zcoins, 45, 'balance survived restart');
+  assert.equal(u2.hello.zcoins, 4945, 'balance survived restart');
   u2.send({ type: 'enter-studio', owner: 'restarter_p4' });
   const entered = await waitFor(() => u2.msgs.filter(m => m.type === 'map' && m.map.id === `studio:${u.id}`).pop(), 5000, 'enter studio (post-restart)');
   assert.equal(entered.furniture.length, 1, 'placed furniture survived a full server restart');

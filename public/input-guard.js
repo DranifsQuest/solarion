@@ -73,8 +73,52 @@
     return { up: wy < 0, down: wy > 0, left: wx < 0, right: wx > 0 };
   }
 
-  global.SolarionInput = { isTextEntryTarget: isTextEntryTarget, screenToWorldKeys: screenToWorldKeys };
+  /**
+   * Facing from WORLD-axis velocity (v1.1 playtest fix): the sprite
+   * must face the SCREEN direction of travel. Project the world
+   * velocity through the iso transform — screen = (dx - dy,
+   * (dx + dy) / 2) — and take the dominant screen axis:
+   *   world (+1,-1) (walking screen-right) -> 'right'  (the old
+   *   world-dominant read tied and fell through to 'up')
+   *   world (-1,-1) -> 'up', (+1,+1) -> 'down', (-1,+1) -> 'left'
+   *   world (0,-1) (screen NE diagonal) -> 'right' (its screen
+   *   vector (1,-0.5) travels twice as far right as up).
+   * Used by the server sim (src/game.js) and pinned by the suite.
+   */
+  function screenFacing(dx, dy) {
+    if (!dx && !dy) return 'down';
+    var sx = dx - dy, sy = (dx + dy) * 0.5;
+    if (Math.abs(sx) >= Math.abs(sy)) return sx > 0 ? 'right' : 'left';
+    return sy > 0 ? 'down' : 'up';
+  }
+
+  /**
+   * Vice haze strength (v1.1): the drunk / psychedelic haze lives in
+   * the 30s window from the last drink/puff (server model in
+   * src/game.js). Full strength until the final fadeMs, then a
+   * linear fade to zero exactly at the window edge — the player
+   * watches the haze lift where they stand.
+   */
+  function viceFade(msSinceLast, windowMs, fadeMs) {
+    windowMs = windowMs || 30000;
+    fadeMs = fadeMs || 5000;
+    if (!(msSinceLast >= 0)) return 0;
+    if (msSinceLast >= windowMs) return 0;
+    if (msSinceLast <= windowMs - fadeMs) return 1;
+    return (windowMs - msSinceLast) / fadeMs;
+  }
+
+  /**
+   * Enter-key chat contract (v1.1): Enter with the chat box inactive
+   * focuses it ('focus'); Enter while it is active submits ('submit'
+   * — the client then sends if there's text and blurs either way).
+   */
+  function enterAction(chatActive) {
+    return chatActive ? 'submit' : 'focus';
+  }
+
+  global.SolarionInput = { isTextEntryTarget: isTextEntryTarget, screenToWorldKeys: screenToWorldKeys, screenFacing: screenFacing, viceFade: viceFade, enterAction: enterAction };
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { isTextEntryTarget: isTextEntryTarget, screenToWorldKeys: screenToWorldKeys };
+    module.exports = { isTextEntryTarget: isTextEntryTarget, screenToWorldKeys: screenToWorldKeys, screenFacing: screenFacing, viceFade: viceFade, enterAction: enterAction };
   }
 })(typeof window !== 'undefined' ? window : globalThis);

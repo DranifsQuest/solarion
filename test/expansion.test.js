@@ -463,8 +463,8 @@ test('poker: full hand on NEW table 6, chips conserved', { timeout: 90000 }, asy
     }, 5000, `${u.name} snapshot shows the poker seat as sitting`);
     assert.equal(snap.dir, chair === 'N' ? 'down' : 'up', 'poker sitter faces the table');
   }
-  assert.equal(await balanceOf(a), 0);
-  assert.equal(await balanceOf(b), 0);
+  assert.equal(await balanceOf(a), 4800);
+  assert.equal(await balanceOf(b), 4800);
   await waitFor(() => a.client.msgs.filter(m => m.type === 'poker-cards').pop(), 20000, 'hand dealt on table 6');
   // Both all-in whenever acting -> the hand must run to done.
   const start = Date.now();
@@ -491,7 +491,8 @@ test('poker: full hand on NEW table 6, chips conserved', { timeout: 90000 }, asy
     return s && s.state === 'idle' ? s : null;
   }, 15000, 'table 6 back to idle');
   const stacks = idle.chairs.reduce((n, c) => n + (c.chips || 0) + (c.bet || 0), 0);
-  assert.equal(stacks + (await balanceOf(a)) + (await balanceOf(b)), 200, 'chips conserved on table 6');
+  // Conservation: two 200z buy-ins on the table + 4,800z balances.
+  assert.equal(stacks + (await balanceOf(a)) + (await balanceOf(b)), 10000, 'chips conserved on table 6');
   a.client.ws.close(); b.client.ws.close();
 });
 
@@ -520,7 +521,7 @@ test('slots: a spin on NEW machine 10 (east wall) pays by the ported paytable', 
   assert.equal(res.reels.length, 3);
   const syms = res.reels.map(id => casino.SLOT_SYMBOLS.find(s => s.id === id));
   assert.equal(res.win, casino.slotPayout(syms, 10), 'win matches the ported paytable');
-  assert.equal(res.zcoins, 100 - 10 + res.win, 'balance math exact');
+  assert.equal(res.zcoins, 5000 - 10 + res.win, 'balance math exact');
   assert.equal(await balanceOf(u), res.zcoins, 'DB balance matches');
   u.client.ws.close();
 });

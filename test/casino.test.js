@@ -248,8 +248,8 @@ test('side pots: buildPots + showdown distribute exactly (deterministic, ported 
 test('poker: full 2-player hand start -> showdown, chip conservation, private hole cards', { timeout: 90000 }, async () => {
   const a = await makeUser('pk_alice');
   const b = await makeUser('pk_bob');
-  assert.equal(a.client.hello.zcoins, 100);
-  assert.equal(b.client.hello.zcoins, 100);
+  assert.equal(a.client.hello.zcoins, 5000);
+  assert.equal(b.client.hello.zcoins, 5000);
   await toCasino(a); await toCasino(b);
 
   await sitAt(a, T1, 'N');
@@ -320,10 +320,11 @@ test('poker: live 3-player all-in hand creates side-pot ladder and conserves chi
     const s = latestTable(a, T1.id);
     return s && s.state === 'idle' ? s : null;
   }, 15000, 'table idle after side-pot hand');
-  // System total after the debug stack-set: 100+50+20 = 170 (balances are 0).
+  // System total after the debug stack-set: chips 100+50+20 = 170,
+  // plus balances of 4,800 each (5,000 welcome − the 200z max buy-in).
   const total = seatChips(idle, a.name) + seatChips(idle, b.name) + seatChips(idle, c.name)
     + (await balanceOf(a)) + (await balanceOf(b)) + (await balanceOf(c));
-  assert.equal(total, 170, 'chip conservation across the side-pot hand');
+  assert.equal(total, 14570, 'chip conservation across the side-pot hand');
   a.client.ws.close(); b.client.ws.close(); c.client.ws.close();
 });
 
@@ -414,7 +415,7 @@ test('slots: bet sizes, exact balance math, insufficient funds, cooldown, proxim
   const wrongMap = await waitFor(() => u.client.msgs.filter(m => m.type === 'notice' && /Casino Lounge/.test(m.text)).pop(),
     5000, 'spin from the bay rejected');
   assert.ok(wrongMap);
-  assert.equal(await balanceOf(u), 100, 'balance untouched by refused spin');
+  assert.equal(await balanceOf(u), 5000, 'balance untouched by refused spin');
 
   // Inside the lounge but not seated at a machine: refused — since
   // the Phase B amendment you play slots SITTING on the machine's
@@ -430,7 +431,7 @@ test('slots: bet sizes, exact balance math, insufficient funds, cooldown, proxim
   const far = await waitFor(() => u.client.msgs.filter(m => m.type === 'notice' && /Take a seat at a slot machine/.test(m.text)).pop(),
     5000, 'spin while unseated rejected');
   assert.ok(far);
-  assert.equal(await balanceOf(u), 100, 'balance untouched by refused spin');
+  assert.equal(await balanceOf(u), 5000, 'balance untouched by refused spin');
 
   // Standing ON the stool spot isn't enough either — you must sit.
   u.client.send({ type: 'debug-teleport', x: SLOT1_SPOT.x, y: SLOT1_SPOT.y });
@@ -440,7 +441,7 @@ test('slots: bet sizes, exact balance math, insufficient funds, cooldown, proxim
   const standing = await waitFor(() => u.client.msgs.filter(m => m.type === 'notice' && /Take a seat at a slot machine/.test(m.text)).pop(),
     5000, 'spin while standing on the stool rejected');
   assert.ok(standing);
-  assert.equal(await balanceOf(u), 100, 'balance untouched by refused spin');
+  assert.equal(await balanceOf(u), 5000, 'balance untouched by refused spin');
 
   // Sit on machine 1's stool and spin at each bet size; math exact.
   await sleep(3400); // outlast the transfer lock from the door hop
@@ -513,12 +514,12 @@ test('cleanup: disconnect and map change cash out and free the seat', { timeout:
   const watcher = await makeUser('gone_walt');
   await toCasino(a); await toCasino(watcher);
   await sitAt(a, T1, 'N');
-  assert.equal(await balanceOf(a), 0, 'buy-in debited');
+  assert.equal(await balanceOf(a), 4800, 'buy-in debited (200z max stack from the 5,000z welcome)');
 
   // Disconnect mid-sit: chips must come straight back, seat freed.
   a.client.ws.close();
   await sleep(800);
-  assert.equal(await balanceOf(a), 100, 'chips refunded on disconnect');
+  assert.equal(await balanceOf(a), 5000, 'chips refunded on disconnect');
   const stFree = await waitFor(() => {
     const s = latestTable(watcher, T1.id);
     return s && s.chairs.every(ch => !ch.name) ? s : null;
@@ -531,15 +532,15 @@ test('cleanup: disconnect and map change cash out and free the seat', { timeout:
   const a2client = await connectClient(PORT, a.token);
   a.client = a2client;
   assert.equal(a2client.hello.map.id, 'casino-lounge', 'respawned in the lounge');
-  assert.equal(a2client.hello.zcoins, 100);
+  assert.equal(a2client.hello.zcoins, 5000);
   await sitAt(a, T1, 'W');
-  assert.equal(await balanceOf(a), 0);
+  assert.equal(await balanceOf(a), 4800);
   await sleep(1600); // portal debounce
   a.client.send({ type: 'debug-teleport', x: 480, y: 592 }); // lounge door-back rect
   await waitFor(() => a.client.msgs.filter(m => m.type === 'map' && m.map.id === 'solstice-bay').pop(),
     5000, 'gail leaves through the lounge door');
   await sleep(300);
-  assert.equal(await balanceOf(a), 100, 'chips refunded on map change');
+  assert.equal(await balanceOf(a), 5000, 'chips refunded on map change');
   const stFree2 = await waitFor(() => {
     const s = latestTable(watcher, T1.id);
     return s && s.chairs.every(ch => !ch.name) ? s : null;
@@ -553,7 +554,7 @@ test('cleanup: disconnect and map change cash out and free the seat', { timeout:
 test('persistence: balances survive restart; stranded table chips are refunded', { timeout: 90000 }, async () => {
   const child1 = await startServer(PORT_R1, DB_RESTART);
   const u = await makeUser('rest_ruth', PORT_R1);
-  assert.equal(u.client.hello.zcoins, 100);
+  assert.equal(u.client.hello.zcoins, 5000);
   // Travel to the bay, through the casino door, and spin once so the
   // balance is a non-round number.
   u.client.send({ type: 'debug-teleport', x: 1120, y: 48 });
@@ -587,7 +588,7 @@ test('persistence: balances survive restart; stranded table chips are refunded',
   c2.send({ type: 'poker', action: 'sit', table: T1.id, chair: 'N' });
   await waitFor(() => c2.msgs.filter(m => m.type === 'poker-state' && m.chairs.some(ch => ch.name === 'rest_ruth')).pop(),
     5000, 'ruth seated before the crash');
-  assert.equal(await balanceOf(u, PORT_R2), 0, 'all balance is on the table');
+  assert.equal(await balanceOf(u, PORT_R2), balanceAfterSpin - 200, 'the 200z max buy-in is on the table');
   c2.ws.close();
   await stopServer(child2);
 

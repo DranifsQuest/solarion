@@ -109,15 +109,35 @@ function building(tx, ty, tw, th, name, style) {
 function door(tx, ty, target, targetSpawn, label, wTiles = 1) {
   return { x: px(tx), y: px(ty), w: TILE * wTiles, h: TILE, target, targetSpawn, label };
 }
-/** A stage zone from its tile position (6x2 tiles, speakers flanking). */
-function stageDef(tx, ty) {
-  return {
-    x: px(tx), y: px(ty), w: TILE * 6, h: TILE * 2,
-    speakers: [
-      { x: cx(tx - 1), y: cy(ty) },
-      { x: cx(tx + 6), y: cy(ty) },
-    ],
-  };
+/**
+ * A stage complex (v1.1): a 10x3-tile platform (2.5x the old 6x2
+ * floor), speaker stacks at the two FRONT corners, and a standing
+ * PIT on the audience side. `facing` says where the audience is:
+ * 'S' (default), 'N', or 'W'. The 20 audience chairs behind the pit
+ * are ordinary seats, added per city via audienceSeats().
+ */
+function stageDef(tx, ty, facing = 'S') {
+  const w = TILE * 10, h = TILE * 3;
+  let pit, speakers;
+  if (facing === 'N') {
+    pit = { x: px(tx), y: px(ty - 3), w, h: TILE * 3 };
+    speakers = [{ x: cx(tx - 1), y: cy(ty) }, { x: cx(tx + 10), y: cy(ty) }];
+  } else if (facing === 'W') {
+    pit = { x: px(tx - 3), y: px(ty), w: TILE * 3, h };
+    speakers = [{ x: cx(tx - 1), y: cy(ty) }, { x: cx(tx - 1), y: cy(ty + 2) }];
+  } else {
+    pit = { x: px(tx), y: px(ty + 3), w, h: TILE * 3 };
+    speakers = [{ x: cx(tx - 1), y: cy(ty + 2) }, { x: cx(tx + 10), y: cy(ty + 2) }];
+  }
+  return { x: px(tx), y: px(ty), w, h, pit, speakers };
+}
+
+/** v1.1: 20 audience chairs — 5 rows of 4 facing the stage. */
+function audienceSeats(id, startN, cols, rows, dir) {
+  const out = [];
+  let n = startN;
+  for (const ty of rows) for (const tx of cols) out.push(seat(id, n++, tx, ty, dir, 'chair'));
+  return out;
 }
 /** A sittable spot. dir = the way the sitter faces. */
 function seat(mapId, n, tx, ty, dir, kind) {
@@ -246,11 +266,13 @@ function buildCafe() {
   g[10][2] = '|'; g[10][17] = '|'; // plants
   g[5][1] = '#';                   // Phase 10: the hearth niche (west wall)
   const id = 'gateway-cafe';
-  // Tables at tiles (4,5) (9,5) (14,5) (6,9) (12,9); chairs flank them.
+  // Tables at tiles (4,5) (9,5) (14,5) (6,10) (12,10); chairs flank
+  // them. (v1.1: the south row dropped a tile — more air between the
+  // two rows now the furniture draws at character scale.)
   const chairPairs = [
     [3, 5, 'right'], [5, 5, 'left'], [8, 5, 'right'], [10, 5, 'left'],
-    [13, 5, 'right'], [15, 5, 'left'], [5, 9, 'right'], [7, 9, 'left'],
-    [11, 9, 'right'], [13, 9, 'left'],
+    [13, 5, 'right'], [15, 5, 'left'], [5, 10, 'right'], [7, 10, 'left'],
+    [11, 10, 'right'], [13, 10, 'left'],
   ];
   return {
     id, name: 'Gateway Café', tiles: gridOf(g), tileSize: TILE,
@@ -291,7 +313,7 @@ function buildSolsticeBay() {
   setRect(g, W - 1, 0, 1, H, '#');
   setRect(g, 1, 5, 70, 5, 'b');         // the boardwalk promenade (Lane C)
   setRect(g, 15, 18, 2, 19, 'p');       // sand path down to the Casino door
-  g[6][32] = '|'; g[6][39] = '|';       // stage speakers
+  g[8][32] = '|'; g[8][43] = '|';       // stage speakers (v1.1: front corners of the bigger stage)
   for (const [x, y] of [[6, 12], [7, 12], [64, 12], [65, 12], [36, 30], [37, 30]]) {
     g[y][x] = '|';                      // boardwalk stalls
   }
@@ -323,7 +345,7 @@ function buildSolsticeBay() {
       // Planter colour along the boardwalk's south edge.
       prop('flowers', 20, 11), prop('flowers', 52, 11),
     ],
-    stage: stageDef(33, 6),
+    stage: stageDef(33, 6, 'S'),
     areas: [
       area('The Stage', 29, 4, 14, 6),
       area('The Boardwalk', 8, 10, 56, 12),
@@ -339,6 +361,8 @@ function buildSolsticeBay() {
       seat(id, 6, 44, 10, 'up', 'bench'),
       seat(id, 7, 56, 14, 'left', 'cafe'),
       seat(id, 8, 60, 14, 'left', 'cafe'),
+      // v1.1: stage audience — pit rows 9-11, then 5 rows of 4 chairs.
+      ...audienceSeats(id, 101, [33, 36, 39, 42], [13, 15, 17, 19, 21], 'up'),
     ],
   };
 }
@@ -489,7 +513,7 @@ function buildHookahLounge() {
   g[2][2] = '|'; g[2][17] = '|'; g[11][2] = '|'; g[11][17] = '|'; // plants
   g[1][10] = '#'; // Phase 10: the hearth niche (north wall, centre)
   const id = 'hookah-lounge';
-  const stations = [[5, 4], [14, 4], [5, 9], [14, 9]];
+  const stations = [[5, 4], [14, 4], [5, 10], [14, 10]];
   const seats = [];
   stations.forEach(([tx, ty], i) => {
     seats.push(seat(id, i * 2 + 1, tx - 1, ty, 'right', 'hookah'));
@@ -552,7 +576,7 @@ function buildNeonDistrict() {
   setRect(g, 40, 30, 8, 8, 's');        // ex-block plaza (S)
   setRect(g, 52, 26, 18, 14, 's');      // casino terrace
   setRect(g, 56, 30, 12, 8, '#');       // the Neon Casino (SE) — the one real building
-  g[3][32] = '|'; g[3][39] = '|'; // stage speakers
+  g[5][32] = '|'; g[5][43] = '|'; // stage speakers (v1.1: front corners)
   for (const [x, y] of [[30, 18], [41, 18], [30, 26], [41, 26], [36, 16]]) g[y][x] = '|'; // market stalls
   // Dressing on the old footprints: trees, planters, stall posts.
   g[6][6] = 'T'; g[9][12] = 'T'; g[5][8] = 'P';
@@ -587,7 +611,7 @@ function buildNeonDistrict() {
       prop('stall', 30, 18), prop('stall', 41, 26), prop('stall', 24, 7), prop('stall', 10, 33),
       prop('flowers', 30, 15), prop('flowers', 42, 28),
     ],
-    stage: stageDef(33, 3),
+    stage: stageDef(33, 3, 'S'),
     areas: [
       area('Stage Grounds', 29, 1, 14, 9),
       area('Market Square', 26, 14, 20, 16),
@@ -602,6 +626,8 @@ function buildNeonDistrict() {
       // Phase 10: the market nook sofas, facing each other.
       seat(id, 6, 33, 22, 'right', 'sofa'),
       seat(id, 7, 39, 22, 'left', 'sofa'),
+      // v1.1: stage audience — pit rows 6-8, chairs either side of the north street.
+      ...audienceSeats(id, 101, [34, 37, 40, 43], [10, 13, 15, 17, 19], 'up'),
     ],
   };
 }
@@ -629,7 +655,7 @@ function buildCinderMesa() {
   setRect(g, 24, 17, 9, 12, 's');   // Forge Plaza stone
   setRect(g, 27, 29, 7, 3, 's');    // Hookah Corner doorstep terrace
   setRect(g, 4, 40, 24, 1, 'p');    // south path from the gatehouse
-  g[21][62] = '|'; g[21][69] = '|'; // stage speakers
+  g[21][60] = '|'; g[23][60] = '|'; // stage speakers (v1.1: front corners, west face)
   g[18][28] = '|'; g[24][28] = '|'; // forge posts
   g[21][28] = 'R';                  // the forge monument's stone base (hero)
   g[20][24] = 'R'; g[21][24] = 'R'; // plaza-edge boulders (after the stone fill)
@@ -654,7 +680,7 @@ function buildCinderMesa() {
       // A forge-plaza nook: rug + lamp to sit by.
       prop('rug', 28, 22), prop('lamp', 26, 21),
     ],
-    stage: stageDef(63, 21),
+    stage: stageDef(61, 21, 'W'),
     areas: [
       area('Forge Plaza', 20, 15, 16, 14),
       area('Stage Rim', 58, 17, 13, 10),
@@ -666,6 +692,9 @@ function buildCinderMesa() {
       seat(id, 3, 24, 24, 'down', 'chair'),
       seat(id, 4, 26, 27, 'up', 'cafe'),
       seat(id, 5, 27, 22, 'down', 'sofa'),
+      // v1.1: stage audience (stage faces west) — pit cols 58-60,
+      // then 5 chair lines of 4 running north-south.
+      ...audienceSeats(id, 101, [55, 52, 49, 46, 43], [17, 20, 23, 26], 'right'),
     ],
   };
 }
@@ -690,7 +719,7 @@ function buildFrosthaven() {
   setRect(g, 35, 5, 2, 15, 'p');    // path south from the gatehouse
   setRect(g, 25, 13, 10, 1, 'p');   // path west to the pond-shore nook
   for (const [x, y] of [[30, 12], [44, 14], [52, 30], [24, 32], [16, 26], [66, 12], [34, 26]]) g[y][x] = 'T'; // pines
-  g[37][32] = '|'; g[37][39] = '|'; // stage speakers
+  g[37][32] = '|'; g[37][43] = '|'; // stage speakers (v1.1: front corners, north face)
   g[7][47] = '#';                   // the ice sculpture's plinth (hero)
   gatehouseWalls(g, 35, 1, 'N');
   const id = 'frosthaven';
@@ -707,17 +736,20 @@ function buildFrosthaven() {
       prop('rug', 24, 13), prop('lamp', 23, 13), prop('stringlights', 24, 12),
       prop('lantern', 34, 32),
     ],
-    stage: stageDef(33, 37),
+    stage: stageDef(33, 37, 'N'),
     areas: [
       area('The Frozen Pond', 2, 2, 20, 10),
       area('Stage Grounds', 29, 33, 14, 10),
     ],
     seats: [
       seat(id, 1, 30, 34, 'down', 'bench'),
-      seat(id, 2, 42, 34, 'down', 'bench'),
+      seat(id, 2, 45, 33, 'down', 'bench'),
       seat(id, 3, 22, 8, 'left', 'chair'),
       seat(id, 4, 48, 34, 'down', 'cafe'),
       seat(id, 5, 24, 14, 'up', 'sofa'),
+      // v1.1: stage audience (stage on the south rim, facing north) —
+      // pit rows 34-36 on the apron, then 5 rows of 4 chairs.
+      ...audienceSeats(id, 101, [33, 36, 39, 42], [24, 26, 28, 30, 32], 'down'),
     ],
   };
 }
@@ -747,7 +779,7 @@ function buildVerdantHollow() {
   setRect(g, 44, 40, 23, 1, 'p');   // path west from the gatehouse
   setRect(g, 43, 29, 1, 11, 'p');   // path north to the pond shore
   setRect(g, 30, 37, 10, 5, '%');
-  g[21][32] = '|'; g[21][39] = '|'; // stage speakers
+  g[23][32] = '|'; g[23][43] = '|'; // stage speakers (v1.1: front corners)
   g[15][28] = 'P';                  // the Great Tree's root planter (hero)
   gatehouseWalls(g, 66, 43, 'S');
   const id = 'verdant-hollow';
@@ -765,7 +797,7 @@ function buildVerdantHollow() {
       // Flower drifts around the clearing and the pond shore.
       prop('flowers', 31, 24), prop('flowers', 41, 24), prop('flowers', 36, 33), prop('flowers', 60, 38),
     ],
-    stage: stageDef(33, 21),
+    stage: stageDef(33, 21, 'S'),
     areas: [
       area('The Clearing', 29, 17, 14, 12),
       area('The Pond Shore', 28, 35, 14, 8),
@@ -775,8 +807,10 @@ function buildVerdantHollow() {
       seat(id, 2, 44, 25, 'up', 'bench'),
       seat(id, 3, 12, 12, 'down', 'chair'),
       seat(id, 4, 58, 12, 'down', 'chair'),
-      seat(id, 5, 36, 27, 'up', 'cafe'),
-      seat(id, 6, 34, 28, 'up', 'sofa'),
+      seat(id, 5, 44, 26, 'up', 'cafe'),
+      seat(id, 6, 30, 27, 'up', 'sofa'),
+      // v1.1: stage audience — pit rows 24-26, then 5 rows of 4 chairs.
+      ...audienceSeats(id, 101, [33, 36, 39, 42], [28, 30, 32, 34, 36], 'up'),
     ],
   };
 }
@@ -865,6 +899,7 @@ function clientMap(map) {
     hookahs: (map.hookahs || []).map(h => ({ x: h.x, y: h.y })),
     stage: map.stage ? {
       x: map.stage.x, y: map.stage.y, w: map.stage.w, h: map.stage.h,
+      pit: map.stage.pit || null,
       speakers: map.stage.speakers.map(s => ({ x: s.x, y: s.y })),
     } : null,
     studio: map.studio ? {

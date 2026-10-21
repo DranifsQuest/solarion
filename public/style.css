@@ -108,9 +108,18 @@ html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; ba
 #loadSub { color: #d8b98f; font-style: italic; margin: 0 0 8px; }
 
 /* ------------------------------------------------ Phase 2: music */
-#musicBtn { pointer-events: auto; background: rgba(26,16,9,.75); border: 1px solid #6b4a2a;
+/* v1.1 (Items 6a/7): EVERY top-bar button shares ONE dark warm pill
+   — before this, only Mixer/Studio/Look had rules, so Sit/Walk/
+   Chat/World/Friends/Sound inherited the browser's default white
+   button AND, sitting under #hud's pointer-events:none without an
+   opt-out of their own, never received clicks at all (the canvas
+   beneath swallowed them). One rule fixes style + click path for
+   the whole bar. (Base rule here, .active override later — order
+   matters.) */
+#hud button { pointer-events: auto; background: rgba(26,16,9,.75); border: 1px solid #6b4a2a;
   color: #eef; padding: 6px 14px; border-radius: 999px; font-weight: 700; cursor: pointer; }
-#musicBtn:hover { border-color: #ffd23f; color: #ffd23f; }
+#hud button:hover { border-color: #ffd23f; color: #ffd23f; }
+#hud button:active { transform: scale(.94); }
 #chatLog .sing { color: #ffb3e2; font-weight: 700; }
 
 #stagePanel { position: absolute; top: 56px; right: 10px; width: 230px;
@@ -168,7 +177,10 @@ html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; ba
   overflow: hidden; white-space: nowrap; cursor: pointer; }
 .gcell.head { background: none; color: #5f719e; cursor: default; height: 16px; }
 .gcell.filled { background: #3aa7e0; color: #0b1526; font-weight: 700; }
-.gcell.repeat { background: #24486e; color: #8ec9ee; }
+/* v1.1: the ONE filled bubble per track is round; the loop's span
+   is only a faint underline (can never read as more bubbles). */
+.gcell.bubble { border-radius: 999px; }
+.gcell.span { background: transparent; box-shadow: inset 0 -3px 0 rgba(58,167,224,.4); }
 .rowLabel { width: 110px; flex: none; font-size: 11px; padding: 0 6px; border-radius: 4px;
   border: 1px solid #6b4a2a; background: #3a2817; color: #f0dcbc; cursor: pointer;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -177,9 +189,7 @@ html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; ba
   background: #3a2817; color: #f0dcbc; cursor: pointer; font-weight: 600; }
 .genreBtn.active { background: #ffd23f; color: #2b1d12; border-color: #ffd23f; }
 /* ------------------------------------------------ Phase 4: studio + look */
-#studioBtn, #lookBtn { pointer-events: auto; background: rgba(26,16,9,.75); border: 1px solid #6b4a2a;
-  color: #eef; padding: 6px 14px; border-radius: 999px; font-weight: 700; cursor: pointer; }
-#studioBtn:hover, #lookBtn:hover { border-color: #ffd23f; color: #ffd23f; }
+/* (Studio/Look buttons: styled by the shared #hud button pill.) */
 #studioPanel { position: absolute; left: 10px; bottom: 160px; width: 290px; max-height: 62vh; overflow-y: auto;
   background: rgba(20,16,30,.9); border: 1px solid #ff8bd1; border-radius: 10px; padding: 10px; z-index: 5;
   box-shadow: 0 8px 30px rgba(0,0,0,.6); }
@@ -276,10 +286,11 @@ html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; ba
   background: #3a2a18; color: #eef; cursor: pointer; font-size: 12px; font-weight: 700; }
 #profileCard button:hover { border-color: #ffd23f; color: #ffd23f; }
 #emoteBar { position: absolute; right: 10px; bottom: 150px; display: flex; flex-direction: column;
-  gap: 5px; z-index: 35; }
+  gap: 5px; z-index: 60; pointer-events: auto; }
 #emoteBar button { width: 42px; height: 42px; border-radius: 50%; border: 1px solid #6b4a2a;
-  background: rgba(29,19,11,.9); font-size: 19px; cursor: pointer; }
+  background: rgba(29,19,11,.9); font-size: 19px; cursor: pointer; pointer-events: auto; }
 #emoteBar button:hover { border-color: #ffd23f; }
+#emoteBar button:active { transform: scale(.9); }
 #wakeScreen { position: fixed; inset: 0; z-index: 200;
   background: radial-gradient(ellipse at 50% 30%, rgba(255,170,80,.16), rgba(0,0,0,0) 55%), #140d07;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -298,6 +309,12 @@ html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; ba
   20% { opacity: 1; transform: translateY(0) scale(1.15); }
   100% { opacity: 0; transform: translateY(-46px) scale(1); } }
 #hud button.active { background: #ffd23f; color: #2b1d12; border-color: #ffd23f; }
+/* v1.1: your current vote lights up; counts ride the now-playing bar. */
+#nowPlaying button.mine { background: #ffd23f; border-color: #ffd23f; }
+#nowPlaying button:not(:disabled):hover { border-color: #ffd23f; }
+#nowPlaying button:not(:disabled):active { transform: scale(.9); }
+.npCounts { color: #ffd23f; font-weight: 700; }
+#tipBox { margin-top: 10px; border-top: 1px solid #6b4a2a; padding-top: 8px; }
 @media (max-width: 640px) {
   .sidePanel { top: 104px; }
   #chatPanel { width: calc(100vw - 150px); }
