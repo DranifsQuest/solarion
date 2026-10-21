@@ -1,4 +1,4 @@
-# Solarion — Phase 8 (Player Homes: Furniture, TVs, Radios, Invites)
+# Solarion — Phase 9 (Adjustments: Audibility, Movement, Social, Ritual, Homes v2)
 
 A multiplayer browser-based social game by **Re-Launch Studios** — an
 original-IP take on the classic Coke Music / Coke Studios loop:
@@ -560,16 +560,147 @@ owner's kick stays absolute, and a kicked visitor's 10-minute block
 is lifted **only** by a fresh invite's accept (the kick handler is
 otherwise untouched). Declines are reported back to the owner.
 
+## Phase 9 — the adjustments build
+
+Sixteen items, in the order they were built. Two rulings from Zan
+govern the phase: **hosting stays on Render** (no Fly.io move), and
+**when a mix plays — stage or home radio — everyone in the room
+hears it, the creator/performer included.** That second one is now a
+tested protocol contract (`test/audibility.test.js`): the server's
+`performance-start` / `home-device` broadcasts have never excluded
+anyone, and the tests pin identical timing data for performer +
+audience. The real-world silence was client-side: an AudioContext
+born inside a WebSocket handler starts *suspended* under browser
+autoplay rules, and the radio bailed silently if the loop catalog
+hadn't loaded yet. Fixes: any pointer/key gesture unlocks the shared
+engine, the radio re-syncs when the catalog lands and again after
+the scene applies.
+
+### Movement (items 2, 3, 14)
+
+- **Click/tap-to-move**: one `{type:'move-to', x, y}` intent; the
+  server routes it (BFS over the tile grid using the same collision
+  test as walking, greedy line-of-sight smoothing) and walks the
+  route. Solid targets snap to the nearest walkable tile; garbage
+  payloads are ignored. Keyboard input cancels the route.
+- **Run toggle**: 🚶/🏃 button, ×1.55 speed, both input modes.
+- **Touch**: the existing joystick stays; on-screen Sit / Chat /
+  World / Friends buttons plus tap-to-move make phones playable.
+- **Camera** eases toward the player with a small facing lookahead.
+- **Named areas** per map raise a place nameplate on entry
+  ("Fountain Plaza", "The Slots", "Casino Corner", …).
+
+### Social (items 4, 6, 7)
+
+- **Friends**: request / accept / decline / remove; the payload
+  always carries live presence + current scene.
+- **Navigator** (🧭): every public place (hub, cities, interiors,
+  both casinos) with live occupant counts and the original's 6-dot
+  fullness scale, which friends are where, and the open homes of
+  online owners. Travel is the standard 3s transfer. **Join-friend**
+  lands you beside your friend through the same transfer.
+- **Profiles**: click a player — look preview, their mix titles,
+  and wired actions (Add Friend / Join / Visit Home / Invite).
+- **Emotes**: 👋 wave, 🕺 dance (anywhere), 😂 laugh, 👍 thumbs-up —
+  server-tracked in snapshots; chat bubbles now fade out.
+
+### The performance ritual (items 5, 8, 9)
+
+The Coke loop, restored end to end (soul doc §2/§3):
+
+- **Burn-to-CD**: blank CDs come in **packs of 10 for 20z**
+  (`buy-blanks`); `burn-cd` spends one blank on one of your mixes;
+  **the stage refuses a performer without a CD of the mix**, and the
+  CD is consumed when the set starts. Deleting a mix deletes its CDs.
+- The performer still holds the 🎤 mic, their chat still goes
+  room-wide as a shout, and the stage speakers still pulse.
+- **Trophies**: lifetime up-votes **on one mix** — **25 = Gold
+  Record, 100 = Platinum Record** — awarded once each as wall
+  furniture in your home inventory. Trophies are *earned*: the shop
+  refuses to sell them.
+- **Top-40 chart**: mixes ranked by up-votes over the **trailing
+  7 days** (ties: fewer down-votes, then more performances) —
+  viewable in the Stage panel and via the **Top-40 Chart Poster**
+  furniture (60z).
+- **Mixer depth**: the loop library grows **48 → 72 loops** (+4 per
+  genre across Pop / Dance / Hip-Hop / Rock / Latin / Chill), still
+  organized in genre folders; mix **titles** surface on the stage,
+  radios, the chart, and profiles. The 5-mix cap, +5z per vote, and
+  350z/day performance cap are unchanged.
+- **Voting juice**: every vote floats a 👍/👎 over the stage for
+  the whole room (`vote-fx` broadcasts); the performer's results
+  card already existed — now a strong set (≥3 up, >2:1 ratio) also
+  earns synthesized **applause**, a flop earns a groan.
+
+### Homes v2 (item 10)
+
+- **Wall paint** (5 styles) and **floor styles** (4), server-saved
+  in `studio_meta`, applied to the room for everyone in it.
+- **Expandable size**: Studio 20×14 (free) → **Loft 24×17 (1500z)**
+  → **Penthouse 28×20 (4000z)**. Expansion keeps the top-left
+  origin, so placed furniture never moves.
+- **Home name** (shown on the door/map) and a **lock**: a locked
+  home admits only its owner and guests who accepted an invite.
+
+### The bartender's daily (item 11)
+
+The **first drink of the day at either bartender** (Salty Sam or
+Vex) is **free, and the house tips you 10z** — server-enforced once
+per account per day (`avatars.last_bar_day`), completely
+independent of the 100z login bonus. Drinks after that are the
+usual 5z; the vice system is untouched.
+
+### Casino social (item 12)
+
+- **Spectators**: poker tables already broadcast their public state
+  map-wide; the panel now calls it out — you can follow any hand
+  without a seat.
+- **Table chat** (`{type:'table-chat'}`): heard only by players
+  seated at, or standing within sitting range of, your table.
+- **Progressive jackpot, shared by BOTH casinos**: **2% of every
+  slot bet** feeds one pool (stored in hundredths of a z so the math
+  is exact at every bet size). **Three Suns pay the whole pool**
+  instead of the fixed 50× line, then the house reseeds it at
+  **250z**. Honest RTP: the fixed paytable alone measures ~0.967;
+  diverting 2% of handle into the pool and paying it back (plus the
+  250z reseed) on a ~1-in-4096 event makes the long-run effective
+  RTP ≈ **0.96**, drifting slightly with the pool's average size.
+
+### Ambient life + sound (items 13, 15)
+
+- **14 named NPCs** wander waypoint loops across the cities and
+  interiors (Maple the Guide, DJ Nova, Barista Bea, …) with
+  occasional flavor chat. One 500ms world timer; they ride the
+  snapshot pipeline and can't be friended/profiled.
+- **Day/night**: a server-anchored **12-minute cycle**; nights get a
+  world tint with lamp glow at arches, doors, and the stage rig.
+  Water and fountain tiles shimmer.
+- **Sound**: synthesized UI clicks, a door chime on arrival,
+  per-zone ambient beds (surf at the Bay, casino hush, café warmth),
+  applause — all on the shared engine, with **volume + mute
+  persisted on the device**.
+
+### Cold start (item 16)
+
+The free-tier server sleeps; the first thing a visitor sees is now
+a **waking screen** — progress bar, live status, and rotating
+gameplay tips — that hands off to the world when the first snapshot
+lands, and returns with "Reconnecting…" if the socket drops.
+Never a dead page.
+
 ## Stubbed / deferred to later phases
 
 - More Casino Lounges: `makeCasinoLounge()` can build one for any
   city, but the Phase 3 CasinoSystem tracks a single lounge map —
   generalizing it to several lounges is its own task, so Phase 4
   ships without a second lounge rather than destabilizing poker.
-- Studio upgrades: multiple rooms per player, room naming/themes,
-  and the jukebox actually playing visitors' mixes (still decorative —
-  Phase 8 radios play the room *owner's* mixes; guest mixes are the
-  natural next step)
+- Studio upgrades: multiple rooms per player, and the jukebox
+  actually playing visitors' mixes (Phase 8 radios play the room
+  *owner's* mixes; guest mixes are the natural next step). Naming,
+  themes, sizes and locks shipped in Phase 9 (Homes v2, above).
+- Late-joiner stage sync: walking into a performance mid-set hears
+  it from the next pass on radios (grid-aligned), but stage sets are
+  heard from the top only if you were present at the start.
 - Deployment (Fly.io, cheap always-on — per Zan, later)
 
 <!-- deploy-refresh 2026-10-20: force fresh Render instance to clear suspected wedged edge/instance state (POST-body hang investigation). No code change. -->

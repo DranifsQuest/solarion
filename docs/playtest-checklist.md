@@ -1,20 +1,81 @@
-# Solarion v1 Playtest Checklist
+# Solarion Playtest Checklist
 
-Everything below is protocol-proven (30/30 automated live checks pass end
-to end from a clean external network, incl. the Phase 6 creation flow,
-the Phase B world expansion, and the Phase C homes) but never touched by a human.
-Work through it in any order; jot what hits wrong and v1.1 starts there.
+Everything below is protocol-proven by the automated suite + live
+checks but the Phase 9 layer has never been touched by a human.
+Work through it in any order; jot what hits wrong.
 Live at https://solarion.onrender.com
 
 ## Free-tier manners (not bugs)
 - First load after idle takes ~50 seconds to wake — that's Render's free tier.
+  You should now see the **wake screen with tips** while it spins up,
+  never a dead page.
 - Accounts, mixes, and furniture wipe on redeploys for now (ephemeral DB).
-  Same tradeoff as Goleon; the Fly.io move fixes it later.
+
+## 9. Phase 9 — the adjustments build (NEW, never human-tested)
+
+### Audibility (the big one)
+- [ ] Perform a mix on a stage — do YOU hear your own set, start to
+      finish? Have someone else in the room: do they hear the SAME
+      thing at the SAME time?
+- [ ] Home radio: play one of your mixes on a Boombox — owner AND
+      guest both hear it, starting together?
+- [ ] First click/keypress after loading should "unlock" audio —
+      any moment where music should play but the room is silent?
+
+### Movement
+- [ ] Click (or tap) a far tile — you pathfind there, around
+      obstacles, through the world sensibly? Click INTO a wall —
+      you stop at the nearest sensible spot?
+- [ ] 🏃 Run toggle: clearly faster; keyboard + click both honor it.
+- [ ] On a phone: tap-to-move + joystick + Sit/Chat buttons usable?
+- [ ] Camera glides instead of locking — motion sickness or smooth?
+- [ ] Place nameplates ("Fountain Plaza", "The Slots") pop on entry.
+
+### Social
+- [ ] 🧭 Navigator: counts look right? Fullness dots? Your friends
+      marked in the places they're standing in? Travel feels right?
+- [ ] Friends: add by username, accept/decline, Join lands you next
+      to them. Remove works.
+- [ ] Click a player → profile card: their look, their mix TITLES,
+      Visit Home / Invite / Add Friend all wired?
+- [ ] Emotes (right edge): wave/dance/laugh/thumbs-up read clearly?
+      Dance anywhere. Chat bubbles fade instead of vanishing?
+
+### The ritual (burn-to-CD)
+- [ ] Save a mix, try to perform it WITHOUT a CD — the stage should
+      refuse and explain. Buy blanks (10 for 20z), burn, perform.
+- [ ] The CD is gone after your set (one CD = one performance).
+- [ ] 🏆 Top 40 chart (Stage panel): your set charts after votes?
+- [ ] Trophies are a long grind (25 / 100 lifetime 👍 on ONE mix) —
+      the Gold Record should appear in your home items when earned.
+
+### Homes v2
+- [ ] Home panel: rename your home (door name changes), repaint
+      walls, swap floors — visitors see the new look too?
+- [ ] Expand Studio → Loft (1500z): room grows, furniture unmoved.
+- [ ] Lock the home: a visitor is refused at the door; an invited
+      guest still gets in; unlock reopens it.
+
+### Casino + bar
+- [ ] First drink of the day: FREE and the bartender tips YOU 10z.
+      Second drink (even at the OTHER casino) costs the usual 5z.
+- [ ] Slots: the JACKPOT counter climbs as anyone spins (shared by
+      both casinos); three ☀️ pays the whole pool.
+- [ ] Poker: watch a table without sitting (state updates live);
+      table chat reaches your table only, not the room.
+
+### Ambient life + sound
+- [ ] NPCs wander (Maple at the Gateway, DJ Nova at the Bay…) and
+      occasionally chat. Do they add life or get in the way?
+- [ ] Day/night: ~12-minute cycle — at night the world tints and
+      arches/doors/stage glow. Water shimmers.
+- [ ] Sounds: UI clicks, door chime, applause on a strong set,
+      zone ambience (surf at the Bay!). 🔊 panel: volume + mute stick
+      between visits?
 
 ## Don't bother testing (deferred by design)
-- Burn-to-CD ritual, Gold/Platinum trophies, Top-40 chart. (Radios
-  playing mixes shipped in Phase 8 — the old decorative jukebox is
-  still just furniture; radios are the players.)
+- Hearing a stage set you walk into mid-performance (radios catch
+  you up on the next pass; stages start you at the next set).
 
 ## 1. First load
 - [ ] Register a fresh account; log out and back in.
@@ -71,7 +132,7 @@ Live at https://solarion.onrender.com
       you turn hippy (tie-dye + headband, everyone sees it) for 20s.
 
 ## 2. Audio — the never-heard stuff
-- [ ] Open the mixer, audition loops across the 48 synth loops.
+- [ ] Open the mixer, audition loops across the 72 synth loops (24 new in Phase 9).
 - [ ] Any loops that sound broken, glitchy, or out of place?
 - [ ] Perform a mix on a stage — how does it sound in the room?
 
@@ -81,13 +142,15 @@ Live at https://solarion.onrender.com
 - [ ] Chat with anyone around; presence/movement of other players sensible?
 
 ## 4. Music loop (the centerpiece)
-- [ ] Build a 5-slot mix, save it, perform it on a stage.
-- [ ] Vote on someone else's performance — +5z lands? Daily cap (350z)
-      behaves?
+- [ ] Build a mix in the 5-track mixer, save it, burn it to a CD
+      (Phase 9 ritual), perform it on a stage.
+- [ ] Vote on someone else's performance — +5z per 👍 lands? Daily
+      cap (350z) behaves?
 
 ## 5. Casinos (Solstice Bay Casino Lounge + Neon Casino)
 - [ ] Slots: sit on a machine's stool and spin a while — payouts
-      feel fair? (RTP tuned ~0.967)
+      feel fair? (Base paytable RTP ~0.967; the shared jackpot makes
+      the effective rate ≈0.96 — see README Phase 9.)
 - [ ] Poker: sit at a 4-chair table, play a full hand to showdown.
       Chips conserved? Side pots handled right?
 - [ ] The bar: see section 1c.
