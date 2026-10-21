@@ -82,11 +82,11 @@ const MAPPING = [
   { match: /^public\/sprites\.js$/,                tests: ['test/sprites.test.js', 'test/creation.test.js'], why: 'sprite renderer' },
   { match: /^public\/input-guard\.js$/,           tests: ['test/input-guard.test.js'], why: 'keyboard input guard' },
   { match: /^public\/(client|audio|mixer|studio)\.js$/, tests: ['test/input-guard.test.js', 'test/audibility.test.js', 'test/test.js'], why: 'client/audio surface' },
-  { match: /^public\//,                           tests: ['test/input-guard.test.js', 'test/sprites.test.js'], why: 'other client assets' },
+  { match: /^public\//,                           tests: ['test/input-guard.test.js', 'test/sprites.test.js'], why: 'other client assets', fallback: true },
   { match: /^test\/(.+)$/,                        tests: null, why: 'the changed test file itself' }, // tests = the file itself
-  { match: /^src\//,                              tests: CORE_SET, why: 'UNMAPPED source file — core fallback' },
+  { match: /^src\//,                              tests: CORE_SET, why: 'UNMAPPED source file — core fallback', fallback: true },
   { match: /^scripts\/live-verify\.mjs$/,         tests: [], why: 'live-verify harness is exercised by the release tier, not the local suite' },
-  { match: /^scripts\//,                          tests: CORE_SET, why: 'tooling/scripts change — core fallback' },
+  { match: /^scripts\//,                          tests: CORE_SET, why: 'tooling/scripts change — core fallback', fallback: true },
 ];
 const DOCS_RE = /^(docs\/|README\.md$|.*\.md$)/;
 
@@ -131,17 +131,22 @@ function selectFastTests(changed) {
   for (const f of changed) {
     if (DOCS_RE.test(f)) { notes.push({ file: f, kind: 'docs', detail: 'documentation only — no tests required' }); continue; }
     codeChanges++;
+    // Specific rules stack; fallback rules fire only if nothing specific matched.
     let matched = false;
-    for (const rule of MAPPING) {
-      const m = rule.match.exec(f);
-      if (!m) continue;
-      matched = true;
-      const tests = rule.tests === null ? [f] : rule.tests;
-      for (const t of tests) {
-        if (!selected.has(t)) selected.set(t, []);
-        selected.get(t).push(`${f} (${rule.why})`);
+    for (const pass of [false, true]) {
+      for (const rule of MAPPING) {
+        if (Boolean(rule.fallback) !== pass) continue;
+        if (matched && pass) break;
+        const m = rule.match.exec(f);
+        if (!m) continue;
+        matched = true;
+        const tests = rule.tests === null ? [f] : rule.tests;
+        for (const t of tests) {
+          if (!selected.has(t)) selected.set(t, []);
+          selected.get(t).push(`${f} (${rule.why})`);
+        }
+        notes.push({ file: f, kind: rule.fallback ? 'fallback' : 'mapped', detail: `${tests.length ? tests.join(', ') : 'no local tests'} ← ${rule.why}` });
       }
-      notes.push({ file: f, kind: 'mapped', detail: `${tests.length ? tests.join(', ') : 'no local tests'} ← ${rule.why}` });
     }
     if (!matched) {
       for (const t of CORE_SET) { if (!selected.has(t)) selected.set(t, []); selected.get(t).push(`${f} (unmapped — core fallback)`); }
