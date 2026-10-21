@@ -514,6 +514,20 @@ async function main() {
     report('sitting: A sat on a Gateway bench (seated in snapshots) and stood back up', true, 'seated=true -> interact -> seated=false');
   } catch (e) { report('sitting: A sat on a Gateway bench (seated in snapshots) and stood back up', false, e.message); }
 
+  // ---- Phase 10: the home door — walk in through your own front
+  // door on the Gateway, and back out through your home's own door.
+  try {
+    const inHome = await travel(A.client, 240, 720, `studio:${A.id}`, 'gateway home door -> A home');
+    if (!inHome.map.studio || !inHome.map.studio.door) throw new Error('home payload has no door');
+    const hd = inHome.map.studio.door;
+    const out = await travel(A.client, hd.x + hd.w / 2, hd.y + hd.h / 2, 'the-gateway', 'home door -> gateway');
+    // Landed outside the front door (one tile south of its pad).
+    if (Math.abs(out.you.x - 240) > 3 || Math.abs(out.you.y - 752) > 3) {
+      throw new Error(`landed at ${out.you.x},${out.you.y} instead of outside the front door`);
+    }
+    report('home door: Gateway front door -> home -> out the home door, landing outside it', true, 'real doors both ways, no warp pads');
+  } catch (e) { report('home door: Gateway front door -> home -> out the home door, landing outside it', false, e.message); }
+
   // ---- travel: remaining four cities and back
   const cities = [
     { arch: [224, 48], id: 'neon-district', name: 'Neon District', back: [1152, 1392] },

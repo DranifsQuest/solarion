@@ -1,7 +1,7 @@
 # Solarion Playtest Checklist
 
 Everything below is protocol-proven by the automated suite + live
-checks but the Phase 9 layer has never been touched by a human.
+checks but the newest layers have never been touched by a human.
 Work through it in any order; jot what hits wrong.
 Live at https://solarion.onrender.com
 
@@ -73,6 +73,38 @@ Live at https://solarion.onrender.com
 - [ ] Sounds: UI clicks, door chime, applause on a strong set,
       zone ambience (surf at the Bay!). 🔊 panel: volume + mute stick
       between visits?
+
+## 10. Phase 10 — the Warm Home pass (NEW, never human-tested)
+
+### Real doors
+- [ ] Walk up to any door (café, both casinos, hookah lounge): it
+      visibly SWINGS open as you approach — creak audible? — and
+      closes behind you after the load screen. Nobody pops; no
+      glowing pad anywhere.
+- [ ] Inside each interior, the door back out does the same in
+      reverse, and you arrive through it (door starts open, shuts
+      behind you).
+- [ ] The load screen itself: dark wood + lantern + the place's
+      name as a welcome sign. Does it feel like stepping indoors?
+- [ ] Gateway, west side: the **My Home** door with lanterns.
+      Through it = your place. Inside, your door wears your home's
+      name; walk onto it to leave — you land outside your front
+      door, facing the world. Does the round trip feel like HOME?
+
+### Cozy substance
+- [ ] Gateway Café + Hookah Lounge: find **The Hearth Corner** —
+      fire animated, seats by it sittable, crackle audible over the
+      room tone? Too loud / too quiet?
+- [ ] Buy a **Fireplace (300z)** for your home: flame, night glow,
+      and the crackle starts when you're home. String Lights (65z)
+      and a Porch Lantern (50z) — bulbs/lantern read at day, glow
+      at night?
+- [ ] Nooks in the cities (rug + lamp + sofas): do they pull you
+      to sit with someone, or read as decoration?
+- [ ] Night pass: doors, lamps, string lights, hearths all glow
+      warm — anywhere still feel cold or flat?
+- [ ] UI warmth: panels/auth/wake screen in amber + wood — still
+      readable everywhere? Any spot that went muddy?
 
 ## Don't bother testing (deferred by design)
 - Hearing a stage set you walk into mid-performance (radios catch

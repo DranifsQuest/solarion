@@ -1,4 +1,4 @@
-# Solarion — Phase 9 (Adjustments: Audibility, Movement, Social, Ritual, Homes v2)
+# Solarion — Phase 10 (The Warm Home Pass: Real Doors + Cozy)
 
 A multiplayer browser-based social game by **Re-Launch Studios** — an
 original-IP take on the classic Coke Music / Coke Studios loop:
@@ -692,6 +692,83 @@ a **waking screen** — progress bar, live status, and rotating
 gameplay tips — that hands off to the world when the first snapshot
 lands, and returns with "Reconnecting…" if the socket drops.
 Never a dead page.
+
+## Phase 10 — the Warm Home pass (real doors + cozy)
+
+Zan's ruling, verbatim in spirit: doors must be REAL doors that
+open — "not lil SPACES that warp" — and the whole place should feel
+like a warm, fun home. Phase 9 tuned the tints; this phase builds
+the substance.
+
+### Real doors, everywhere
+
+- **Every door renders as a door**: a framed wooden door (posts,
+  lintel, paneled leaf, brass knob) with a welcome mat and its name
+  hung over the lintel like a welcome sign. The old flat pad +
+  🚪-emoji rendering is gone — no glowing warp tiles remain.
+- **They open**: the swing is proximity-driven and visible to
+  everyone — as any player approaches, the leaf swings open (a soft
+  synthesized creak plays for those nearby) and closes behind them.
+  The scene transfer still fires server-side on the door tile and
+  the 3s lock is unchanged — the sequence masks the swap: door
+  opens → you step into the darkened threshold → the **warm load
+  screen** (dark wood, a flickering lantern, the destination's name
+  as the welcome sign, "come on in — the fire's lit…") → you arrive
+  inside, where the destination's door starts open and swings shut
+  behind you.
+- **Your front door stands in the world**: the Gateway's west block
+  now carries a dressed door labelled **My Home** (lanterns flank
+  the walkway at Homes Corner). Stepping through takes you into
+  your own studio; inside, your home's own door — nameplate with
+  your home's name, mat, lamp beside it, night glow — is a real
+  door too: **walk onto its tile to leave**, landing back outside
+  your front door (never on its pad, so it can't bounce you in).
+  The old Leave button still works.
+- **Conversion list** (all verified both directions by the suite /
+  live harness): Gateway ⇄ Café, Solstice Bay ⇄ Casino Lounge,
+  Neon District ⇄ Neon Casino, Cinder Mesa ⇄ Hookah Lounge, and
+  Gateway ⇄ your home. Gateway arches remain arches — portals by
+  design — and keep their chime; doors get the door sound.
+
+### Cozy substance
+
+- **Fireplaces**: a **Fireplace** furniture item (**300z**) with an
+  animated three-tongue flame, a warm glow radius at night, and the
+  crackle (below). Fixed hearths with hearth-side seats anchor the
+  **Gateway Café** and the **Hookah Lounge** — both gain a named
+  area, **The Hearth Corner**.
+- **Seating nooks**: rug + lamp + sofa/chair clusters dressed into
+  the Gateway (fountain + café corner), Solstice Bay boardwalk,
+  Neon market square, Cinder forge plaza, Frosthaven pond shore,
+  and the Verdant grove — every cluster includes real sittable
+  seats.
+- **String lights + lanterns**: **String Lights (65z)** and **Porch
+  Lantern (50z)** for homes; lanterns and string lights also dress
+  the public maps. All of them — plus placed lamps and fireplaces —
+  punch warm holes in the night through the lamp-glow pass, as does
+  a home's own door.
+- **Hearth-crackle ambience**: a synthesized fire bed (brown-noise
+  body + randomized soft pops) that follows the fire — always on in
+  the café and hookah lounge, and in any home with a placed
+  fireplace. It rides the shared volume/mute like everything else.
+- **Warm UI**: the HUD/panel palette moved from slate blue to
+  amber/wood (warm browns, gold accents kept, body text unchanged
+  for contrast); the auth card, creation screen, and wake screen
+  got the same treatment; the wake bar burns amber now.
+- **Warm home defaults**: new homes already default to **Warm Wood
+  walls + Classic Wood floors** — now asserted by test so it can't
+  quietly regress.
+
+### Honest scope notes
+
+- There is no per-player house *facade row*: homes are instanced
+  interiors reached through your Gateway front door, visits, invites,
+  and the Navigator. What the world shows is your named, dressed,
+  glowing front door — the strongest version the studio-entry
+  architecture supports without faking a neighborhood.
+- Door swings are client-rendered from the same snapshot positions
+  the server already broadcasts; the transfer/lock protocol is
+  untouched, so every Phase B door guarantee still holds verbatim.
 
 ## Stubbed / deferred to later phases
 
