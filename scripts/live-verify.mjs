@@ -528,8 +528,10 @@ async function main() {
     // Step away from the doorstep before the tours: the door stands
     // in the x~240 column, and a beeline north from the doorstep
     // crosses its own pad (a door working as a door should) — walk
-    // east into the plaza first so tour routes start clear of it.
-    await walkTo(A.client, 700, 752, { arrive: 16 });
+    // back east into the plaza, to the same ground the tours have
+    // always started from (its line to the Neon arch clears the
+    // north houses block, unlike a start further south).
+    await walkTo(A.client, 1008, 700, { arrive: 16 });
     report('home door: Gateway front door -> home -> out the home door, landing outside it', true, 'real doors both ways, no warp pads');
   } catch (e) { report('home door: Gateway front door -> home -> out the home door, landing outside it', false, e.message); }
 
