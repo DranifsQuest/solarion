@@ -53,6 +53,7 @@ const auth = require('./auth');
 const appearance = require('./appearance');
 const { Game, localDay, DAY_CYCLE } = require('./game');
 const { MAPS, clientMap } = require('./maps');
+const { seasonAt, SEASONS } = require('./seasons');
 const { q } = require('./db');
 const music = require('./music');
 const { StageManager } = require('./stage');
@@ -279,6 +280,12 @@ if (TEST_MODE) {
     // Force the world clock: 0.25 = full day, 0.70 = deep night.
     const phase = req.query.phase === 'night' ? 0.70 : 0.25;
     const dayCycle = { periodMs: DAY_CYCLE.periodMs, anchor: Date.now() - phase * DAY_CYCLE.periodMs };
+    // Bake Shop season override (tooling only): ?season=halloween|
+    // christmas forces that layer; ?season=none forces it off.
+    // Absent = the calendar's real season, exactly like live play.
+    const sq = req.query.season;
+    const season = sq === 'none' ? null
+      : SEASONS.includes(sq) ? sq : seasonAt(new Date());
     const ctx = Math.floor(map.tiles.w / 2), cty = Math.floor(map.tiles.h / 2);
     const v = previewSpot(map, ctx, cty);
     const s1 = previewSpot(map, ctx + 2, cty + 2);
@@ -293,11 +300,10 @@ if (TEST_MODE) {
       fakePub(900003, 'Juno', lookM2, s2.x, s2.y, 'right'),
     ];
     res.json({
-      type: 'hello', you, map: clientMap(map), players,
+      type: 'hello', you, map: clientMap(map, season), players, season,
       chat: [], zcoins: 0, bonusGranted: false, bonusAmount: 0, dayCycle,
     });
   });
-
   app.get('/preview/:mapId', (req, res) => {
     if (!MAPS[req.params.mapId]) return res.status(404).send('unknown map');
     const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
@@ -370,6 +376,7 @@ wss.on('connection', (ws, req) => {
     type: 'hello',
     you: youPub,
     map: clientMap(map),
+    season: seasonAt(new Date()),
     players: game.playersInMap(p.mapId),
     chat: game.historyFor(p.mapId),
     zcoins: q.avatarByUser.get(session.user.id).zcoins,
