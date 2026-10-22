@@ -105,8 +105,17 @@ function el() {
 function loadClientAudio() {
   const ctx = new MockCtx();
   const store = new Map();
+  // Deterministic noise: the client fills its buffers from
+  // Math.random, so seed it — bed/seam measurements must be the
+  // same draw on every run, never a coin flip.
+  let seed = 1234567;
+  const seededMath = Object.create(Math);
+  seededMath.random = () => {
+    seed = (seed * 1103515245 + 12345) % 2147483648;
+    return seed / 2147483648;
+  };
   const sandbox = {
-    console, setInterval, clearInterval, setTimeout, clearTimeout, Math, JSON,
+    console, setInterval, clearInterval, setTimeout, clearTimeout, Math: seededMath, JSON,
     localStorage: {
       getItem: (k) => (store.has(k) ? store.get(k) : null),
       setItem: (k, v) => store.set(k, String(v)),
