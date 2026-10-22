@@ -117,11 +117,14 @@ async function travel(client, tx, ty, expectMap, label) {
   return m;
 }
 
+// Mixer rework: the verify mix is saved in the v2 per-cell format
+// (one bubble per line at bar 0), so the music leg below also proves
+// the new format round-trips save -> burn -> perform byte-identical.
 const SHORT_MIX = {
   name: 'Verify Banger', bpm: 160, bars: 2,
   tracks: [
-    { loopId: 'pop-drums-1', startBar: 0 },
-    { loopId: 'pop-bass-1', startBar: 0 },
+    { cells: [{ loopId: 'pop-drums-1', bar: 0 }] },
+    { cells: [{ loopId: 'pop-bass-1', bar: 0 }] },
   ],
 };
 
@@ -226,11 +229,29 @@ async function main() {
     report('presence: A and B see each other in snapshots', true, 'mutual snapshot presence');
   } catch (e) { report('presence: A and B see each other in snapshots', false, e.message); }
 
+  // Politeness (Zan, 2026-10-21): the chat exchange happens inside
+  // B's PRIVATE home instance, not a public room — a verify bot's
+  // "hello" line in the Gateway crossed a real player's session.
+  // Homes are instanced rooms on the same per-map chat broadcast
+  // path (handleChat -> broadcastToMap), so the check keeps its
+  // meaning: A's line must reach B with the sender name attached.
+  // Both bots return to the Gateway afterwards for the legs below.
   try {
+    B.client.send({ type: 'enter-studio', owner: NAME_B });
+    await waitFor(() => lastOf(B.client, 'map', m => m.map.id === `studio:${B.id}`), 8000, 'B enters own home');
+    B.client.send({ type: 'studio-invite', username: NAME_A });
+    await waitFor(() => lastOf(A.client, 'studio-invite', i => i.fromId === B.id), 6000, 'A got B\'s home invite');
+    A.client.send({ type: 'studio-invite-response', ownerId: B.id, accept: true });
+    await waitFor(() => lastOf(A.client, 'map', m => m.map.id === `studio:${B.id}`), 8000, 'A lands in B\'s home');
+    await sleep(2200); // ride out the 1.5s invite transfer window
     B.client.msgs.length = 0;
     A.client.send({ type: 'chat', text: 'hello from verify A' });
     await waitFor(() => B.client.msgs.some(m => m.type === 'chat' && m.text === 'hello from verify A' && m.from === NAME_A), 6000, 'chat delivered');
-    report('chat: A message delivered to B with sender name', true, 'chat received by B');
+    report('chat: A message delivered to B with sender name', true, 'chat received by B inside B\'s private home (no public-room chatter)');
+    A.client.send({ type: 'leave-studio' });
+    await waitFor(() => lastOf(A.client, 'map', m => m.map.id === 'the-gateway'), 8000, 'A back in the Gateway');
+    B.client.send({ type: 'leave-studio' });
+    await waitFor(() => lastOf(B.client, 'map', m => m.map.id === 'the-gateway'), 8000, 'B back in the Gateway');
   } catch (e) { report('chat: A message delivered to B with sender name', false, e.message); }
 
   try {

@@ -302,6 +302,40 @@ test('stage: queue, synchronized performance, voting pays +5z, anti-farm rules, 
   a.client.ws.close(); b.client.ws.close(); c.client.ws.close();
 });
 
+test('mixer rework: a v2 per-cell mix saves, burns to CD and performs byte-identical', { timeout: 90000 }, async () => {
+  const a = await makeUser('cellperf_p2');
+  const b = await makeUser('cellfan_p2');
+  // The rework shape: line 1 repeats the same loop at bars 0 and 2;
+  // line 2 drops a single bubble at bar 1. Nothing tiles, nothing
+  // stretches — each bubble is one trigger.
+  const CELL_MIX = {
+    name: 'Cell Song', bpm: 160, bars: 4,
+    tracks: [
+      { cells: [{ loopId: 'pop-drums-1', bar: 0 }, { loopId: 'pop-drums-1', bar: 2 }] },
+      { cells: [{ loopId: 'pop-bass-1', bar: 1 }] },
+    ],
+  };
+  const mix = await saveMix(a, 1, CELL_MIX);
+  assert.deepEqual(mix.data, CELL_MIX, 'the server stores the per-cell format intact');
+  // The stored copy reads back identically too.
+  a.client.msgs.length = 0;
+  a.client.send({ type: 'mix-list' });
+  const list = await waitFor(() => a.client.msgs.filter(m => m.type === 'mixes').pop(), 5000, 'cell mix list');
+  assert.deepEqual(list.mixes.find(m => m.id === mix.id).data, CELL_MIX, 'mix-list returns the per-cell data untouched');
+  await prepCd(a, mix.id);
+  await toBay(a);
+  await toBay(b);
+  await sleep(300);
+  a.client.send({ type: 'stage-join', mixId: mix.id });
+  const startA = await waitFor(() => a.client.msgs.filter(m => m.type === 'performance-start').pop(), 8000, 'A performance-start (cell mix)');
+  const startB = await waitFor(() => b.client.msgs.filter(m => m.type === 'performance-start').pop(), 8000, 'B performance-start (cell mix)');
+  assert.deepEqual(startB.mix, CELL_MIX, 'the audience receives the exact per-cell mix off the burned CD');
+  assert.deepEqual(startA.mix, startB.mix, 'performer and audience payloads identical');
+  assert.equal(startB.durationMs, 6000, 'duration comes from bars/bpm alone: 4 bars @160bpm = 6000ms');
+  await waitFor(() => b.client.msgs.filter(m => m.type === 'performance-end').pop(), 30000, 'cell set ends');
+  a.client.ws.close(); b.client.ws.close();
+});
+
 test('stage: daily performance-earnings cap of 350z is enforced', { timeout: 90000 }, async () => {
   const d = await makeUser('capped_p2');
   const e = await makeUser('capfan_p2');

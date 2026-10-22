@@ -30,6 +30,40 @@
   ].join('\n');
   document.head.appendChild(style);
 
+  // Mixer scene (mixer rework): the hygiene CSS above hides every
+  // DOM panel by design — the world is canvas — so this scene
+  // deliberately un-hides JUST the mixer panel, feeds the real
+  // SolarionMixer the live loop catalog (its own attach-time fetch
+  // resolves against the file:// base and fails), and builds a
+  // draft through the mixer's own gridClick path: a line holding
+  // three bubbles of the SAME loop at different bars, a one-cell
+  // bubble of the 4-bar pad, and a two-bubble melody line.
+  async function openMixerScene(base) {
+    const M = window.SolarionMixer;
+    if (!M) throw new Error('mixer module missing');
+    const j = await (await fetch(`${base}/api/music/loops`)).json();
+    if (!j.ok) throw new Error('loop catalog unavailable');
+    M.loops = j.loops;
+    M.loopsById = new Map(j.loops.map(l => [l.id, l]));
+    M.limits = { bpmMin: j.bpmMin, bpmMax: j.bpmMax, maxBars: j.maxBars, maxTracks: j.maxTracks };
+    const style = document.createElement('style');
+    style.textContent = '#game > #mixerPanel { display: block !important; visibility: visible !important; }';
+    document.head.appendChild(style);
+    M.openPanel();
+    M.el.name.value = 'Three Of The Same';
+    if (M.draft) M.draft.name = 'Three Of The Same';
+    M.selLoopId = 'pop-drums-1'; // Sunny Beat — the same loop x3 on line 1
+    M.gridClick(0, 0);
+    M.gridClick(0, 2);
+    M.gridClick(0, 5);
+    M.selLoopId = 'pop-pad-1'; // Warm Chords — 4 bars long, still ONE cell
+    M.gridClick(1, 1);
+    M.selLoopId = 'pop-mel-1';
+    M.gridClick(2, 0);
+    M.gridClick(2, 4);
+    M.renderBrowser();
+  }
+
   async function boot() {
     try {
       const base = cfg.apiBase || '';
@@ -41,6 +75,7 @@
       // snapshot registers the sample companions' render positions.
       window.handle(hello);
       window.handle({ type: 'snapshot', players: hello.players });
+      if (cfg.scene === 'mixer') await openMixerScene(base);
       document.title = `preview:${cfg.mapId}:${cfg.phase}`;
       window.__PREVIEW_READY__ = true;
     } catch (e) {

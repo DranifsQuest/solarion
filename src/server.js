@@ -202,6 +202,10 @@ function applyAvatarUpdate(userId, fields) {
 // Public loop catalog for the mixer UI (pattern data the client
 // synthesizes with Web Audio — no audio files exist anywhere).
 app.get('/api/music/loops', (req, res) => {
+  // Test-only (Bake Shop mixer scene): the preview page loads from
+  // file://, so its catalog fetch needs the same CORS allowance the
+  // /preview-data route carries. Production responses are unchanged.
+  if (TEST_MODE) res.set('Access-Control-Allow-Origin', '*');
   res.json({
     ok: true,
     loops: music.LOOPS,

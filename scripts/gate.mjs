@@ -65,6 +65,7 @@ const TEST_FILES = [
   ['test/audio.test.js',     null,  0,     0,     0],   // no server (v1.2 Items D/S)
   ['test/seasons.test.js',   null,  0,     0,     0],   // no server (seasonal themes)
   ['test/glyphs.test.js',    null,  0,     0,     0],   // no server (v1.2.2 Item 6: raw-escape UI scan)
+  ['test/mixer-cells.test.js', null, 0,    0,     0],   // no server (mixer rework: vm engine + grid + validateMix)
 ].map(([file, base, stride, extra, run]) => ({ file, base, stride, extra, run }));
 
 const ALL_TESTS = TEST_FILES.map(t => t.file);
@@ -79,14 +80,14 @@ const CORE_SET = ['test/test.js', 'test/expansion.test.js', 'test/phase9.test.js
 // `match` is a RegExp tested against the repo-relative path.
 // ---------------------------------------------------------------------------
 const MAPPING = [
-  { match: /^src\/(music|stage)\.js$/,            tests: ['test/music.test.js', 'test/audibility.test.js'], why: 'music/stage engine' },
+  { match: /^src\/(music|stage)\.js$/,            tests: ['test/music.test.js', 'test/audibility.test.js', 'test/mixer-cells.test.js'], why: 'music/stage engine' },
   { match: /^src\/casino\.js$/,                   tests: ['test/casino.test.js', 'test/vice.test.js'], why: 'casino engine (vice covers the casino bars/hookah)' },
   { match: /^src\/studio\.js$/,                   tests: ['test/studios.test.js', 'test/homes.test.js'], why: 'studios/homes engine' },
   { match: /^src\/appearance\.js$/,               tests: ['test/creation.test.js', 'test/sprites.test.js'], why: 'appearance options feed creation + sprite rendering' },
   { match: /^src\/(game|maps|server|db)\.js$/,    tests: CORE_SET, why: 'core engine/map/server — broad protocol set' },
   { match: /^public\/sprites\.js$/,                tests: ['test/sprites.test.js', 'test/creation.test.js'], why: 'sprite renderer' },
   { match: /^public\/input-guard\.js$/,           tests: ['test/input-guard.test.js'], why: 'keyboard input guard' },
-  { match: /^public\/(client|audio|mixer|studio)\.js$/, tests: ['test/input-guard.test.js', 'test/audibility.test.js', 'test/test.js'], why: 'client/audio surface' },
+  { match: /^public\/(client|audio|mixer|studio)\.js$/, tests: ['test/input-guard.test.js', 'test/audibility.test.js', 'test/test.js', 'test/mixer-cells.test.js'], why: 'client/audio surface' },
   { match: /^public\//,                           tests: ['test/input-guard.test.js', 'test/sprites.test.js'], why: 'other client assets', fallback: true },
   { match: /^test\/(.+)$/,                        tests: null, why: 'the changed test file itself' }, // tests = the file itself
   { match: /^src\//,                              tests: CORE_SET, why: 'UNMAPPED source file — core fallback', fallback: true },

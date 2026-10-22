@@ -9,7 +9,9 @@
  * this engine renders it live with oscillators + filtered noise.
  *
  * The mixer is a TOY, not a DAW (soul doc §3): 5 song slots → EDIT opens
- * a block grid where loop blocks snap onto tracks on a bar grid → PLAY
+ * a bar grid of 5 lines → click a cell to drop a one-cell bubble of the
+ * selected loop there (a line fills up one bubble at a time, one sound
+ * per bar per line; click a bubble to take just it back) → PLAY
  * auditions → SAVE persists server-side. All loops live in A minor over
  * the Am–F–C–G family, so random combinations stay listenable.
  *
@@ -154,15 +156,31 @@ const AE = {
 
   freq(root, semi) { return root * Math.pow(2, semi / 12); },
 
-  /** Schedule ONE pass of a loop starting at ctx-time t. stepDur in seconds. */
-  playLoop(loop, t, bpm) {
+  /**
+   * Schedule ONE pass of a loop starting at ctx-time t. stepDur in
+   * seconds. `clipEnd` (mixer rework): the ctx-time at which this
+   * pass must fall silent because the NEXT bubble on the same line
+   * takes the line over (restart semantics — see playMix). Events
+   * that would START at/after clipEnd are never scheduled, and
+   * sustained events (notes, pad chords, long fx washes) are
+   * shortened to end at clipEnd. Short drum/perc transients are only
+   * start-gated: a hit already ringing when the boundary lands is a
+   * fraction of a step and reads as part of the takeover. Default
+   * Infinity = the historical unclipped pass (radio loops, zone
+   * music, loop auditions all schedule without a boundary).
+   */
+  playLoop(loop, t, bpm, clipEnd = Infinity) {
     const stepDur = (60 / bpm) / 4;
     const totalSteps = loop.bars * 16;
+    // Effective duration for a sustained event starting at tt: 0
+    // means "at/past the boundary — do not schedule it at all".
+    const seg = (tt, dur) => (tt >= clipEnd ? 0 : Math.min(dur, clipEnd - tt));
     if (loop.drums) {
       for (const [inst, pat] of Object.entries(loop.drums)) {
         for (let s = 0; s < pat.length; s++) {
           if (pat[s] !== 'x') continue;
           const tt = t + s * stepDur;
+          if (tt >= clipEnd) continue;
           if (inst === 'kick') this.kick(tt);
           else if (inst === 'snare') this.snare(tt);
           else if (inst === 'hat') this.hat(tt, s % 16 === 14);
@@ -173,7 +191,10 @@ const AE = {
     if (loop.notes) {
       const isBass = loop.role === 'bass';
       for (const [step, semi, len] of loop.notes) {
-        this.tone(t + step * stepDur, this.freq(loop.root, semi), len * stepDur * 0.92, {
+        const tt = t + step * stepDur;
+        const d = seg(tt, len * stepDur * 0.92);
+        if (d <= 0.005) continue;
+        this.tone(tt, this.freq(loop.root, semi), d, {
           wave: loop.wave || 'triangle', gain: isBass ? 0.26 : 0.15,
         });
       }
@@ -182,6 +203,8 @@ const AE = {
       const barDur = stepDur * 16;
       loop.chords.forEach((chord, bar) => {
         const bt = t + bar * barDur;
+        const segDur = seg(bt, barDur);
+        if (segDur <= 0.005) return;
         for (const semi of chord) {
           const o = this.ctx.createOscillator();
           o.type = loop.wave || 'triangle';
@@ -189,11 +212,11 @@ const AE = {
           o.detune.value = (Math.random() * 8 - 4);
           const g = this.ctx.createGain();
           g.gain.setValueAtTime(0.0001, bt);
-          g.gain.linearRampToValueAtTime(0.045, bt + Math.min(0.35, barDur * 0.3));
-          g.gain.setValueAtTime(0.045, bt + barDur * 0.7);
-          g.gain.linearRampToValueAtTime(0.0001, bt + barDur);
+          g.gain.linearRampToValueAtTime(0.045, bt + Math.min(0.35, barDur * 0.3, segDur * 0.6));
+          g.gain.setValueAtTime(0.045, bt + segDur * 0.7);
+          g.gain.linearRampToValueAtTime(0.0001, bt + segDur);
           o.connect(g); g.connect(this.out || this.master);
-          o.start(bt); o.stop(bt + barDur + 0.05);
+          o.start(bt); o.stop(bt + segDur + 0.05);
           this.track(o);
         }
       });
@@ -201,13 +224,14 @@ const AE = {
     if (loop.fx) {
       for (const e of loop.fx) {
         const tt = t + e.step * stepDur;
+        if (tt >= clipEnd) continue;
         switch (e.kind) {
           case 'crash': this.noise(tt, 0.6, { type: 'highpass', freq: 5500, gain: 0.22 }); break;
-          case 'riser': this.noise(tt, stepDur * 16, { type: 'bandpass', freq: 400, sweepTo: 4200, q: 2, gain: 0.16 }); break;
-          case 'sweep': this.noise(tt, stepDur * 8, { type: 'bandpass', freq: 900, sweepTo: 2600, q: 3, gain: 0.14 }); break;
+          case 'riser': this.noise(tt, seg(tt, stepDur * 16), { type: 'bandpass', freq: 400, sweepTo: 4200, q: 2, gain: 0.16 }); break;
+          case 'sweep': this.noise(tt, seg(tt, stepDur * 8), { type: 'bandpass', freq: 900, sweepTo: 2600, q: 3, gain: 0.14 }); break;
           case 'scratch': this.noise(tt, 0.14, { type: 'bandpass', freq: 1100, sweepTo: 300, q: 4, gain: 0.25 }); break;
           case 'shaker': this.noise(tt, 0.09, { type: 'highpass', freq: 6000, gain: 0.13 }); break;
-          case 'rain': this.noise(tt, stepDur * totalSteps, { type: 'lowpass', freq: 900, gain: 0.05 }); break;
+          case 'rain': this.noise(tt, seg(tt, stepDur * totalSteps), { type: 'lowpass', freq: 900, gain: 0.05 }); break;
           case 'blip': this.tone(tt, this.freq(220, e.note || 12), 0.16, { wave: 'square', gain: 0.09 }); break;
           default: break;
         }
@@ -215,20 +239,37 @@ const AE = {
     }
   },
 
-  /** Schedule a whole mix starting at ctx-time t0. Returns end ctx-time. */
+  /**
+   * Schedule a whole mix starting at ctx-time t0. Returns end
+   * ctx-time. THE one playback path — mixer audition, stage
+   * performances and home radios all schedule through here, which is
+   * what keeps the audibility contract (performer and audience hear
+   * the identical thing): the schedule is a pure function of the mix
+   * data and t0.
+   *
+   * Mixer rework model: every track is normalized to CELLS by
+   * Mixer.trackCells (v2 lines already hold cells; v1 legacy lines
+   * expand their tiling into bubbles, which lands on exactly the
+   * passes the old tiling loop scheduled — old mixes and CDs sound
+   * unchanged). Each bubble triggers ONE pass of its loop at its
+   * bar. If the line's next bubble arrives before this pass would
+   * end, the pass is clipped at that bar — the new bubble takes the
+   * line over (restart semantics; see playLoop's clipEnd). A pass is
+   * NOT clipped at the mix's end: the last bubble rings out its full
+   * length, exactly as a v1 track's final tile always did.
+   */
   playMix(mix, t0) {
     const loopsById = Mixer.loopsById;
     const stepDur = (60 / mix.bpm) / 4;
     const barDur = stepDur * 16;
-    for (const tr of mix.tracks) {
-      const loop = loopsById.get(tr.loopId);
-      if (!loop) continue;
-      const loopDur = loop.bars * barDur;
-      let start = t0 + tr.startBar * barDur;
-      const end = t0 + mix.bars * barDur;
-      while (start < end - 0.01) {
-        this.playLoop(loop, start, mix.bpm);
-        start += loopDur;
+    for (const tr of mix.tracks || []) {
+      const cells = Mixer.trackCells(tr, mix.bars);
+      for (let i = 0; i < cells.length; i++) {
+        const loop = loopsById.get(cells[i].loopId);
+        if (!loop) continue;
+        const start = t0 + cells[i].bar * barDur;
+        const clipEnd = i + 1 < cells.length ? t0 + cells[i + 1].bar * barDur : Infinity;
+        this.playLoop(loop, start, mix.bpm, clipEnd);
       }
     }
     return t0 + mix.bars * barDur;
@@ -316,7 +357,11 @@ const Mixer = {
   limits: { bpmMin: 70, bpmMax: 160, maxBars: 16, maxTracks: 5 },
   myMixes: [],               // [{id, slot, name, data, updatedAt}]
   editSlot: null,
-  draft: null,               // { name, bpm, bars, tracks: [{loopId, startBar}] }
+  // draft tracks are ALWAYS v2 lines while editing: a fixed row per
+  // grid line, null = empty line, else { cells: [{loopId, bar}] }.
+  // Saved mixes in the v1 shape ({loopId, startBar} tiling lines)
+  // are migrated by trackCells() the moment a slot is opened.
+  draft: null,               // { name, bpm, bars, tracks: [null | {cells}] }
   selGenre: 'Pop',
   selLoopId: null,
   perf: { active: false, performerId: null, performerName: null, endsAt: 0 },
@@ -338,6 +383,15 @@ const Mixer = {
         const genres = [...new Set(j.loops.map(l => l.genre))];
         if (genres.length) this.selGenre = genres[0];
         this.renderBrowser();
+        // Mixer rework: a slot opened BEFORE the catalog arrived was
+        // migrated cold (v1 tiling expansion needs each loop's bar
+        // count) — redo the migration now that every loopId resolves.
+        // gridClick clears the flag: once the user edits, their work
+        // is never reset under them.
+        if (this._migratedCold && this.editSlot != null) {
+          this._migratedCold = false;
+          this.selectSlot(this.editSlot);
+        }
         // Phase 9 (audibility): a radio that tried to start before
         // the catalog arrived bailed silently — re-sync it now that
         // every loopId resolves.
@@ -366,7 +420,7 @@ const Mixer = {
     $('mixStop').onclick = () => AE.stop();
     $('mixSave').onclick = () => this.saveDraft();
     $('mixDelete').onclick = () => this.deleteSlot();
-    $('mixAddTrackHint').onclick = () => this.hooks.toast('Pick a loop below, then click a track row to place it.');
+    $('mixAddTrackHint').onclick = () => this.hooks.toast('Pick a loop below, then click any cell to drop a bubble there — fill a line one cell at a time; click a bubble to take it back.');
     $('stageJoinBtn').onclick = () => {
       // v1.1: the drop-down lists burned CDs; the selected CD is
       // what Perform plays (its mix goes on the wire, as before).
@@ -383,7 +437,18 @@ const Mixer = {
     $('voteDown').onclick = () => this.vote(-1);
     $('chartBtn').onclick = () => this.hooks.send({ type: 'chart' });
     this.el.bpm.oninput = () => { if (this.draft) { this.draft.bpm = Number(this.el.bpm.value); $('bpmVal').textContent = this.el.bpm.value; } };
-    this.el.bars.onchange = () => { if (this.draft) { this.draft.bars = Number(this.el.bars.value); this.draft.tracks = this.draft.tracks.filter(t => t.startBar < this.draft.bars); this.renderGrid(); } };
+    this.el.bars.onchange = () => {
+      if (!this.draft) return;
+      this.draft.bars = Number(this.el.bars.value);
+      // Shrinking the mix drops bubbles past the new end (per line);
+      // a line left with no bubbles goes back to an empty row.
+      this.draft.tracks = this.draft.tracks.map(t => {
+        if (!t) return null;
+        const cells = t.cells.filter(c => c.bar < this.draft.bars);
+        return cells.length ? { cells } : null;
+      });
+      this.renderGrid();
+    };
     this.el.name.oninput = () => { if (this.draft) this.draft.name = this.el.name.value; };
   },
 
@@ -401,12 +466,68 @@ const Mixer = {
 
   mixAtSlot(slot) { return this.myMixes.find(m => m.slot === slot) || null; },
 
+  /**
+   * Normalize ANY stored track to its bubble list [{loopId, bar}],
+   * sorted by bar, at most one bubble per bar:
+   *   v2 line {cells}  → its cells, passed through (deduped).
+   *   v1 line {loopId, startBar} → the tiling EXPANDED into bubbles
+   *     at startBar + k·loop.bars while < mixBars — precisely the
+   *     passes the legacy engine scheduled, so playback (and the
+   *     editor) sees a v1 mix exactly as it always sounded.
+   * Shared by AE.playMix (playback) and selectSlot (edit migration).
+   */
+  trackCells(track, mixBars) {
+    if (!track) return [];
+    if (Array.isArray(track.cells)) {
+      const seen = new Set();
+      const out = [];
+      for (const c of track.cells) {
+        if (!c || !Number.isInteger(c.bar) || seen.has(c.bar)) continue;
+        seen.add(c.bar);
+        out.push({ loopId: c.loopId, bar: c.bar });
+      }
+      return out.sort((a, b) => a.bar - b.bar);
+    }
+    if (track.loopId) {
+      const loop = this.loopsById.get(track.loopId);
+      const span = loop ? loop.bars : 1;
+      const out = [];
+      for (let b = track.startBar || 0; b < mixBars; b += span) {
+        out.push({ loopId: track.loopId, bar: b });
+      }
+      return out;
+    }
+    return [];
+  },
+
+  /** Total bubbles across the draft's lines (the "has music" test). */
+  draftCellCount() {
+    if (!this.draft) return 0;
+    return this.draft.tracks.reduce((n, t) => n + (t ? t.cells.length : 0), 0);
+  },
+
+  /** The draft in wire shape: empty lines dropped, cells copied. */
+  draftWireTracks() {
+    return this.draft.tracks
+      .filter(t => t && t.cells.length)
+      .map(t => ({ cells: t.cells.map(c => ({ loopId: c.loopId, bar: c.bar })) }));
+  },
+
   selectSlot(slot) {
     this.editSlot = slot;
     const existing = this.mixAtSlot(slot);
     this.draft = existing
       ? JSON.parse(JSON.stringify(existing.data))
       : { name: '', bpm: 112, bars: 8, tracks: [] };
+    // Migrate to v2 lines for editing (see trackCells): every stored
+    // track becomes bubbles on its own fixed grid row.
+    this._migratedCold = this.loopsById.size === 0 && (this.draft.tracks || []).length > 0;
+    const rows = [];
+    for (let r = 0; r < this.limits.maxTracks; r++) {
+      const cells = this.trackCells((this.draft.tracks || [])[r], this.draft.bars);
+      rows.push(cells.length ? { cells } : null);
+    }
+    this.draft.tracks = rows;
     this.el.name.value = this.draft.name;
     this.el.bpm.value = this.draft.bpm;
     document.getElementById('bpmVal').textContent = this.draft.bpm;
@@ -458,27 +579,35 @@ const Mixer = {
     if (!this.draft) return;
     const esc = this.hooks.esc;
     const bars = this.draft.bars;
-    this.el.editTitle.textContent = `Editing slot ${this.editSlot} — one click places ONE bubble; click the bubble again to take it back`;
+    this.el.editTitle.textContent = `Editing slot ${this.editSlot} — click a cell to drop the loop there; click a bubble to take it back`;
     let html = '<div class="gridHead">';
     for (let b = 0; b < bars; b++) html += `<div class="gcell head">${b + 1}</div>`;
     html += '</div>';
     for (let r = 0; r < this.limits.maxTracks; r++) {
-      const tr = this.draft.tracks[r];
+      const line = this.draft.tracks[r];
+      const byBar = new Map(line ? line.cells.map(c => [c.bar, c]) : []);
       html += `<div class="gridRow" data-row="${r}">`;
       for (let b = 0; b < bars; b++) {
         let cls = 'gcell', label = '';
-        if (tr) {
-          const loop = this.loopsById.get(tr.loopId);
-          // v1.1 (Zan): exactly ONE filled bubble per track — the
-          // placement cell. The loop's span is a faint underline so
-          // it can never be mistaken for more filled bubbles, and
-          // the repeat tail draws nothing at all.
-          if (loop && b === tr.startBar) { cls += ' filled bubble'; label = esc(loop.name); }
-          else if (loop && b > tr.startBar && b < tr.startBar + loop.bars) { cls += ' span'; }
+        const cell = byBar.get(b);
+        if (cell) {
+          // Mixer rework (Zan): a bubble is EXACTLY one cell, always
+          // — even for a 2- or 4-bar loop. No span underline, no
+          // stretched block: one cell, one bubble, one trigger.
+          const loop = this.loopsById.get(cell.loopId);
+          cls += ' filled bubble';
+          label = esc(loop ? loop.name : cell.loopId);
         }
         html += `<div class="${cls}" data-bar="${b}">${label}</div>`;
       }
-      html += `<button class="rowLabel" data-row="${r}">${tr ? esc((this.loopsById.get(tr.loopId) || {}).name || tr.loopId) : '+ track'}</button></div>`;
+      let rowText = '+ track';
+      if (line && line.cells.length) {
+        const kinds = new Set(line.cells.map(c => c.loopId));
+        rowText = kinds.size === 1
+          ? ((this.loopsById.get(line.cells[0].loopId) || {}).name || line.cells[0].loopId)
+          : `${line.cells.length} bubbles`;
+      }
+      html += `<button class="rowLabel" data-row="${r}">${esc(rowText)}</button></div>`;
     }
     this.el.grid.innerHTML = html;
     for (const cell of this.el.grid.querySelectorAll('.gridRow')) {
@@ -492,30 +621,35 @@ const Mixer = {
   },
 
   gridClick(row, bar) {
-    // v1.1 toggle contract (Zan: "fill one bubble at a time per
-    // selection; click a second time to remove the bubble"):
-    //  - one click places exactly ONE bubble (the track's startBar);
-    //  - clicking that bubble with the SAME loop selected removes it;
-    //  - clicking it with a DIFFERENT loop selected swaps the loop
-    //    in place (still one bubble);
-    //  - clicking anywhere else in the row moves the one bubble;
-    //  - with nothing selected, clicking the bubble removes it too.
+    // Mixer rework contract (Zan, 2026-10-21): the grid is CELLS,
+    // filled one at a time.
+    //  - click an EMPTY cell with a loop selected → a bubble of that
+    //    loop lands in exactly that cell (one cell wide, whatever
+    //    the loop's length); the line keeps every other bubble.
+    //  - click a PLACED bubble → just that bubble is removed.
+    //    Nothing moves, nothing else is touched.
+    //  - click an empty cell with nothing selected → a hint toast.
+    // A line holds at most one bubble per bar (structurally: a cell
+    // is either filled or empty), and rows never compact mid-edit —
+    // the line you filled is the line you keep filling.
     if (!this.draft) return;
+    this._migratedCold = false; // the user owns this draft now
     const at = Math.max(0, Math.min(bar, this.draft.bars - 1));
-    const existing = this.draft.tracks[row];
-    if (!this.selLoopId) {
-      if (existing && bar === existing.startBar) { this.draft.tracks.splice(row, 1); this.renderGrid(); }
-      else if (existing) { this.hooks.toast('Click the filled bubble to remove it, or pick a loop to move it.'); }
-      else this.hooks.toast('Pick a loop from the browser first (click = hear it).');
+    let line = this.draft.tracks[row];
+    const idx = line ? line.cells.findIndex(c => c.bar === at) : -1;
+    if (idx >= 0) {
+      line.cells.splice(idx, 1);
+      if (!line.cells.length) this.draft.tracks[row] = null;
+      this.renderGrid();
       return;
     }
-    if (existing && bar === existing.startBar) {
-      if (existing.loopId === this.selLoopId) this.draft.tracks.splice(row, 1); // toggle OFF
-      else existing.loopId = this.selLoopId;                                     // swap in place
-    } else {
-      this.draft.tracks[row] = { loopId: this.selLoopId, startBar: at };         // place / move the one bubble
+    if (!this.selLoopId) {
+      this.hooks.toast('Pick a loop from the browser first (click = hear it), then click a cell to drop it there.');
+      return;
     }
-    this.draft.tracks = this.draft.tracks.filter(Boolean);
+    if (!line) { line = { cells: [] }; this.draft.tracks[row] = line; }
+    line.cells.push({ loopId: this.selLoopId, bar: at });
+    line.cells.sort((a, b) => a.bar - b.bar);
     this.renderGrid();
   },
 
@@ -528,14 +662,14 @@ const Mixer = {
 
   auditionDraft() {
     if (!AE.ensure() || !this.draft) return;
-    if (!this.draft.tracks.length) { this.hooks.toast('Add at least one loop first.'); return; }
+    if (!this.draftCellCount()) { this.hooks.toast('Add at least one loop first.'); return; }
     AE.stop();
-    AE.playMix({ ...this.draft, name: this.draft.name || 'preview' }, AE.ctx.currentTime + 0.08);
+    AE.playMix({ ...this.draft, name: this.draft.name || 'preview', tracks: this.draftWireTracks() }, AE.ctx.currentTime + 0.08);
   },
 
   saveDraft() {
     if (!this.draft || this.editSlot == null) return;
-    const data = { name: this.el.name.value.trim(), bpm: Number(this.el.bpm.value), bars: Number(this.el.bars.value), tracks: this.draft.tracks };
+    const data = { name: this.el.name.value.trim(), bpm: Number(this.el.bpm.value), bars: Number(this.el.bars.value), tracks: this.draftWireTracks() };
     if (!data.tracks.length) { this.hooks.toast('Add at least one loop first.'); return; }
     this.hooks.send({ type: 'mix-save', slot: this.editSlot, data });
   },

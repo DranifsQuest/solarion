@@ -20,10 +20,24 @@
  *   fx: fx: [{ step, kind, note? }] — kinds: crash/riser/sweep/blip/
  *       scratch/shaker/rain
  *
- * Mix format (JSON, persisted):
- *   { name, bpm, bars, tracks: [{ loopId, startBar }] }
- *   Each track's loop tiles (repeats) from startBar to the end of the
- *   mix. ≤5 tracks, ≤16 bars, bpm 70–160 → longest possible mix is
+ * Mix format (JSON, persisted) — TWO track shapes, both accepted by
+ * validateMix and by the client engine (AE.playMix), so anything ever
+ * saved or burned keeps playing:
+ *   v1 (legacy): { name, bpm, bars, tracks: [{ loopId, startBar }] }
+ *     Each track's loop tiles (repeats) from startBar to the end of
+ *     the mix.
+ *   v2 (per-cell, the mixer rework): tracks: [{ cells: [{ loopId,
+ *     bar }] }] — each track is one horizontal line of the mixer grid
+ *     and each cell is ONE bubble: a single loop trigger at that bar,
+ *     rendered and played as exactly one cell/pass no matter how long
+ *     the loop is. A line holds many bubbles (one per bar at most);
+ *     if a long loop would still be sounding when the line's next
+ *     bubble arrives, the NEW bubble takes the line over from its bar
+ *     (the client clips the old pass at the boundary — see AE.playMix
+ *     / AE.playLoop in public/mixer.js). The mixer EDITOR migrates v1
+ *     tracks to cells on load by expanding the tiling into bubbles,
+ *     which schedules identically.
+ *   ≤5 tracks, ≤16 bars, bpm 70–160 → longest possible mix is
  *   16 bars at 70bpm ≈ 54.9s (under the 60s performance cap).
  *
  * Tables (additive, created here — db.js schema is untouched):
@@ -316,12 +330,34 @@ function validateMix(raw) {
   const tracks = [];
   for (const t of raw.tracks) {
     if (!t || typeof t !== 'object') return { ok: false, error: 'Bad track entry.' };
+    if (Array.isArray(t.cells)) {
+      // v2 per-cell line: many bubbles, at most one per bar. Cells
+      // are normalized (sorted by bar); an all-empty line is dropped
+      // rather than stored as dead weight.
+      const seen = new Set();
+      const cells = [];
+      for (const c of t.cells) {
+        if (!c || typeof c !== 'object') return { ok: false, error: 'Bad cell entry.' };
+        if (!LOOP_BY_ID.has(c.loopId)) return { ok: false, error: `Unknown loop: ${String(c.loopId).slice(0, 40)}` };
+        if (!Number.isInteger(c.bar) || c.bar < 0 || c.bar >= bars) {
+          return { ok: false, error: 'Cell bar is out of range.' };
+        }
+        if (seen.has(c.bar)) return { ok: false, error: 'One sound per line per bar — two bubbles share a bar.' };
+        seen.add(c.bar);
+        cells.push({ loopId: c.loopId, bar: c.bar });
+      }
+      cells.sort((a, b) => a.bar - b.bar);
+      if (cells.length) tracks.push({ cells });
+      continue;
+    }
+    // v1 legacy line: one loop tiling from startBar (unchanged).
     if (!LOOP_BY_ID.has(t.loopId)) return { ok: false, error: `Unknown loop: ${String(t.loopId).slice(0, 40)}` };
     if (!Number.isInteger(t.startBar) || t.startBar < 0 || t.startBar >= bars) {
       return { ok: false, error: 'Track start bar is out of range.' };
     }
     tracks.push({ loopId: t.loopId, startBar: t.startBar });
   }
+  if (!tracks.length) return { ok: false, error: 'Add at least one loop first.' };
   return { ok: true, data: { name, bpm, bars, tracks } };
 }
 

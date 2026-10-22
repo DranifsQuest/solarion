@@ -33,6 +33,9 @@
  *   npm run preview -- --scene sit         # sample players seated
  *                             (occupied-seat rendering; output
  *                             files gain a -sit suffix)
+ *   npm run preview -- --scene mixer       # the mixer panel open on
+ *                             a per-cell draft (mixer rework; output
+ *                             files gain a -mixer suffix)
  *   npm run preview -- --factory     # also the factory demo scene
  *
  * Chrome binary: $SOLARION_CHROME, else the first of the known
@@ -186,8 +189,8 @@ async function main() {
   }
   const sceneIdx = argv.indexOf('--scene');
   const scene = sceneIdx >= 0 ? argv[sceneIdx + 1] : null;
-  if (scene && !['sit'].includes(scene)) {
-    console.error(`unknown scene: ${scene} (sit)`);
+  if (scene && !['sit', 'mixer'].includes(scene)) {
+    console.error(`unknown scene: ${scene} (sit | mixer)`);
     process.exit(1);
   }
   const wantFactory = argv.includes('--factory');
