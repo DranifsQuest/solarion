@@ -175,6 +175,83 @@ for (const map of Object.values(MAPS)) {
     if (collides(map, s.x, s.y, 6)) err(map.id, `seat ${s.id} is embedded in a solid tile`);
   }
 
+  // -- venue purity + facing + width (v1.2, Items B/M/P)
+  // For maps with a stage, the venue rects are DERIVED from the
+  // map's own data: the audience seat block is the tile bounding
+  // box of the audienceSeats() seats (ids …-seat-101 and up), and
+  // the pit/platform come from map.stage itself. Rules:
+  //   - the seat block contains ONLY audience seats: no props, no
+  //     other seats, no solid/grid dressing tiles;
+  //   - the pit and platform contain no props and no seats at all;
+  //   - grid tiles inside the seat block or pit must be walkable,
+  //     except the stage's own speaker posts (map.stage.speakers);
+  //   - audience seats never aim 'up' (Item P: audiences present
+  //     left/right/down — the rule is audience-only by design);
+  //   - platform and pit width EQUAL the seat block's width on the
+  //     audience axis, aligned to the same span (Item B).
+  if (map.stage) {
+    const st = map.stage;
+    const aud = (map.seats || []).filter(s => {
+      const m = /-seat-(\d+)$/.exec(s.id);
+      return m && Number(m[1]) >= 101;
+    });
+    const speakerTiles = new Set((st.speakers || []).map(sp => `${tileOfPx(sp.x)},${tileOfPx(sp.y)}`));
+    const pitTiles = new Set(rectTiles(st.pit).map(([tx, ty]) => `${tx},${ty}`));
+    const stageTiles = new Set(rectTiles(st).map(([tx, ty]) => `${tx},${ty}`));
+    if (aud.length) {
+      let x0 = 1e9, x1 = -1, y0 = 1e9, y1 = -1;
+      for (const s of aud) {
+        x0 = Math.min(x0, tileOfPx(s.x)); x1 = Math.max(x1, tileOfPx(s.x));
+        y0 = Math.min(y0, tileOfPx(s.y)); y1 = Math.max(y1, tileOfPx(s.y));
+      }
+      const inBox = (tx, ty) => tx >= x0 && tx <= x1 && ty >= y0 && ty <= y1;
+      for (const pr of map.props || []) {
+        const tx = tileOfPx(pr.x), ty = tileOfPx(pr.y), k = `${tx},${ty}`;
+        if (inBox(tx, ty)) err(map.id, `venue purity: prop "${pr.kind}" intrudes into the audience seat block (${k})`);
+        if (pitTiles.has(k)) err(map.id, `venue purity: prop "${pr.kind}" intrudes into the stage pit (${k})`);
+        if (stageTiles.has(k)) err(map.id, `venue purity: prop "${pr.kind}" intrudes onto the stage platform (${k})`);
+      }
+      for (const s of map.seats || []) {
+        const tx = tileOfPx(s.x), ty = tileOfPx(s.y), k = `${tx},${ty}`;
+        const isAud = aud.includes(s);
+        if (!isAud && inBox(tx, ty)) err(map.id, `venue purity: non-audience seat ${s.id} inside the audience seat block (${k})`);
+        if (pitTiles.has(k)) err(map.id, `venue purity: seat ${s.id} stands in the stage pit (${k})`);
+        if (stageTiles.has(k)) err(map.id, `venue purity: seat ${s.id} stands on the stage platform (${k})`);
+        if (isAud && s.dir === 'up') err(map.id, `venue facing: audience seat ${s.id} aims 'up' — audiences present left/right/down only`);
+      }
+      for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {
+        const ch = tileAt(map, tx, ty);
+        if (!WALKABLE.has(ch) && !speakerTiles.has(`${tx},${ty}`)) {
+          err(map.id, `venue purity: solid/grid dressing '${ch}' inside the audience seat block (${tx},${ty})`);
+        }
+      }
+      for (const k of pitTiles) {
+        const [tx, ty] = k.split(',').map(Number);
+        const ch = tileAt(map, tx, ty);
+        if (!WALKABLE.has(ch) && !speakerTiles.has(k)) {
+          err(map.id, `venue purity: solid/grid dressing '${ch}' inside the stage pit (${k})`);
+        }
+      }
+      // Item B: width equality + alignment on the audience axis.
+      const west = st.pit.x < st.x;
+      if (west) {
+        if (st.h !== TILE * (y1 - y0 + 1) || st.pit.h !== st.h) {
+          err(map.id, `venue width: west-face stage/pit height (${st.h / TILE}t) != seat block height (${y1 - y0 + 1}t)`);
+        }
+        if (tileOfPx(st.y) !== y0 || tileOfPx(st.pit.y) !== y0) {
+          err(map.id, 'venue width: west-face stage/pit not aligned to the seat block span');
+        }
+      } else {
+        if (st.w !== TILE * (x1 - x0 + 1) || st.pit.w !== st.w) {
+          err(map.id, `venue width: stage/pit width (${st.w / TILE}t) != seat block width (${x1 - x0 + 1}t)`);
+        }
+        if (tileOfPx(st.x) !== x0 || tileOfPx(st.pit.x) !== x0) {
+          err(map.id, 'venue width: stage/pit not aligned to the seat block span');
+        }
+      }
+    }
+  }
+
   // -- casino interact spots
   if (map.casino) {
     for (const s of map.casino.slots) {

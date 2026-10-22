@@ -272,6 +272,8 @@ function drawProp(pr) {
     case 'greattree': drawGreatTreeAt(px2, py2); break;
     case 'table': drawTableAt(px2, py2); break;
     case 'fishingpole': drawFishingPoleAt(px2, py2); break;
+    case 'volleyball': drawVolleyballAt(px2, py2); break;
+    case 'umbrella': drawUmbrellaAt(px2, py2); break;
     case 'stall': drawStallAt(px2, py2, (pr.x + pr.y) % 5); break;
     case 'flowers': {
       const cols = ['#ff8fab', '#ffd23f', '#fff6e6', '#c77dff'];
@@ -426,6 +428,62 @@ function drawGreatTreeAt(x, y) {
     ctx.arc(x - 18 + i * 9, y - 36 - ((i * 7) % 9), 1.5, 0, Math.PI * 2);
     ctx.fill();
   }
+}
+
+/** v1.2 (Item L): a beach volleyball net — two poles, a sagging
+ *  net, and the ball resting in the sand beside it. One prop,
+ *  drawn wide across its tile. Decorative only. */
+function drawVolleyballAt(x, y) {
+  ctx.strokeStyle = '#8a5a2b'; ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(x - 30, y + 4); ctx.lineTo(x - 30, y - 30);
+  ctx.moveTo(x + 30, y + 4); ctx.lineTo(x + 30, y - 30);
+  ctx.stroke();
+  // the net: a light grid with a gentle sag
+  ctx.strokeStyle = 'rgba(245,240,230,.85)'; ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const t = i / 4, sag = Math.sin(t * Math.PI) * 3;
+    ctx.beginPath(); ctx.moveTo(x - 30 + t * 60, y - 30 + sag); ctx.lineTo(x - 30 + t * 60, y - 16 + sag); ctx.stroke();
+  }
+  for (let j = 0; j <= 2; j++) {
+    ctx.beginPath();
+    ctx.moveTo(x - 30, y - 30 + j * 7);
+    ctx.quadraticCurveTo(x, y - 30 + j * 7 + 3, x + 30, y - 30 + j * 7);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = '#e2543e'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(x - 30, y - 30); ctx.quadraticCurveTo(x, y - 27, x + 30, y - 30); ctx.stroke();
+  // the ball, resting by the east pole
+  ctx.beginPath(); ctx.arc(x + 22, y + 6, 5, 0, Math.PI * 2);
+  ctx.fillStyle = '#f5f0e6'; ctx.fill();
+  ctx.strokeStyle = '#e2543e'; ctx.lineWidth = 1.4;
+  ctx.beginPath(); ctx.arc(x + 22, y + 6, 5, -0.6, 1.1); ctx.stroke();
+}
+
+/** v1.2 (Item L): a beach umbrella — pole, scalloped canopy in
+ *  warm coral, and a towel spread on the sand beside it. */
+function drawUmbrellaAt(x, y) {
+  diamond(x + 13, y + 7, 24, 9, '#37b6d9');       // the towel
+  diamond(x + 13, y + 7, 16, 6, '#f5f0e6');
+  ctx.strokeStyle = '#8a5a2b'; ctx.lineWidth = 2.6;
+  ctx.beginPath(); ctx.moveTo(x, y + 6); ctx.lineTo(x - 3, y - 24); ctx.stroke();
+  // canopy: a wide shallow dome of alternating coral/cream panels
+  ctx.beginPath();
+  ctx.moveTo(x - 27, y - 22);
+  ctx.quadraticCurveTo(x - 3, y - 40, x + 21, y - 22);
+  ctx.quadraticCurveTo(x + 12, y - 18, x + 6, y - 21);
+  ctx.quadraticCurveTo(x - 3, y - 18, x - 12, y - 21);
+  ctx.quadraticCurveTo(x - 21, y - 18, x - 27, y - 22);
+  ctx.closePath();
+  ctx.fillStyle = '#e86a5a'; ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(x - 12, y - 21);
+  ctx.quadraticCurveTo(x - 3, y - 33, x + 6, y - 21);
+  ctx.quadraticCurveTo(x - 3, y - 18.5, x - 12, y - 21);
+  ctx.closePath();
+  ctx.fillStyle = '#f5e8d2'; ctx.fill();
+  ctx.fillStyle = '#ffd23f';
+  ctx.beginPath(); ctx.arc(x - 3, y - 33, 2.4, 0, Math.PI * 2); ctx.fill();
 }
 
 function drawStallAt(x, y, seed) {
