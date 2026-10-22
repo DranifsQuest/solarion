@@ -91,10 +91,27 @@ const ZoneMusic = {
     if (!changed) return;
     this.spec = spec;
     this._tracks = null;
+    // v1.2 (Item S): STOP the old composition's scheduled sources
+    // outright. The old code only faded the shared bus and reset
+    // the scheduler — but the outgoing comp had up to a full pass
+    // (~8-17s) of notes already scheduled ON that same bus, so
+    // after the fade came back up you heard the tail of the old
+    // zone's theme playing OVER the new zone's theme. (Walking
+    // into a casino and sitting at a poker table was exactly this:
+    // "zone music and the table music overlap.")
+    this._stopZoneSources();
     // Crossfade: duck out, swap the composition under the fade.
     this._fadeTo(0, 0.35);
     if (this._swapTimer) clearTimeout(this._swapTimer);
     this._swapTimer = setTimeout(() => { this.nextAt = 0; this._pump(); }, 380);
+  },
+
+  _zoneSources: [],
+
+  /** Stop every source this scheduler has live-scheduled. */
+  _stopZoneSources() {
+    for (const s of this._zoneSources) { try { s.stop(); } catch (e) { /* already ended */ } }
+    this._zoneSources = [];
   },
 
   /** Called from the client's global gesture hook (audio unlock). */
@@ -127,11 +144,16 @@ const ZoneMusic = {
     this.bus.connect(AE.master);
   },
 
-  /** Foreground audio owns the room: a live stage set, or a radio. */
+  /** Foreground audio owns the room. Priority (v1.2, Item S):
+   *  live performance > poker table > home radio > zone music.
+   *  Slot stools and the bar start no music layer of their own,
+   *  so they deliberately do NOT duck the zone track. */
   _foreground() {
     const w = win();
     const perf = w.SolarionMixer && w.SolarionMixer.perf;
     if (perf && perf.active) return true;
+    const cas = w.SolarionCasino;
+    if (cas && cas.context === 'poker') return true;
     const st = w.SolarionStudio;
     if (st && st.radioKey) return true;
     return false;
@@ -174,10 +196,18 @@ const ZoneMusic = {
     if (!this.nextAt || this.nextAt < now - 0.25) this.nextAt = now + 0.06;
     while (this.nextAt < now + passDur) {
       AE.out = this.bus;
+      // v1.2 (Item S): remember exactly which sources belong to
+      // the zone layer so a composition swap can stop them (and
+      // only them — performances/radios keep their own lives).
+      const before = AE.scheduled ? AE.scheduled.length : 0;
       try {
         for (const l of this._tracks) AE.playLoop(l, this.nextAt, this.spec.bpm);
       } finally {
         AE.out = null;
+      }
+      if (AE.scheduled) {
+        for (let i = before; i < AE.scheduled.length; i++) this._zoneSources.push(AE.scheduled[i]);
+        if (this._zoneSources.length > 600) this._zoneSources.splice(0, this._zoneSources.length - 600);
       }
       this.nextAt += passDur;
     }

@@ -90,7 +90,9 @@ const Sfx = {
       const f = ctx.createBiquadFilter();
       f.type = 'bandpass'; f.frequency.value = freq; f.Q.value = q;
       const g = ctx.createGain();
-      g.gain.setValueAtTime(gain, t0);
+      // v1.2 (Item D): micro attack ramp — no instant-onset clicks.
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.linearRampToValueAtTime(gain, t0 + 0.004);
       g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
       src.connect(f); f.connect(g); g.connect(out);
       src.start(t0); src.stop(t0 + dur + 0.02);
@@ -139,6 +141,42 @@ const Sfx = {
     this._applyAmbience();
   },
 
+  /**
+   * A looping noise bed buffer (v1.2, Item D). Two measured
+   * cleanups: (1) TWO warm-up passes, so the buffer's level is at
+   * steady state from sample 0 (the old single pass started near
+   * silence and swelled); (2) peak normalization (below) — the raw
+   * IIR beds overshot full scale inside the buffer (measured
+   * 1.17-1.33). NOTE: loop SEAMS were measured and ruled out as a
+   * static source — through the beds' own bandpass filters the old
+   * wrap step sat below the texture's ordinary step size — so no
+   * seam crossfade is applied here.
+   * kind: 'pink' (ambience beds) | 'brown' (hearth body).
+   */
+  _bedBuffer(kind) {
+    /* global AE */
+    const ctx = AE.ctx;
+    const len = ctx.sampleRate * 2;
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    let last = 0;
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = 0; i < len; i++) {
+        const white = Math.random() * 2 - 1;
+        if (kind === 'brown') { last = (last + 0.02 * white) / 1.02; d[i] = last * 3.5; }
+        else { last = last * 0.94 + white * 0.06; d[i] = last * 3.2; }
+      }
+    }
+    // v1.2 (Item D): normalize — the raw IIR beds can peak past
+    // 1.0 inside the buffer (measured 1.17-1.33). The bed gains
+    // downstream are tiny so it never clipped audibly, but a
+    // well-staged buffer stays in range by construction.
+    let peak = 0;
+    for (let i = 0; i < len; i++) peak = Math.max(peak, Math.abs(d[i]));
+    if (peak > 0.9) { const s = 0.9 / peak; for (let i = 0; i < len; i++) d[i] *= s; }
+    return buf;
+  },
+
   _applyAmbience() {
     const kind = this._wantAmbience;
     if (this._amb && this._amb.kind === kind) return;
@@ -153,15 +191,7 @@ const Sfx = {
       air: { freq: 700, q: 0.4, gain: 0.010 },
     }[kind];
     if (!prof) return;
-    const len = ctx.sampleRate * 2;
-    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
-    const d = buf.getChannelData(0);
-    let last = 0;
-    for (let i = 0; i < len; i++) { // pinkish noise
-      const white = Math.random() * 2 - 1;
-      last = last * 0.94 + white * 0.06;
-      d[i] = last * 3.2;
-    }
+    const buf = this._bedBuffer('pink');
     const src = ctx.createBufferSource();
     src.buffer = buf; src.loop = true;
     const f = ctx.createBiquadFilter();
@@ -211,15 +241,7 @@ const Sfx = {
     if (this._hearth) return;
     if (typeof AE === 'undefined' || !AE.ctx || AE.ctx.state !== 'running') return;
     const ctx = AE.ctx;
-    const len = ctx.sampleRate * 2;
-    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
-    const d = buf.getChannelData(0);
-    let last = 0;
-    for (let i = 0; i < len; i++) { // brown-ish noise = fire body
-      const white = Math.random() * 2 - 1;
-      last = (last + 0.02 * white) / 1.02;
-      d[i] = last * 3.5;
-    }
+    const buf = this._bedBuffer('brown'); // seamless fire body (v1.2)
     const src = ctx.createBufferSource();
     src.buffer = buf; src.loop = true;
     const f = ctx.createBiquadFilter();

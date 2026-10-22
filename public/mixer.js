@@ -40,14 +40,48 @@ const AE = {
       this.ctx = new AC();
       this.master = this.ctx.createGain();
       this.master.gain.value = 0.55;
-      this.master.connect(this.ctx.destination);
+      // v1.2 (Item D): a limiter between master and the speakers.
+      // The old graph ran master straight to the destination, so a
+      // dense zone composition + SFX on top could sum past 0dBFS
+      // and clip into harsh distortion bursts. The compressor
+      // only engages on peaks (high threshold, hard ratio) — the
+      // music itself is untouched at normal levels.
+      this.limiter = this.ctx.createDynamicsCompressor();
+      this.limiter.threshold.value = -8;
+      this.limiter.knee.value = 4;
+      this.limiter.ratio.value = 16;
+      this.limiter.attack.value = 0.004;
+      this.limiter.release.value = 0.24;
+      this.master.connect(this.limiter);
+      this.limiter.connect(this.ctx.destination);
       const len = this.ctx.sampleRate;
       this.noiseBuf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
       const d = this.noiseBuf.getChannelData(0);
       for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+      // v1.2 (Item D): blend the buffer's tail into its head so
+      // LOOPED playback wraps seamlessly — an unblended wrap is a
+      // sample step, heard as a click every buffer length (and
+      // through the filters, as a periodic static tick).
+      this._wrapBlend(d, Math.floor(len * 0.06));
     }
     if (this.ctx.state === 'suspended') this.ctx.resume();
     return true;
+  },
+
+  /**
+   * Crossfade a sample array's tail into its head (in place) so
+   * looping it has no seam step. Shared with the sfx ambience beds
+   * (public/sfx.js), whose smooth pink/brown noise made the seam
+   * the worst offender: a hard tick every 2 seconds.
+   */
+  _wrapBlend(d, fade) {
+    const len = d.length;
+    const n = Math.min(fade, Math.floor(len / 2));
+    if (n < 2) return;
+    for (let i = 0; i < n; i++) {
+      const w = i / n; // 0 at the head -> 1 at (head + fade)
+      d[i] = d[i] * w + d[len - n + i] * (1 - w);
+    }
   },
 
   track(node) { this.scheduled.push(node); return node; },
@@ -66,7 +100,12 @@ const AE = {
     f.type = type; f.frequency.setValueAtTime(freq, t); f.Q.value = q;
     if (sweepTo) f.frequency.exponentialRampToValueAtTime(sweepTo, t + dur);
     const g = this.ctx.createGain();
-    g.gain.setValueAtTime(gain, t);
+    // v1.2 (Item D): a 3ms attack ramp instead of an instant
+    // full-gain onset — the old setValueAtTime(gain) step was a
+    // click transient on EVERY hat/snare/perc hit, stacking into
+    // the fizzy "static" over dense loops.
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(gain, t + 0.003);
     g.gain.exponentialRampToValueAtTime(0.001, t + dur);
     src.connect(f); f.connect(g); g.connect(this.out || this.master);
     src.start(t); src.stop(t + dur + 0.05);
@@ -711,4 +750,5 @@ const Mixer = {
   },
 };
 
-window.SolarionMixer = Mixer;
+if (typeof window !== 'undefined') window.SolarionMixer = Mixer;
+if (typeof module !== 'undefined' && module.exports) module.exports = { AE, Mixer };
