@@ -66,6 +66,7 @@ const TEST_FILES = [
   ['test/seasons.test.js',   null,  0,     0,     0],   // no server (seasonal themes)
   ['test/glyphs.test.js',    null,  0,     0,     0],   // no server (v1.2.2 Item 6: raw-escape UI scan)
   ['test/mixer-cells.test.js', null, 0,    0,     0],   // no server (mixer rework: vm engine + grid + validateMix)
+  ['test/audio-glitch.test.js', null, 0,   0,     0],   // no server (v1.3 mixer static fix: offline renders + choke pins)
 ].map(([file, base, stride, extra, run]) => ({ file, base, stride, extra, run }));
 
 const ALL_TESTS = TEST_FILES.map(t => t.file);
@@ -87,7 +88,7 @@ const MAPPING = [
   { match: /^src\/(game|maps|server|db)\.js$/,    tests: CORE_SET, why: 'core engine/map/server — broad protocol set' },
   { match: /^public\/sprites\.js$/,                tests: ['test/sprites.test.js', 'test/creation.test.js'], why: 'sprite renderer' },
   { match: /^public\/input-guard\.js$/,           tests: ['test/input-guard.test.js'], why: 'keyboard input guard' },
-  { match: /^public\/(client|audio|mixer|studio)\.js$/, tests: ['test/input-guard.test.js', 'test/audibility.test.js', 'test/test.js', 'test/mixer-cells.test.js'], why: 'client/audio surface' },
+  { match: /^public\/(client|audio|mixer|studio)\.js$/, tests: ['test/input-guard.test.js', 'test/audibility.test.js', 'test/test.js', 'test/mixer-cells.test.js', 'test/audio.test.js', 'test/audio-glitch.test.js'], why: 'client/audio surface' },
   { match: /^public\//,                           tests: ['test/input-guard.test.js', 'test/sprites.test.js'], why: 'other client assets', fallback: true },
   { match: /^test\/(.+)$/,                        tests: null, why: 'the changed test file itself' }, // tests = the file itself
   { match: /^src\//,                              tests: CORE_SET, why: 'UNMAPPED source file — core fallback', fallback: true },

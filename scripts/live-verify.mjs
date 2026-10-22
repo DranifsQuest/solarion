@@ -255,11 +255,33 @@ async function main() {
   } catch (e) { report('chat: A message delivered to B with sender name', false, e.message); }
 
   try {
+    // RIDER FIX (v1.3): this leg used to fail intermittently as the
+    // FIRST walk of the run — three consecutive production runs
+    // (39716507864 tail, 39717523862, 39722881485) timed out here
+    // while every later walk leg passed. Cause: the chat leg above
+    // ends with TWO scene transfers (leave-studio x2), and every
+    // transfer sets the server-side movement lock
+    // (game.js switchScene: transferUntil = now + 1.5s; the tick
+    // and input handler both skip locked players). This leg started
+    // immediately and held {right} for a FIXED 900ms — the residual
+    // lock could eat the entire input window, so the server never
+    // moved A and the (correct) assertion timed out. Every other
+    // walk goes through travel(), which sleeps 1750ms before
+    // walking — exactly the ride-out this leg was missing.
+    // Fix: ride out the lock first (parity with travel()), then
+    // HOLD the input until the server snapshot proves the movement
+    // instead of releasing on a fixed timer. The assertion itself
+    // is unchanged and unweakened: a server snapshot must still
+    // show A more than 50px east of the start.
+    await sleep(1750);
     const before = selfPos(A.client);
     A.client.send({ type: 'input', keys: { right: true } });
-    await sleep(900);
-    A.client.send({ type: 'input', keys: {} });
-    const after = await waitFor(() => { const p = selfPos(A.client); return p && p.x > before.x + 50 ? p : null; }, 4000, 'A moved east');
+    let after;
+    try {
+      after = await waitFor(() => { const p = selfPos(A.client); return p && p.x > before.x + 50 ? p : null; }, 6000, 'A moved east');
+    } finally {
+      A.client.send({ type: 'input', keys: {} });
+    }
     report('movement: server-authoritative walk moves A east', true, `x ${before.x} -> ${after.x}`);
   } catch (e) { report('movement: server-authoritative walk moves A east', false, e.message); }
 

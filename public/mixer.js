@@ -42,19 +42,42 @@ const AE = {
       this.ctx = new AC();
       this.master = this.ctx.createGain();
       this.master.gain.value = 0.55;
-      // v1.2 (Item D): a limiter between master and the speakers.
-      // The old graph ran master straight to the destination, so a
-      // dense zone composition + SFX on top could sum past 0dBFS
-      // and clip into harsh distortion bursts. The compressor
-      // only engages on peaks (high threshold, hard ratio) — the
-      // music itself is untouched at normal levels.
+      // v1.3 (mixer static fix, measured — test/render-audio.js):
+      // the v1.2 limiter (threshold -8dB, 4ms attack) could NOT
+      // catch the mixer path's worst case. Five drum lines hitting
+      // step 0 together sum COHERENTLY (identical kick phase,
+      // identical noise-buffer offset) to +8..+14 dBFS raw; the
+      // old chain still let the destination reach 1.11-1.82 —
+      // hundreds of samples hard-clipped at the DAC per pass,
+      // heard as static bursts, worst at high BPM where the hits
+      // land thickest. The chain is now a real staging bus:
+      //   master (0.55, the volume) -> TRIM 0.8 (-1.9dB of staging
+      //   headroom) -> HIGHPASS 32Hz (dumps subsonic kick-tail
+      //   mush that eats headroom; the kick's floor is ~42Hz, so
+      //   nothing audible is touched) -> LIMITER as a fast CEILING
+      //   (-4dB threshold, 20:1, 0.8ms attack). Measured on the
+      //   worst saveable drum stack: destination peak 1.11-1.82
+      //   with 105-342 DAC-clipped samples BEFORE, 0.906 with
+      //   ZERO clipped samples after (test/audio-glitch.test.js
+      //   pins it). A normal mix peaks around -10dB at the
+      //   limiter input, so the ceiling never engages on ordinary
+      //   playback (measured: 0.0dB of gain reduction, band
+      //   balance unchanged).
+      this.mixTrim = this.ctx.createGain();
+      this.mixTrim.gain.value = 0.8;
+      this.mixHp = this.ctx.createBiquadFilter();
+      this.mixHp.type = 'highpass';
+      this.mixHp.frequency.value = 32;
+      this.mixHp.Q.value = 0.7;
       this.limiter = this.ctx.createDynamicsCompressor();
-      this.limiter.threshold.value = -8;
-      this.limiter.knee.value = 4;
-      this.limiter.ratio.value = 16;
-      this.limiter.attack.value = 0.004;
-      this.limiter.release.value = 0.24;
-      this.master.connect(this.limiter);
+      this.limiter.threshold.value = -4;
+      this.limiter.knee.value = 1;
+      this.limiter.ratio.value = 20;
+      this.limiter.attack.value = 0.0008;
+      this.limiter.release.value = 0.16;
+      this.master.connect(this.mixTrim);
+      this.mixTrim.connect(this.mixHp);
+      this.mixHp.connect(this.limiter);
       this.limiter.connect(this.ctx.destination);
       const len = this.ctx.sampleRate;
       this.noiseBuf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
@@ -93,9 +116,48 @@ const AE = {
     this.stopTimers = [];
     for (const n of this.scheduled) { try { n.stop(); } catch (e) { /* done */ } }
     this.scheduled = [];
+    this._voices = {};
   },
 
-  noise(t, dur, { type = 'highpass', freq = 7000, q = 0.8, gain = 0.2, sweepTo = null } = {}) {
+  // v1.3: DRUM CHOKE (drum-machine style). Until now a retriggered
+  // drum voice's tail rang UNDER the next hit — kick tails (240ms)
+  // and open hats piling up step after step, fattening the sum
+  // between the coincident hits that slam the ceiling. Now, when
+  // a voice of an instrument starts, the previous still-ringing
+  // voice of the SAME instrument is faded to silence in ~4ms
+  // (setTarget tau 1.2ms) and stopped 30ms later — a fade, never a
+  // hard cut, so the choke itself cannot click. The registry is a
+  // pure function of the schedule (same hits, same chokes), so the
+  // audibility contract is untouched: every client hearing the
+  // same mix makes the identical chokes.
+  _voices: {}, // instrument -> [{ src, g, born, until }]
+
+  _choke(key, t) {
+    const list = this._voices[key];
+    if (!list || !list.length) return;
+    for (const v of list) {
+      // Only voices born STRICTLY before this hit are "the
+      // previous instance": a voice born at the same instant is
+      // part of the same hit (a snare's noise + body, or another
+      // line's coincident hit) and must not eat itself.
+      if (v.born < t && v.until > t) {
+        try {
+          v.g.gain.cancelScheduledValues(t);
+          v.g.gain.setTargetAtTime(0.0001, t, 0.0012);
+          v.src.stop(t + 0.03);
+        } catch (e) { /* already stopped */ }
+      }
+    }
+    this._voices[key] = list.filter(v => v.until > t);
+  },
+
+  _registerVoice(key, src, g, born, until) {
+    if (!key) return;
+    (this._voices[key] || (this._voices[key] = [])).push({ src, g, born, until });
+  },
+
+  noise(t, dur, { type = 'highpass', freq = 7000, q = 0.8, gain = 0.2, sweepTo = null, choke = null } = {}) {
+    if (choke) this._choke(choke, t);
     const src = this.ctx.createBufferSource();
     src.buffer = this.noiseBuf; src.loop = true;
     const f = this.ctx.createBiquadFilter();
@@ -111,10 +173,12 @@ const AE = {
     g.gain.exponentialRampToValueAtTime(0.001, t + dur);
     src.connect(f); f.connect(g); g.connect(this.out || this.master);
     src.start(t); src.stop(t + dur + 0.05);
+    this._registerVoice(choke, src, g, t, t + dur + 0.05);
     return this.track(src);
   },
 
-  tone(t, freq, dur, { wave = 'sine', gain = 0.18, attack = 0.005, slideTo = null } = {}) {
+  tone(t, freq, dur, { wave = 'sine', gain = 0.18, attack = 0.005, slideTo = null, choke = null } = {}) {
+    if (choke) this._choke(choke, t);
     const o = this.ctx.createOscillator();
     o.type = wave;
     o.frequency.setValueAtTime(freq, t);
@@ -125,10 +189,12 @@ const AE = {
     g.gain.exponentialRampToValueAtTime(0.001, t + Math.max(dur, attack + 0.02));
     o.connect(g); g.connect(this.out || this.master);
     o.start(t); o.stop(t + dur + 0.05);
+    this._registerVoice(choke, o, g, t, t + dur + 0.05);
     return this.track(o);
   },
 
   kick(t) {
+    this._choke('kick', t);
     const o = this.ctx.createOscillator();
     o.type = 'sine';
     o.frequency.setValueAtTime(150, t);
@@ -138,23 +204,37 @@ const AE = {
     g.gain.exponentialRampToValueAtTime(0.001, t + 0.24);
     o.connect(g); g.connect(this.out || this.master);
     o.start(t); o.stop(t + 0.26);
+    this._registerVoice('kick', o, g, t, t + 0.26);
     this.track(o);
   },
 
   snare(t) {
-    this.noise(t, 0.12, { type: 'bandpass', freq: 1800, q: 0.7, gain: 0.28 });
-    this.tone(t, 190, 0.08, { wave: 'triangle', gain: 0.15 });
+    this.noise(t, 0.12, { type: 'bandpass', freq: 1800, q: 0.7, gain: 0.28, choke: 'snare' });
+    this.tone(t, 190, 0.08, { wave: 'triangle', gain: 0.15, choke: 'snare' });
   },
 
   hat(t, open) {
-    this.noise(t, open ? 0.22 : 0.05, { type: 'highpass', freq: 7500, gain: 0.12 });
+    this.noise(t, open ? 0.22 : 0.05, { type: 'highpass', freq: 7500, gain: 0.12, choke: 'hat' });
   },
 
   perc(t) {
-    this.noise(t, 0.07, { type: 'bandpass', freq: 5200, q: 2.5, gain: 0.13 });
+    this.noise(t, 0.07, { type: 'bandpass', freq: 5200, q: 2.5, gain: 0.13, choke: 'perc' });
   },
 
   freq(root, semi) { return root * Math.pow(2, semi / 12); },
+
+  // v1.3: measured per-loop drum trims — solo peak per kit
+  // (test/render-audio.js, 140bpm, raw at the master input)
+  // normalized to 0.56, attenuate-only. Guarded against staleness
+  // by test/audio-glitch.test.js (re-renders every solo).
+  DRUM_TRIM: {
+    'pop-drums-1': 0.90, 'pop-drums-2': 0.91, 'pop-drums-3': 0.90,
+    'dance-drums-1': 0.91, 'dance-drums-2': 0.90, 'dance-drums-3': 0.91,
+    'hh-drums-1': 1.00, 'hh-drums-2': 1.00, 'hh-drums-3': 0.90,
+    'rock-drums-1': 0.90, 'rock-drums-2': 0.90, 'rock-drums-3': 1.00,
+    'latin-drums-1': 1.00, 'latin-drums-2': 0.91, 'latin-drums-3': 0.90,
+    'chill-drums-1': 1.00, 'chill-drums-2': 1.00, 'chill-drums-3': 0.94,
+  },
 
   /**
    * Schedule ONE pass of a loop starting at ctx-time t. stepDur in
@@ -176,6 +256,22 @@ const AE = {
     // means "at/past the boundary — do not schedule it at all".
     const seg = (tt, dur) => (tt >= clipEnd ? 0 : Math.min(dur, clipEnd - tt));
     if (loop.drums) {
+      // v1.3: per-loop drum normalization. Solo renders of the 18
+      // drum loops (test/render-audio.js) peak between 0.54 and
+      // 0.63 raw — the loudest kits ran ~15% hotter than the
+      // quietest for no musical reason, and in a stack every bit
+      // of that spread lands on the ceiling. DRUM_TRIM pulls each
+      // kit to the common 0.56 target (attenuate only, never
+      // boost); test/audio-glitch.test.js re-renders the solos and
+      // fails if this table goes stale.
+      const trim = AE.DRUM_TRIM[loop.id];
+      const prevOut = this.out;
+      if (trim && trim < 1) {
+        const tg = this.ctx.createGain();
+        tg.gain.value = trim;
+        tg.connect(prevOut || this.master);
+        this.out = tg;
+      }
       for (const [inst, pat] of Object.entries(loop.drums)) {
         for (let s = 0; s < pat.length; s++) {
           if (pat[s] !== 'x') continue;
@@ -187,6 +283,7 @@ const AE = {
           else this.perc(tt);
         }
       }
+      this.out = prevOut;
     }
     if (loop.notes) {
       const isBass = loop.role === 'bass';

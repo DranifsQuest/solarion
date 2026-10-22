@@ -20,6 +20,17 @@
  *   step distribution, so no seam fix is claimed for them. (The
  *   engine's white-noise buffer does get a wrap blend: sustained
  *   filtered sources like 'rain' loop it ~1x/sec.)
+ * v1.3 (mixer static fix): the v1.2 limiter above was NOT enough
+ * for the mixer path — five layered drum lines sum coherently to
+ * +8..+14dBFS and the -8dB/4ms limiter let the destination reach
+ * 1.11-1.82 (hundreds of DAC-clipped samples = the static Zan
+ * heard at high BPM). The chain is now master -> trim(0.8) ->
+ * highpass(32Hz) -> fast ceiling limiter (-4dB, 20:1, 0.8ms),
+ * plus per-loop drum trims and drum-machine choke. The RENDERED
+ * proof (real samples, not gain bookkeeping) lives in
+ * test/audio-glitch.test.js + test/render-audio.js; this suite
+ * pins the topology + settings.
+ *
  * This suite loads the REAL public/mixer.js + sfx.js +
  * zonemusic.js into a vm with a mock AudioContext and pins the
  * fixes + the measured composition peak.
@@ -138,16 +149,24 @@ function loadClientAudio() {
 
 // ------------------------------------------------------------ Item D
 
-test('audio D: master runs through a limiter before the destination', () => {
+test('audio D: master runs through the staging bus + limiter before the destination', () => {
   const { AE, ctx } = loadClientAudio();
   assert.equal(AE.ensure(), true);
   assert.ok(AE.limiter, 'a limiter node exists');
   assert.equal(AE.limiter.kind, 'compressor');
-  assert.ok(AE.master.connectedTo.includes(AE.limiter), 'master -> limiter');
+  // v1.3 chain: master -> trim -> highpass -> limiter -> destination.
+  assert.ok(AE.master.connectedTo.includes(AE.mixTrim), 'master -> trim');
+  assert.ok(AE.mixTrim.connectedTo.includes(AE.mixHp), 'trim -> highpass');
+  assert.ok(AE.mixHp.connectedTo.includes(AE.limiter), 'highpass -> limiter');
   assert.ok(AE.limiter.connectedTo.includes(ctx.destination), 'limiter -> destination');
   assert.ok(!AE.master.connectedTo.includes(ctx.destination), 'master no longer feeds the destination directly');
+  // The ceiling: hard ratio, fast attack (must be able to catch a
+  // drum transient's front), threshold in the ceiling band.
   assert.ok(AE.limiter.ratio.value >= 12, `limiter ratio ${AE.limiter.ratio.value} is hard`);
-  assert.ok(AE.limiter.threshold.value <= -6, `limiter threshold ${AE.limiter.threshold.value}dB leaves headroom`);
+  assert.ok(AE.limiter.threshold.value <= -3 && AE.limiter.threshold.value >= -6, `limiter threshold ${AE.limiter.threshold.value}dB is a ceiling, not a gentle bus comp`);
+  assert.ok(AE.limiter.attack.value <= 0.001, `limiter attack ${AE.limiter.attack.value}s is fast enough for transients`);
+  assert.equal(AE.mixHp.type, 'highpass');
+  assert.ok(AE.mixHp.frequency.value >= 20 && AE.mixHp.frequency.value <= 40, 'highpass dumps subsonics, keeps the 42Hz kick floor');
 });
 
 test('audio D: looped noise wraps seamlessly through the filters that use it', () => {
@@ -262,9 +281,11 @@ test('audio D: measured peak of the densest zone composition (documented, limite
   const atSpeakers = peakSum * 0.3 /* zone bus MUSIC_LEVEL */ * 0.55 /* master */;
   console.log(`    [audio] neon-casino comp: ${tracks.length} loops, worst-instant source-peak sum ${peakSum.toFixed(2)} -> ${(atSpeakers).toFixed(2)} at the master output pre-limiter`);
   assert.ok(peakSum > 0.5, 'the measurement is real (sources actually scheduled)');
-  // The point of the limiter: whatever the sum, peaks above -8dB
-  // are compressed 16:1, so the destination cannot hard-clip.
-  assert.ok(AE.limiter && AE.limiter.threshold.value === -8 && AE.limiter.ratio.value === 16);
+  // The point of the limiter: whatever the sum, peaks above the
+  // -4dB ceiling are compressed 20:1 with a 0.8ms attack, so the
+  // destination cannot hard-clip (rendered proof:
+  // test/audio-glitch.test.js).
+  assert.ok(AE.limiter && AE.limiter.threshold.value === -4 && AE.limiter.ratio.value === 20);
 });
 
 // ------------------------------------------------------------ Item S
