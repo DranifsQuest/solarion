@@ -630,30 +630,30 @@ function drawVolleyballAt(x, y) {
   ctx.beginPath(); ctx.arc(x + 22, y + 6, 5, -0.6, 1.1); ctx.stroke();
 }
 
-/** v1.2 (Item L): a beach umbrella — pole, scalloped canopy in
- *  warm coral, and a towel spread on the sand beside it. */
+/** v1.2 (Item L) + v1.3.1 (Item 13): a beach umbrella — pole and
+ *  a BIG scalloped canopy in warm coral. The towel is no longer
+ *  part of the prop: it's a real SEAT beside the pole now (drawn
+ *  in the seat pass), sized so a character actually fits on it. */
 function drawUmbrellaAt(x, y) {
-  diamond(x + 13, y + 7, 24, 9, '#37b6d9');       // the towel
-  diamond(x + 13, y + 7, 16, 6, '#f5f0e6');
-  ctx.strokeStyle = '#8a5a2b'; ctx.lineWidth = 2.6;
-  ctx.beginPath(); ctx.moveTo(x, y + 6); ctx.lineTo(x - 3, y - 24); ctx.stroke();
+  ctx.strokeStyle = '#8a5a2b'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(x, y + 8); ctx.lineTo(x - 4, y - 34); ctx.stroke();
   // canopy: a wide shallow dome of alternating coral/cream panels
   ctx.beginPath();
-  ctx.moveTo(x - 27, y - 22);
-  ctx.quadraticCurveTo(x - 3, y - 40, x + 21, y - 22);
-  ctx.quadraticCurveTo(x + 12, y - 18, x + 6, y - 21);
-  ctx.quadraticCurveTo(x - 3, y - 18, x - 12, y - 21);
-  ctx.quadraticCurveTo(x - 21, y - 18, x - 27, y - 22);
+  ctx.moveTo(x - 40, y - 31);
+  ctx.quadraticCurveTo(x - 4, y - 56, x + 32, y - 31);
+  ctx.quadraticCurveTo(x + 20, y - 26, x + 10, y - 30);
+  ctx.quadraticCurveTo(x - 4, y - 26, x - 18, y - 30);
+  ctx.quadraticCurveTo(x - 30, y - 26, x - 40, y - 31);
   ctx.closePath();
   ctx.fillStyle = '#e86a5a'; ctx.fill();
   ctx.beginPath();
-  ctx.moveTo(x - 12, y - 21);
-  ctx.quadraticCurveTo(x - 3, y - 33, x + 6, y - 21);
-  ctx.quadraticCurveTo(x - 3, y - 18.5, x - 12, y - 21);
+  ctx.moveTo(x - 18, y - 30);
+  ctx.quadraticCurveTo(x - 4, y - 47, x + 10, y - 30);
+  ctx.quadraticCurveTo(x - 4, y - 27, x - 18, y - 30);
   ctx.closePath();
   ctx.fillStyle = '#f5e8d2'; ctx.fill();
   ctx.fillStyle = '#ffd23f';
-  ctx.beginPath(); ctx.arc(x - 3, y - 33, 2.4, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x - 4, y - 47, 3, 0, Math.PI * 2); ctx.fill();
 }
 
 function drawStallAt(x, y, seed) {
@@ -2091,36 +2091,46 @@ function drawChairAt(x, y, dir, opts) {
     const s = dir === 'left' ? 1 : -1; // facing left -> back on the east edge
     legs();
     cushion();
-    // Iso panel: base edge along the cushion's back diagonal, from
-    // near the N corner (ax, ay) to near the side corner (bx, by),
-    // extruded straight up. Posts at both ends, two slats parallel
-    // to the base edge, a thick top rail along the top edge.
-    const ax = x + s * 4, ay = y - 11;
-    const bx = x + s * 27, by = y - 1;
-    const RISE = 27;
+    // Iso panel ON the cushion's back diagonal (v1.3.1): v4's
+    // panel floated ~12px past the cushion's side corner and 5px
+    // above its N corner, so a side chair read as a floor pad with
+    // a stray ladder beside it — the "chairs just sittin there"
+    // and slot-stool-slab complaints. The panel now spans the
+    // cushion's TRUE back edge (N corner -> side corner), with
+    // thicker posts/rails so it reads as a chair BACK, and a short
+    // cheek return along the far diagonal suggests the wrap.
+    const ax = x - s * 1, ay = y - 7;
+    const bx = x + s * 15, by = y - 1;
+    const RISE = 28;
     ctx.beginPath();
     ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
     ctx.lineTo(bx, by - RISE); ctx.lineTo(ax, ay - RISE);
     ctx.closePath();
-    ctx.fillStyle = 'rgba(138,90,43,.42)'; ctx.fill();
-    ctx.strokeStyle = CHAIR_FRAME; ctx.lineWidth = 3.6;
+    ctx.fillStyle = 'rgba(138,90,43,.5)'; ctx.fill();
+    ctx.strokeStyle = CHAIR_FRAME; ctx.lineWidth = 4.2;
     ctx.beginPath();
     ctx.moveTo(ax, ay + 1); ctx.lineTo(ax, ay - RISE + 4);
     ctx.moveTo(bx, by + 1); ctx.lineTo(bx, by - RISE + 4);
     ctx.stroke();
-    ctx.strokeStyle = CHAIR_SLAT; ctx.lineWidth = 3;
+    ctx.strokeStyle = CHAIR_SLAT; ctx.lineWidth = 3.4;
     for (const t of [0.45, 0.72]) {
       ctx.beginPath();
       ctx.moveTo(ax, ay - RISE * t); ctx.lineTo(bx, by - RISE * t);
       ctx.stroke();
     }
-    ctx.strokeStyle = CHAIR_FRAME; ctx.lineWidth = 5;
+    ctx.strokeStyle = CHAIR_FRAME; ctx.lineWidth = 6;
     ctx.beginPath();
     ctx.moveTo(ax, ay - RISE); ctx.lineTo(bx, by - RISE);
     ctx.stroke();
     ctx.strokeStyle = 'rgba(255,220,150,.35)'; ctx.lineWidth = 1.6;
     ctx.beginPath();
     ctx.moveTo(ax, ay - RISE - 2.5); ctx.lineTo(bx, by - RISE - 2.5);
+    ctx.stroke();
+    // cheek return: a short rail from the N-corner post toward
+    // the opposite corner, half height — the back's wrap.
+    ctx.strokeStyle = CHAIR_FRAME; ctx.lineWidth = 3.6;
+    ctx.beginPath();
+    ctx.moveTo(ax, ay - RISE * 0.55); ctx.lineTo(ax - s * 11, ay - RISE * 0.55 + 3);
     ctx.stroke();
     return;
   }
@@ -2135,6 +2145,40 @@ function drawChairAt(x, y, dir, opts) {
   chairLadderBack(x, y - 6, 27, true);
   legs();
   cushion();
+}
+
+/** v1.3.1: a proper little SOFA — skirted base, deep cushion,
+ *  an upholstered back on the side opposite the sitter's facing,
+ *  and arms at both ends. The old two-diamond hint read as a
+ *  cushion blob (and for side facings, an unanchored smear). */
+function drawSofaAt(x, y, dir) {
+  ctx.beginPath(); ctx.ellipse(x, y + 11, 25, 8, 0, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0,0,0,.30)'; ctx.fill();
+  const BODY = '#7a3b4f', BODY_L = '#93536b', TOP = '#9c5a72', ARM = '#6d3447';
+  const backAt = (bx, by, w) => {
+    diamond(bx, by, w, 11, BODY);
+    diamond(bx, by - 3, w, 10, BODY_L);
+  };
+  if (dir === 'down') backAt(x, y - 10, 42);
+  if (dir === 'left') backAt(x + 13, y - 3, 22);
+  if (dir === 'right') backAt(x - 13, y - 3, 22);
+  diamond(x, y + 5, 40, 14, BODY);        // skirted base
+  diamond(x, y + 1, 40, 13, BODY_L);      // deep cushion
+  diamond(x, y - 1, 31, 9, TOP);          // cushion top catching light
+  diamond(x - 20, y - 2, 10, 8, ARM);     // arms
+  diamond(x + 20, y - 2, 10, 8, ARM);
+  if (dir === 'up') backAt(x, y + 9, 42); // near-side back over the cushion edge
+}
+
+/** v1.3.1 (Item 13): a beach towel you can LIE on — a big striped
+ *  diamond, long axis along the shore, sized for a 1.5x character. */
+function drawTowelAt(x, y) {
+  ctx.beginPath(); ctx.ellipse(x, y + 6, 31, 10, 0, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0,0,0,.18)'; ctx.fill();
+  diamond(x, y, 58, 25, '#37b6d9');
+  diamond(x, y, 47, 20, '#f5f0e6');
+  diamond(x, y, 35, 14, '#e86a5a');
+  diamond(x, y, 21, 8, '#f5f0e6');
 }
 
 // (v1.2 Item O: the static pole-stand art retired with the stands
@@ -2267,12 +2311,15 @@ function tableSeatInfo(p) {
     const s = (mapDef.seats || []).find(s2 => s2.id === p.seatId);
     if (!s || s.kind !== 'chair') return null;
     const t = (mapDef.props || []).find(pr => pr.kind === 'table'
-      && Math.abs(pr.x - s.x) <= TS * 1.05 && Math.abs(pr.y - s.y) <= TS * 1.05
+      && Math.abs(pr.x - s.x) <= TS * 1.75 && Math.abs(pr.y - s.y) <= TS * 1.75
       && (pr.x !== s.x || pr.y !== s.y));
     if (!t) return null;
     sx2 = s.x; sy2 = s.y; tx2 = t.x; ty2 = t.y;
   }
-  const pull = [Math.sign(tx2 - sx2) * 5, Math.sign(ty2 - sy2) * 5];
+  // v1.3.1 (Item 1): table chairs sit 50px out now (a visible gap),
+  // so the pull-in is gentler (4px) — just enough to tuck the
+  // sitter's lap under the replayed table front.
+  const pull = [Math.sign(tx2 - sx2) * 4, Math.sign(ty2 - sy2) * 4];
   const [px3, py3] = proj(tx2, ty2);
   return { pull, tx: px3, ty: py3 };
 }
@@ -2712,15 +2759,21 @@ function draw() {
         ctx.stroke();
       };
       if (s.dir !== 'up') benchBack();
+      // v1.3.1: legs + a skirt, so a bench reads as furniture with
+      // thickness, never a flat pad on the ground.
+      ctx.strokeStyle = '#5a3d1f'; ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(sx3 - 12, sy3 + 2); ctx.lineTo(sx3 - 13, sy3 + 9);
+      ctx.moveTo(sx3 + 12, sy3 + 2); ctx.lineTo(sx3 + 13, sy3 + 9);
+      ctx.stroke();
+      diamond(sx3, sy3 + 2, 32, 11, '#6e4525');
       diamond(sx3, sy3, 30, 10, '#8a5a2b');
       diamond(sx3, sy3 - 4, 30, 6, '#a5713a');
       if (s.dir === 'up') benchBack();
     } else if (s.kind === 'sofa') {
-      diamond(sx3, sy3, 34, 13, '#7a3b4f');
-      diamond(sx3, sy3 - 5, 34, 9, '#93536b');
-      // v1.2: a hint of backrest crest on the far side per facing.
-      const sb = { down: [0, -9], up: [0, 6], left: [12, 0], right: [-12, 0] }[s.dir] || [0, -9];
-      diamond(sx3 + sb[0], sy3 + sb[1], 30, 8, '#a8667e');
+      drawSofaAt(sx3, sy3, s.dir);
+    } else if (s.kind === 'towel') {
+      drawTowelAt(sx3, sy3);
     } else if (s.kind === 'cafe') {
       // Lane C booth seating, v1.1 scale: the table sits at the TRUE
       // projected midpoint between the facing pair (the old hand-tuned
@@ -2735,6 +2788,10 @@ function draw() {
       ctx.strokeStyle = '#7a5a2b'; ctx.lineWidth = 1; ctx.stroke();
     } else if (s.kind === 'hookah') {
       // Lane C: low booth benches flanking the station's low table.
+      // v1.3.1: a low backrest strip on the side away from the
+      // station, so the booth pad reads as a seat, not a box.
+      const hb = { right: [-13, -1], left: [13, -1], down: [0, -8], up: [0, 6] }[s.dir] || [0, -8];
+      diamond(sx3 + hb[0], sy3 + hb[1], 22, 8, '#4a2740');
       diamond(sx3, sy3, 30, 10, '#5d3450');
       diamond(sx3, sy3 - 4, 30, 7, '#7a4666');
     } else { // chair — v1.1: a real chair (legs, cushion, backrest)
@@ -2802,11 +2859,20 @@ function draw() {
     const sway = (!p.fallen && p.drinks >= 2)
       ? Math.sin(now / 280 + p.id * 2.1) * Math.min(5, p.drinks * 0.7)
       : 0;
+    // v1.3.1 (Item 13): a player seated on a beach TOWEL lies on it.
+    const lying = Boolean(p.seated)
+      && ((mapDef.seats || []).find(s2 => s2.id === p.seatId) || {}).kind === 'towel';
     ctx.save();
     if (p.fallen) {
       ctx.translate(sx, sy - 3);
       ctx.rotate(-1.45); // flat on the floor, visible to everyone
       ctx.drawImage(spr, -dw / 2, -dh + 8, dw, dh);
+    } else if (lying) {
+      // Flat along the towel like the fallen pose, head toward the
+      // towel's NW end (its umbrella stands at that shoulder).
+      ctx.translate(sx, sy - 2);
+      ctx.rotate(-1.45);
+      ctx.drawImage(spr, -dw / 2, -dh + 10, dw, dh);
     } else {
       ctx.translate(sx + sway, sy - bob + (p.seated ? 3 : 0));
       if (p.dir === 'right') ctx.scale(-1, 1); // side sprite faces left natively; flip for right

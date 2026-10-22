@@ -44,13 +44,33 @@
  *   - TABLE GROUP SPACING (v1.2.3, Item 8): in interiors, table
  *     props sit >=5 tiles apart centre-to-centre, so groups keep
  *     >=2 clear tiles between their chair rings
- *   - HEARTH AIM (v1.2.3, Item 7): a chair/sofa seat within 6
- *     tiles of a fireplace is a hearth-arc seat and must AIM at
- *     the fire (its facing carries toward the hearth) — never
- *     sideways, never back-to-fire
+ *   - HEARTH AIM (v1.2.3, Item 7; v1.3.1 SCREEN-BEARING): a
+ *     chair/sofa seat within 6 tiles of a fireplace is a hearth-arc
+ *     seat and must AIM at the fire IN SCREEN SPACE (facing is
+ *     screen-space since v1.1 — the old tile-space dot product
+ *     passed arcs whose rendered backs sat ~90° off the fire)
  *   - PIT-FRONT CLEAR (v1.2.3, Item 9): the band between a pit's
  *     front edge and the audience block — the performer's apron
  *     and the crowd's standing edge — holds no seats, no props
+ *   - UNIFORM VENUE GEOMETRY (v1.3.1, Item 3): every venue is the
+ *     same shape — stage platform against the back (north) wall,
+ *     pit in front of it, audience rows behind the pit, every
+ *     audience seat facing the stage ('up', screen-bearing to the
+ *     stage rect >= 0.7). Replaces the v1.2 Item P profile-row
+ *     rule, whose 'right' rows aimed ~90° off the stage in Neon.
+ *   - SEAT SPACING BANDS (v1.3.1, Items 1/7/8): table-group chairs
+ *     sit 46-58px from their table's centre; poker chairs 55-66px
+ *     from their table's centre; a slot stool's cushion may not
+ *     touch its cabinet's screen footprint (nor float away).
+ *   - ARRANGEMENT LAW (v1.3.1, Item 5): every seat belongs to a
+ *     registered arrangement — table group, hearth arc, audience
+ *     grid, casino floor, hookah station, beach towel unit, or an
+ *     explicitly registered nook below. Lone chairs fail.
+ *   - PROP ANCHOR LAW (v1.3.1, Items 4/14/15): every prop (base +
+ *     seasonal) anchors to a feature — within 4 tiles of a door,
+ *     gatehouse, building, stage/pit, water (2), or a hero prop —
+ *     or clusters with other props (<=3 tiles), or stands inside
+ *     a populated named area. Open-ground loners fail.
  *
  *   WARNINGS (Zan's standing rules, as far as the data supports)
  *   - an interior map with != 1 inbound door (one facade entrance)
@@ -299,20 +319,33 @@ for (const map of Object.values(MAPS)) {
       if (dd < 5) err(map.id, `group spacing: tables at (${tables[i]}) and (${tables[j]}) sit ${dd} tiles apart — table groups keep >=2 clear tiles between chair rings (>=5 centre to centre)`);
     }
   }
-  // HEARTH AIM (Item 7): a chair/sofa seat near a fireplace is a
-  // hearth-arc seat, and arc seats AIM AT THE FIRE — the facing
-  // must carry toward the hearth (positive dot product), never
-  // sideways or back-to-fire. (Hookah station seats are their
-  // own kind and aim at their stations, not the hearth.)
-  const DIRV = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
+  // HEARTH AIM (Item 7; v1.3.1 SCREEN-BEARING): a chair/sofa seat
+  // near a fireplace is a hearth-arc seat, and arc seats AIM AT
+  // THE FIRE — judged in SCREEN space, because facing has been
+  // screen-space since v1.1: the seat's facing vector must carry
+  // toward the hearth on screen (dot >= 0.7). The old tile-space
+  // dot product passed the café's southern chairs ('left', tile
+  // dot > 0) whose rendered backs sat ~90° off the fire — the
+  // data-vs-render mismatch behind Item 2. (Hookah station seats
+  // are their own kind and aim at their stations, not the hearth.)
+  const SCRV = { up: [0, -1], down: [0, 1], left: [-0.894, 0.447], right: [0.894, 0.447] };
+  const screenDot = (dir, dxPx, dyPx) => {
+    const sx = dxPx - dyPx, sy = (dxPx + dyPx) / 2;
+    const len = Math.hypot(sx, sy) || 1;
+    const v = SCRV[dir] || [0, 0];
+    return (v[0] * sx + v[1] * sy) / len;
+  };
   for (const hp of (map.props || []).filter(p => p.kind === 'hearth')) {
     const hx = tileOfPx(hp.x), hy = tileOfPx(hp.y);
     for (const [sx2, sy2, s] of seatTilesArr) {
       if (s.kind !== 'chair' && s.kind !== 'sofa') continue;
       if (Math.max(Math.abs(sx2 - hx), Math.abs(sy2 - hy)) > 6) continue;
-      const v = DIRV[s.dir] || [0, 0];
-      const dot = v[0] * (hx - sx2) + v[1] * (hy - sy2);
-      if (dot <= 0) err(map.id, `hearth aim: seat ${s.id} at (${sx2},${sy2}) faces '${s.dir}' — hearth-arc seats aim at the fireplace (${hx},${hy})`);
+      const dot = screenDot(s.dir, hp.x - s.x, hp.y - s.y);
+      // 0.55, not higher: a seat due west/north of the fire caps
+      // at 0.60 under cardinal facings (world-west projects to
+      // screen up-left, between 'left' and 'up'). 0.55 still
+      // rejects sideways (<=0.45) and back-to-fire facings.
+      if (dot < 0.55) err(map.id, `hearth aim: seat ${s.id} at (${sx2},${sy2}) faces '${s.dir}' (screen bearing ${dot.toFixed(2)}) — hearth-arc seats aim at the fireplace (${hx},${hy})`);
     }
   }
 
@@ -326,8 +359,8 @@ for (const map of Object.values(MAPS)) {
   //   - the pit and platform contain no props and no seats at all;
   //   - grid tiles inside the seat block or pit must be walkable,
   //     except the stage's own speaker posts (map.stage.speakers);
-  //   - audience seats never aim 'up' (Item P: audiences present
-  //     left/right/down — the rule is audience-only by design);
+  //   - audience seats face the stage under the UNIFORM VENUE
+  //     GEOMETRY law (v1.3.1 — see below);
   //   - platform and pit width EQUAL the seat block's width on the
   //     audience axis, aligned to the same span (Item B).
   if (map.stage) {
@@ -395,7 +428,7 @@ for (const map of Object.values(MAPS)) {
         if (!isAud && !pitTiles.has(k) && !stageTiles.has(k) && inApron(tx, ty)) {
           err(map.id, `venue apron: non-audience seat ${s.id} crowds the audience seat block (${k}) — keep one clear tile around the venue`);
         }
-        if (isAud && s.dir === 'up') err(map.id, `venue facing: audience seat ${s.id} aims 'up' — audiences present left/right/down only`);
+        if (isAud && s.dir !== 'up') err(map.id, `venue geometry: audience seat ${s.id} aims '${s.dir}' — uniform venues face the stage ('up')`);
       }
       for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {
         const ch = tileAt(map, tx, ty);
@@ -427,6 +460,35 @@ for (const map of Object.values(MAPS)) {
           err(map.id, 'venue width: stage/pit not aligned to the seat block span');
         }
       }
+      // UNIFORM VENUE GEOMETRY (v1.3.1, Item 3): the platform
+      // stands against the venue's BACK (north) wall — its top
+      // edge within the map's first 6 tile rows — with the pit
+      // directly in front (south) of it and every audience seat
+      // behind the pit, facing the stage rect (screen bearing
+      // >= 0.7). This REPLACES the v1.2 Item P profile-row rule.
+      if (!(st.pit.y > st.y)) {
+        err(map.id, 'venue geometry: the pit is not in front (south) of the stage — uniform venues face south into their audience');
+      }
+      if (tileOfPx(st.y) > 6) {
+        err(map.id, `venue geometry: stage top edge at tile row ${tileOfPx(st.y)} — stages stand against the back wall (row <= 6)`);
+      }
+      const pitBackRow = tileOfPx(st.pit.y + st.pit.h - 1);
+      for (const s of aud) {
+        if (tileOfPx(s.y) <= pitBackRow) {
+          err(map.id, `venue geometry: audience seat ${s.id} is not behind the pit`);
+          continue;
+        }
+        // Bearing to the NEAREST point of the stage rect (the
+        // stage front at the seat's own column): tile-north
+        // projects to screen up-right, so a cardinal facing caps
+        // at 0.447 for a due-north frontage — 'up' (checked above)
+        // is the only facing that presents the sitter's back to
+        // the camera toward the stage, and 0.4 is its floor here.
+        const nx = Math.max(st.x, Math.min(st.x + st.w, s.x));
+        const ny = Math.max(st.y, Math.min(st.y + st.h, s.y));
+        const dot = screenDot(s.dir, nx - s.x, ny - s.y);
+        if (dot < 0.4) err(map.id, `venue geometry: audience seat ${s.id} faces '${s.dir}' (screen bearing to stage front ${dot.toFixed(2)}) — audience seats aim at the stage`);
+      }
     }
   }
 
@@ -437,6 +499,137 @@ for (const map of Object.values(MAPS)) {
     }
     if (map.casino.bar && collides(map, map.casino.bar.x, map.casino.bar.y, 6)) {
       err(map.id, 'bar patron spot is embedded in a solid tile');
+    }
+  }
+
+  // -- v1.3.1 (chair-spacing pass) laws
+  // SEAT SPACING BANDS (Items 1/7/8): chairs near a round table
+  // belong to its group and must sit in the 46-58px band from the
+  // table's centre — never crammed into the tabletop (the old
+  // 32px ring: "i'm sitting in the tables"), never floating.
+  for (const tp of (map.props || []).filter(p => p.kind === 'table')) {
+    for (const s of map.seats || []) {
+      if (s.kind !== 'chair') continue;
+      const d = Math.hypot(s.x - tp.x, s.y - tp.y);
+      if (d <= 70 && (d < 46 || d > 58)) {
+        err(map.id, `table band: chair ${s.id} sits ${d.toFixed(0)}px from the table at (${tileOfPx(tp.x)},${tileOfPx(tp.y)}) — table-group chairs keep a 46-58px gap band`);
+      }
+    }
+  }
+  if (map.casino) {
+    // Poker chairs: 55-66px from their table's centre (Item 7 —
+    // the old 44px ring tucked cushions half under the felt).
+    for (const t of map.casino.tables) {
+      for (const c of t.chairs) {
+        const d = Math.hypot(c.x - t.x, c.y - t.y);
+        if (d < 55 || d > 66) err(map.id, `poker band: ${t.id} chair ${c.dir} sits ${d.toFixed(0)}px from the table centre — poker chairs keep a 55-66px band`);
+      }
+    }
+    // Slot stools (Item 8): in screen space the stool's cushion
+    // (30x12) must not intersect its cabinet's footprint (30 wide,
+    // 52 above its centre to 2 below) — that's the "wooden slab
+    // flush against the machine" read — and must not float away.
+    const projV = (x, y) => [x - y, (x + y) / 2];
+    for (const sl of map.casino.slots) {
+      const [msx, msy] = projV(sl.x, sl.y);
+      const [isx, isy] = projV(sl.ix, sl.iy);
+      const overlap = Math.abs(isx - msx) < 30 && (isy + 6) > (msy - 52) && (isy - 6) < (msy + 2);
+      if (overlap) err(map.id, `slot band: ${sl.id}'s stool cushion touches its cabinet on screen — stools keep a visible gap from the machine front`);
+      const distS = Math.hypot(isx - msx, isy - msy);
+      if (distS > 95) err(map.id, `slot band: ${sl.id}'s stool floats ${distS.toFixed(0)} screen-px from its machine`);
+    }
+  }
+  // ARRANGEMENT LAW (Item 5): a seat may exist ONLY inside a
+  // registered arrangement. Auto-detected: audience grid, casino
+  // floor, hookah station, table group (in the band), hearth arc
+  // (near a hearth AND aiming at it), beach towel unit (by an
+  // umbrella). Everything else must be named in REGISTERED_SEATS.
+  const REGISTERED_SEATS = {
+    'the-gateway': new Set([1, 2, 3, 4, 5, 6, 15, 16]), // fountain ring + pond-bank nook
+    'solstice-bay': new Set([5, 6]),                    // venue-flank bench pair
+    'neon-district': new Set([1, 2, 6, 7]),             // street benches + market nook sofas
+    'cinder-mesa': new Set([5]),                        // forge nook sofa
+    'verdant-hollow': new Set([6, 7]),                 // grove nook sofa + chair
+  };
+  const seatArrangement = (s) => {
+    const m = /-seat-(\d+)$/.exec(s.id);
+    const n = m ? Number(m[1]) : -1;
+    if (n >= 101) return 'audience grid';
+    if (map.casino) return 'casino floor';
+    if (s.kind === 'hookah') return 'hookah station';
+    if (s.kind === 'towel') {
+      const near = (map.props || []).some(pr => pr.kind === 'umbrella'
+        && Math.max(Math.abs(tileOfPx(pr.x) - tileOfPx(s.x)), Math.abs(tileOfPx(pr.y) - tileOfPx(s.y))) <= 2);
+      return near ? 'beach towel unit' : null;
+    }
+    if (s.kind === 'chair' && (map.props || []).some(pr => pr.kind === 'table'
+      && Math.hypot(s.x - pr.x, s.y - pr.y) >= 46 && Math.hypot(s.x - pr.x, s.y - pr.y) <= 58)) return 'table group';
+    for (const hp of (map.props || []).filter(p => p.kind === 'hearth')) {
+      if ((s.kind === 'chair' || s.kind === 'sofa')
+        && Math.max(Math.abs(tileOfPx(s.x) - tileOfPx(hp.x)), Math.abs(tileOfPx(s.y) - tileOfPx(hp.y))) <= 6
+        && screenDot(s.dir, hp.x - s.x, hp.y - s.y) >= 0.55) return 'hearth arc';
+    }
+    if (REGISTERED_SEATS[map.id] && REGISTERED_SEATS[map.id].has(n)) return 'registered nook';
+    return null;
+  };
+  for (const s of map.seats || []) {
+    if (!seatArrangement(s)) {
+      err(map.id, `arrangement law: seat ${s.id} (kind '${s.kind}') at (${tileOfPx(s.x)},${tileOfPx(s.y)}) belongs to no registered arrangement — lone chairs are deleted, not kept (Item 5)`);
+    }
+  }
+  // PROP ANCHOR LAW (Items 4/14/15): every prop — base and
+  // seasonal alike — must anchor to a feature (door, gatehouse,
+  // building frontage, stage/pit, water, a hero prop), cluster
+  // with other props, or stand in a populated named area. A prop
+  // in open ground with none of those is scatter, and scatter is
+  // what Zan keeps circling in screenshots.
+  {
+    const HERO_KINDS = new Set(['hearth', 'forge', 'fountain', 'greattree', 'lighthouse', 'icesculpt', 'neonsign', 'stall', 'volleyball']);
+    const nearAny = (set, tx, ty, r) => {
+      for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) if (set.has(`${tx + dx},${ty + dy}`)) return true;
+      return false;
+    };
+    const featureTiles = new Set();
+    const waterTiles = new Set();
+    map.tiles.rows.forEach((row, ty) => { [...row].forEach((ch, tx) => { if (ch === '%') waterTiles.add(`${tx},${ty}`); }); });
+    for (const p of [...(map.doors || []), ...(map.gateways || [])]) {
+      for (const [tx, ty] of rectTiles(p)) featureTiles.add(`${tx},${ty}`);
+    }
+    for (const b of map.buildings || []) {
+      for (let ty = b.ty; ty < b.ty + b.th; ty++) for (let tx = b.tx; tx < b.tx + b.tw; tx++) featureTiles.add(`${tx},${ty}`);
+    }
+    if (map.stage) {
+      for (const [tx, ty] of [...rectTiles(map.stage), ...rectTiles(map.stage.pit)]) featureTiles.add(`${tx},${ty}`);
+    }
+    const allProps = layers.flatMap(l => l.props.map(pr => ({ ...pr, layer: l.label })));
+    for (const pr of allProps) if (HERO_KINDS.has(pr.kind)) featureTiles.add(`${tileOfPx(pr.x)},${tileOfPx(pr.y)}`);
+    const areaRects = (map.areas || []).map(a => ({
+      name: a.name,
+      x0: tileOfPx(a.x), x1: tileOfPx(a.x + a.w - 1), y0: tileOfPx(a.y), y1: tileOfPx(a.y + a.h - 1),
+    }));
+    for (const pr of allProps) {
+      const tx = tileOfPx(pr.x), ty = tileOfPx(pr.y);
+      if (nearAny(featureTiles, tx, ty, 4)) continue;
+      if (nearAny(waterTiles, tx, ty, 2)) continue;
+      if (allProps.some(q => q !== pr && Math.max(Math.abs(tileOfPx(q.x) - tx), Math.abs(tileOfPx(q.y) - ty)) <= 3)) continue;
+      const area = areaRects.find(a => tx >= a.x0 && tx <= a.x1 && ty >= a.y0 && ty <= a.y1);
+      if (area) {
+        const inside = (px2, py2) => {
+          const ax = tileOfPx(px2), ay = tileOfPx(py2);
+          return ax >= area.x0 && ax <= area.x1 && ay >= area.y0 && ay <= area.y1;
+        };
+        // Population counts props, seats AND fixed furniture
+        // (casino tables/slots) — a cobweb in the corner of a
+        // furnished room is room dressing, not open-ground scatter.
+        const furnitureTiles = map.casino
+          ? [...map.casino.tables.map(t => [t.x, t.y]), ...map.casino.slots.map(sl => [sl.x, sl.y])]
+          : [];
+        const pop = allProps.filter(q => inside(q.x, q.y)).length
+          + (map.seats || []).filter(s => inside(s.x, s.y)).length
+          + furnitureTiles.filter(([fx, fy]) => inside(fx, fy)).length;
+        if (pop >= 2) continue;
+      }
+      err(map.id, `prop anchor law: [${pr.layer}] prop "${pr.kind}" at (${tx},${ty}) anchors to nothing — no feature within 4 tiles, no cluster, no populated area. Open-ground scatter is deleted, not kept (Items 4/14/15)`);
     }
   }
 }

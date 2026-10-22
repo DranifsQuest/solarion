@@ -40,6 +40,7 @@
  */
 
 const { db } = require('./db');
+const { collides } = require('./maps');
 
 // ------------------------------------------------------------------ cards
 // (ported verbatim from the validated Goleon engine — do not "improve")
@@ -375,6 +376,9 @@ class PokerTable {
     if (p && p.seated && p.seated.kind === 'poker') {
       p.seated = null;
       if (!silent) this.game.send(p, { type: 'sit-state', seated: false });
+      // Item 6: standing leaves the avatar BESIDE the chair, clear
+      // of the felt — never standing on the table graphic.
+      if (!silent) this.casino.stepOffChair(p, this);
     }
     try {
       db.exec('BEGIN IMMEDIATE');
@@ -1061,6 +1065,58 @@ class CasinoSystem {
     p.pokerPending = null;
   }
 
+  /**
+   * Seat-release hook (game.onStandUp, v1.3.1): the game calls this
+   * BEFORE clearing p.seated for every stand. Poker seat state lives
+   * in this system, so releasing it is this system's job:
+   *  - 'poker' (bought in): movement NEVER leaves the seat (veto —
+   *    chips seats exit via the tray's Stand / Cash out); any other
+   *    stand cashes out through table.stand.
+   *  - 'poker-pending' (spectator hold): the chair reservation is
+   *    released and the avatar steps off beside the table.
+   * Returns false to veto the stand.
+   */
+  releaseSeatStand(p, seat, viaMovement) {
+    if (!seat) return true;
+    if (seat.kind === 'poker') {
+      if (viaMovement) return false;
+      const table = this.tableById(String(seat.id).split(':')[1]);
+      if (table) table.stand(p);
+      return true;
+    }
+    if (seat.kind === 'poker-pending') {
+      const pend = p.pokerPending;
+      this.clearPending(p);
+      if (pend) {
+        const table = this.tableById(pend.tableId);
+        if (table) this.stepOffChair(p, table);
+      }
+      return true;
+    }
+    return true;
+  }
+
+  /**
+   * After standing from a poker chair, place the avatar BESIDE the
+   * chair — pushed outward from the table centre, clear of the
+   * felt — never left standing on the table graphic (item 6).
+   * Steps down through shorter pushes until one is collision-free.
+   */
+  stepOffChair(p, table) {
+    const dx = p.x - table.x, dy = p.y - table.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    const map = this.game.sceneFor(p.mapId);
+    for (const d of [36, 28, 20, 12]) {
+      const nx = p.x + ux * d, ny = p.y + uy * d;
+      if (!map || !collides(map, nx, ny, 12)) {
+        p.x = nx; p.y = ny;
+        this.game.savePosition(p);
+        return;
+      }
+    }
+  }
+
   handlePoker(p, msg) {
     const action = msg.action;
     // Phase 5: action must be one of the known strings; anything else is dropped.
@@ -1079,7 +1135,21 @@ class CasinoSystem {
     const table = (typeof msg.table === 'string' && this.tableById(msg.table)) || this.tableFor(p);
     if (!table) { this.game.send(p, { type: 'notice', text: 'No poker table here.' }); return; }
     if (action === 'sit') { table.sit(p, msg.chair); return; }
-    if (action === 'stand') { table.stand(p); return; }
+    if (action === 'stand') {
+      if (!table.stand(p) && p.pokerPending && p.pokerPending.tableId === table.id) {
+        // Spectator hold: the tray's Stand releases the chair too
+        // (item 6 — previously this silently did nothing and the
+        // reservation leaked).
+        this.clearPending(p);
+        if (p.seated && p.seated.kind === 'poker-pending') {
+          p.seated = null;
+          this.game.send(p, { type: 'sit-state', seated: false });
+        }
+        this.stepOffChair(p, table);
+        this.game.send(p, { type: 'notice', text: 'You stand and give up the chair.' });
+      }
+      return;
+    }
     if (action === 'rebuy') { table.rebuy(p); return; }
     if (action === 'act') { table.act(p, msg.act, msg.amount); return; }
     this.game.send(p, { type: 'notice', text: 'Unknown poker action.' });

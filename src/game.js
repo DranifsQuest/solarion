@@ -100,6 +100,9 @@ class Game {
     // Optional hook (set by server.js): called when a player disconnects
     // or changes map, so the stage can dequeue/end their performance.
     this.onPlayerGone = null;
+    // Optional hook (set by server.js): called by standUp() BEFORE a
+    // seated player stands; return false to veto the stand.
+    this.onStandUp = null;
     // Optional hook: called right after a player lands in a new map.
     this.onMapEntered = null;
   }
@@ -523,11 +526,14 @@ class Game {
       if (dx === 0 && dy === 0) continue;
       // Phase B sitting: any movement input stands you up (and is
       // consumed — you don't slide off the chair in the same tick).
+      // v1.3.1: through standUp() so the seat's owner can release /
+      // veto (a bought-in poker seat vetoes: chips seats are left
+      // via the tray, never by wiggling — but the input is still
+      // consumed either way).
       if (p.seated) {
-        p.seated = null;
+        this.standUp(p, true);
         p.keys = {};
         p.path = null;
-        this.send(p, { type: 'sit-state', seated: false });
         continue;
       }
       const speed = SPEED * (p.run ? RUN_MULT : 1);
@@ -814,10 +820,7 @@ class Game {
     if (count >= VICE.THRESHOLD) {
       p.passedOutUntil = now + VICE.PASSOUT_MS;
       p.keys = {};
-      if (p.seated) {
-        p.seated = null;
-        this.send(p, { type: 'sit-state', seated: false });
-      }
+      if (p.seated) this.standUp(p, false);
       this.send(p, { type: 'notice', text: '🍸 The room spins… you PASS OUT cold for 20 seconds!' });
     }
     this.sendVice(p);
@@ -939,6 +942,27 @@ class Game {
    * Phase B amendment: while seated at a hookah station, interact
    * takes a puff instead of standing.
    */
+  /**
+   * The ONE way a seated player stands (v1.3.1, seat-release fix).
+   * Every stand path — movement input, E, pass-out — funnels
+   * through here so the seat's owner (the onStandUp hook, wired to
+   * the casino in server.js) can release external seat state or
+   * VETO the stand by returning false. The bug this kills: the
+   * tick's movement-stand cleared p.seated directly, so a poker
+   * spectator's chair reservation was never released — after four
+   * sit/stand cycles every chair at the table answered "taken"
+   * forever (Zan, live, Neon Casino 2026-10-22). Returns true when
+   * the player actually stood.
+   */
+  standUp(p, viaMovement = false) {
+    const seat = p.seated;
+    if (!seat) return false;
+    if (this.onStandUp && this.onStandUp(p, seat, viaMovement) === false) return false;
+    p.seated = null;
+    this.send(p, { type: 'sit-state', seated: false });
+    return true;
+  }
+
   handleInteract(p) {
     if (p.transferUntil && Date.now() < p.transferUntil) return;
     if (p.passedOutUntil && Date.now() < p.passedOutUntil) return; // out cold
@@ -948,8 +972,7 @@ class Game {
         this.send(p, { type: 'notice', text: 'Use Stand / Cash out in the poker tray to leave the table.' });
         return;
       }
-      p.seated = null;
-      this.send(p, { type: 'sit-state', seated: false });
+      this.standUp(p, false);
       return;
     }
     // v1.2 fishing (Items N/O): at ANY fishable bank, interact
@@ -963,7 +986,7 @@ class Game {
       if (!p.waterNoticeAt || now - p.waterNoticeAt > 3000) {
         p.waterNoticeAt = now;
         const text = p.mapId === 'the-gateway'
-          ? '🚫🎣 No fishing in the fountain!'
+          ? '🚫🎣 No fishing in the fountain or the pond!'
           : p.mapId === 'solstice-bay'
             ? '🌊 The open sea is too rough to fish — try the pond in Verdant Hollow.'
             : 'No fishing here.';

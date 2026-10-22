@@ -411,6 +411,58 @@ test('sitting: snapshot pose, chat seated, occupancy, stand both ways', { timeou
   a.client.ws.close(); b.client.ws.close();
 });
 
+// ------------------------------------------------------------------ v1.3.1
+// Item 13: beach towels are LYING seats — one character per towel,
+// and occupancy releases on stand and on transfer (the item-6
+// discipline, regression-pinned here for the towel family).
+
+test('beach towels (item 13): lying seats occupy + release on stand and transfer', { timeout: 90000 }, async () => {
+  const a = await makeUser('towel_tess');
+  const b = await makeUser('towel_tom');
+  await toBay(a);
+  await toBay(b);
+  await sleep(1800); // outlast the arrival transfer lock (interact is swallowed inside it)
+  // Towel seat 7 at tile (20,33) = (656,1072), under its umbrella.
+  teleport(a, 656, 1094);
+  await sleep(300);
+  a.client.send({ type: 'interact' });
+  const lying = await waitFor(() => {
+    const p = selfIn(a.client, a.id);
+    return p && p.seated ? p : null;
+  }, 5000, 'Tess lies down on the towel');
+  assert.equal(lying.seatId, 'solstice-bay-seat-7', 'the towel is the seat');
+  // One character per towel.
+  teleport(b, 656, 1094);
+  await sleep(300);
+  b.client.msgs.length = 0;
+  b.client.send({ type: 'interact' });
+  await waitFor(() => b.client.msgs.some(m => m.type === 'notice' && /seat is taken/.test(m.text)),
+    5000, 'occupied towel refused');
+  // Movement stands her up; the towel frees immediately.
+  a.client.send({ type: 'input', keys: { left: true } });
+  await waitFor(() => {
+    const p = selfIn(a.client, a.id);
+    return p && p.seated === false ? p : null;
+  }, 5000, 'movement stands Tess up from the towel');
+  a.client.send({ type: 'input', keys: {} });
+  b.client.send({ type: 'interact' });
+  await waitFor(() => {
+    const p = selfIn(b.client, b.id);
+    return p && p.seated ? p : null;
+  }, 5000, 'Tom takes the freed towel');
+  // Transferring out of the zone frees it again.
+  b.client.send({ type: 'debug-teleport', x: 1152, y: 1392 }); // the return arch
+  await arriveMap(b, 'the-gateway');
+  teleport(a, 656, 1094);
+  await sleep(300);
+  a.client.send({ type: 'interact' });
+  await waitFor(() => {
+    const p = selfIn(a.client, a.id);
+    return p && p.seated ? p : null;
+  }, 5000, 'Tess retakes the towel after Tom transferred out');
+  a.client.ws.close(); b.client.ws.close();
+});
+
 // ------------------------------------------------------------------ e
 
 test('sitting on placed studio furniture (cozy chair)', { timeout: 60000 }, async () => {
@@ -502,7 +554,7 @@ test('poker: full hand on NEW table 6, chips conserved', { timeout: 90000 }, asy
 test('slots: a spin on NEW machine 10 (east wall) pays by the ported paytable', { timeout: 60000 }, async () => {
   const u = await makeUser('newslot_ned');
   await toCasino(u);
-  teleport(u, 1072, 432); // machine 10 stool (east wall of the bigger casino, v1.2.3)
+  teleport(u, 1052, 432); // machine 10 stool (east wall; v1.3.1 pulled out to a 52px gap, Item 8)
   await sleep(300);
   // Standing at the machine is not enough in the new layout — sit.
   u.client.send({ type: 'slots', action: 'spin', bet: 10 });

@@ -118,6 +118,7 @@ stages.onTrophy = (userId, kind, mixName) => {
   }
 };
 game.onPlayerGone = (userId) => { stages.handlePlayerGone(userId); casino.handlePlayerGone(userId); };
+game.onStandUp = (p, seat, viaMovement) => casino.releaseSeatStand(p, seat, viaMovement);
 game.onMapEntered = (p) => { stages.syncPlayer(p); casino.syncPlayer(p); };
 
 function sendAvatar(res, result) {
@@ -321,6 +322,25 @@ if (TEST_MODE) {
       ];
       players = picks.map((s, i) => fakePub(folks[i][0], folks[i][1], folks[i][2], s.x, s.y, s.dir, s));
       you = players[0];
+      // v1.3.1 (chair-spacing pass): pose MORE sitters so every
+      // seating family can be eyeballed in one Bake Shop frame —
+      // the first four stage-audience seats, a beach towel (the
+      // lying pose), and two poker chairs in the casinos.
+      let extra = 900010;
+      const audience = seats.filter(s => /-seat-1\d\d$/.test(s.id));
+      for (const s of audience.slice(0, 4)) {
+        players.push(fakePub(extra, `Aud${extra - 900009}`, lookF, s.x, s.y, s.dir, s));
+        extra++;
+      }
+      const towel = seats.find(s => s.kind === 'towel');
+      if (towel) players.push(fakePub(extra++, 'Sunny', lookM2, towel.x, towel.y, towel.dir, towel));
+      if (map.casino && map.casino.tables && map.casino.tables[0]) {
+        const t = map.casino.tables[0];
+        const FACE = { N: 'down', S: 'up', E: 'left', W: 'right' };
+        for (const ch of t.chairs.slice(0, 2)) {
+          players.push(fakePub(extra++, 'Poker', lookM, ch.x, ch.y, FACE[ch.dir], { id: `poker:${t.id}:${ch.dir}` }));
+        }
+      }
     }
     res.json({
       type: 'hello', you, map: clientMap(map, season), players, season,
@@ -479,8 +499,11 @@ wss.on('connection', (ws, req) => {
         if (casino.isSeated(p.userId)) {
           game.send(p, { type: 'notice', text: 'You hold chips at a poker table — use Stand / Cash out in the tray to leave.' });
         } else if (p.seated && p.seated.kind === 'poker-pending') {
-          casino.clearPending(p);
-          game.handleInteract(p); // stand back up from the spectator chair
+          // v1.3.1: handleInteract -> standUp() -> the onStandUp
+          // hook releases the spectator reservation (was: manual
+          // clearPending here, which the movement-stand path
+          // bypassed — the seat-leak bug).
+          game.handleInteract(p);
         } else if (!p.seated
           && !game.seatsInScene(p).some((s2) => Math.hypot(s2.x - p.x, s2.y - p.y) <= 52)
           && casino.offerSeat(p)) {

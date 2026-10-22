@@ -74,9 +74,12 @@ const SEASONAL = {
       // Café Corner (v1.2.2, Items 7/8; v1.2.3, Items 3/4): the
       // café door sits on its FRONT (south) face at (62,36) and
       // the pair FLANKS the whole doorstep composition from the
-      // doorstep row's outer tiles — terrace tables at (58,38)/
-      // (66,38), lamps at (56,38)/(68,38) — never on its tiles.
-      ['jackolantern', 57, 36], ['pumpkin', 67, 36],
+      // doorstep row's outer tiles — terrace tables at (57,38)/
+      // (67,38), lamps at (55,38)/(69,38) — never on its tiles.
+      // v1.3.1: shifted one tile further out with the respaced
+      // terrace (the tables' north chairs now sit at (57,36)/
+      // (67,36) themselves).
+      ['jackolantern', 56, 36], ['pumpkin', 68, 36],
       // A pair at every gatehouse mouth, flanking the path.
       ['pumpkin', 4, 5], ['jackolantern', 9, 5],
       ['pumpkin', 18, 5], ['jackolantern', 23, 5],
@@ -117,8 +120,10 @@ const SEASONAL = {
       ['cobweb', 57, 31],
     ],
     'cinder-mesa': [
-      // Flanking the pit mouth, outside pit + seat block.
-      ['pumpkin', 57, 16], ['pumpkin', 57, 27],
+      // Flanking the pit mouth of the rebuilt NORTH venue (v1.3.1),
+      // outside pit + seat block. (The old pair flanked the retired
+      // east-rim stage.)
+      ['pumpkin', 32, 7], ['pumpkin', 44, 7],
       // Forge Plaza.
       ['jackolantern', 25, 25],
       // Hookah facade corner.
@@ -128,16 +133,16 @@ const SEASONAL = {
       ['jackolantern', 3, 12], ['cobweb', 18, 2],
     ],
     'frosthaven': [
-      // Snowy pumpkins at the stage ends.
-      ['pumpkin', 31, 38], ['pumpkin', 44, 38],
+      // Snowy pumpkins at the rebuilt north stage's ends (v1.3.1).
+      ['pumpkin', 21, 6], ['pumpkin', 32, 6],
       // Gatehouse mouth pair.
       ['jackolantern', 33, 4], ['jackolantern', 38, 4],
-      // Pond-shore nook.
-      ['pumpkin', 22, 14],
+      // v1.3.1 (Item 15): the pond-shore nook pumpkin went with its
+      // trash cluster — deleted, not relocated.
     ],
     'verdant-hollow': [
-      // Stage ends.
-      ['jackolantern', 31, 22], ['jackolantern', 44, 22],
+      // Stage ends (v1.3.1: the rebuilt north stage's ends).
+      ['jackolantern', 32, 8], ['jackolantern', 43, 8],
       // Pond north bank.
       ['pumpkin', 27, 39], ['pumpkin', 41, 39],
       // A web in the Great Tree's branches.
