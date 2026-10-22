@@ -45,7 +45,8 @@ const Studio = {
     this.el = {
       panel: $('studioPanel'), title: $('studioTitle'),
       furnList: $('studioFurnList'), ownerBox: $('studioOwner'),
-      catalog: $('catalogList'), inventory: $('inventoryList'),
+      inventory: $('inventoryList'),
+      storeModal: $('storeModal'), storeGrid: $('storeGrid'),
       visitName: $('visitName'), kickSel: $('kickSel'),
       leaveBtn: $('leaveStudio'),
       lookPanel: $('lookPanel'),
@@ -55,6 +56,14 @@ const Studio = {
       homeName: $('homeName'), homeWall: $('homeWall'), homeFloor: $('homeFloor'),
       homeSize: $('homeSize'), homeLock: $('homeLock'),
     };
+    // v1.2 (Item C): the store window opens from the home panel,
+    // closes via its ✕ or a click on the dim backdrop, re-opens
+    // any time while home.
+    $('storeOpen').onclick = () => { this.renderStore(); this.el.storeModal.classList.remove('hidden'); };
+    $('storeClose').onclick = () => this.el.storeModal.classList.add('hidden');
+    this.el.storeModal.addEventListener('click', (e) => {
+      if (e.target === this.el.storeModal) this.el.storeModal.classList.add('hidden');
+    });
     $('homeNameGo').onclick = () => this.hooks.send({ type: 'home-set', name: this.el.homeName.value });
     $('homeExpand').onclick = () => this.hooks.send({ type: 'home-expand' });
     this.el.homeWall.onchange = () => this.hooks.send({ type: 'home-set', wall: Number(this.el.homeWall.value) });
@@ -184,6 +193,7 @@ const Studio = {
       this.placeInstanceId = null;
       this.devices.clear();
       this.stopRadioAudio();
+      if (this.el && this.el.storeModal) this.el.storeModal.classList.add('hidden');
     }
     this.renderVisibility();
     this.render();
@@ -219,20 +229,20 @@ const Studio = {
     if (this.inStudio && this.isOwner) {
       if (!this.homeMeta) this.hooks.send({ type: 'home-meta' });
       this.renderHomeSettings();
-      this.el.catalog.innerHTML = this.catalog.map(c =>
-        `<button class="pkSit" data-buy="${esc(c.id)}">${esc(c.icon || '📦')} ${esc(c.name)} — ${(c.awardOnly || c.id === 'gold-record') ? '🏆 earned on stage' : c.price + 'z'}</button>`).join('') ||
-        '<div class="pkDim">Catalog loading…</div>';
-      for (const b of this.el.catalog.querySelectorAll('[data-buy]')) {
-        b.onclick = () => this.hooks.send({ type: 'studio-buy', itemId: b.dataset.buy });
-      }
+      // v1.2 (Item C): inventory rows are DRAG chips (pointer
+      // events — mouse AND touch): drag one into the room and
+      // release on a valid floor tile to place/move it. The
+      // Place/Move arm-and-click flow stays as the fallback, and
+      // pickup is right-click in the room or the Pick up button.
       this.el.inventory.innerHTML = this.inventory.map(i => {
         const armed = this.placeInstanceId === i.instanceId;
-        return `<div class="qItem">${esc(i.icon || '📦')} ${esc(i.name)} ` +
+        return `<div class="qItem invChip" data-instance="${i.instanceId}">` +
+          `<span class="invGrip">⠿</span> ${esc(i.icon || '📦')} ${esc(i.name)} ` +
           (i.placed
             ? `<span class="pkDim">@ ${i.x},${i.y}</span> <button data-move="${i.instanceId}">${armed ? 'Click a tile…' : 'Move'}</button> <button data-pickup="${i.instanceId}">Pick up</button>`
             : `<button data-place="${i.instanceId}">${armed ? 'Click a tile…' : 'Place'}</button>`) +
           '</div>';
-      }).join('') || '<div class="pkDim">Nothing yet — buy something above.</div>';
+      }).join('') || '<div class="pkDim">Nothing yet — open the 🛒 Furniture Store above.</div>';
       for (const b of this.el.inventory.querySelectorAll('[data-place],[data-move]')) {
         b.onclick = () => {
           this.placeInstanceId = Number(b.dataset.place || b.dataset.move);
@@ -243,6 +253,10 @@ const Studio = {
       for (const b of this.el.inventory.querySelectorAll('[data-pickup]')) {
         b.onclick = () => this.hooks.send({ type: 'studio-pickup', instanceItemId: Number(b.dataset.pickup) });
       }
+      for (const chip of this.el.inventory.querySelectorAll('.invChip')) {
+        chip.addEventListener('pointerdown', (e) => this.startDrag(e, chip));
+      }
+      this.renderStore();
       // kick list = other occupants of this studio (from snapshots)
       /* global players */
       const others = (typeof players !== 'undefined' ? players : []).filter(p => !me || p.id !== me.id);
@@ -250,6 +264,94 @@ const Studio = {
         '<option value="">— no visitors —</option>';
     }
     this.renderDevices();
+  },
+
+  // ------------------------------------------------------------ store + drag (v1.2 Item C)
+
+  /** The store window's catalog grid: every purchasable item with
+   *  name + price; Buy charges server-side and the item lands in
+   *  the inventory (the server never auto-places a purchase). */
+  renderStore() {
+    if (!this.el || !this.el.storeGrid) return;
+    const esc = this.hooks.esc;
+    this.el.storeGrid.innerHTML = this.catalog.map(c => {
+      const earned = c.awardOnly || c.id === 'gold-record';
+      return `<div class="storeItem"><div class="storeIcon">${esc(c.icon || '📦')}</div>` +
+        `<div class="storeName">${esc(c.name)}</div>` +
+        (earned
+          ? '<div class="pkDim">🏆 earned on stage</div>'
+          : `<div class="storePrice">${c.price}z</div><button data-buy="${esc(c.id)}">Buy</button>`) +
+        '</div>';
+    }).join('') || '<div class="pkDim">Catalog loading…</div>';
+    for (const b of this.el.storeGrid.querySelectorAll('[data-buy]')) {
+      b.onclick = () => this.hooks.send({ type: 'studio-buy', itemId: b.dataset.buy });
+    }
+  },
+
+  /** Mirror of the server's placement rules (handlePlace): inside
+   *  the current tier's inner walls, never on the door tile. The
+   *  server re-validates — this only colours the drag ghost. */
+  tilePlaceable(tile) {
+    if (!tile || !this.homeMeta) return false;
+    const tier = this.homeMeta.tiers[this.homeMeta.tier];
+    if (!tier) return false;
+    if (tile.x === Math.floor(tier.w / 2) && tile.y === tier.h - 1) return false;
+    return tile.x >= 1 && tile.x <= tier.w - 2 && tile.y >= 1 && tile.y <= tier.h - 2;
+  },
+
+  /**
+   * Drag an inventory chip into the room (Pointer Events: mouse +
+   * touch unified). A ghost chip follows the pointer; over the
+   * canvas it turns green/red by tile validity; releasing over a
+   * valid tile sends studio-place. Listeners live on `document`
+   * for the drag's duration, so the game canvas can't swallow
+   * them; the panel chip uses touch-action:none so touch drags
+   * don't scroll the panel instead.
+   */
+  startDrag(e, chip) {
+    if (e.button !== undefined && e.button !== 0) return;
+    if (e.target.closest('button')) return; // buttons keep their jobs
+    if (!this.inStudio || !this.isOwner) return;
+    const instanceId = Number(chip.dataset.instance);
+    const item = this.inventory.find(i => i.instanceId === instanceId);
+    if (!item) return;
+    const startX = e.clientX, startY = e.clientY;
+    let ghost = null;
+    const esc = this.hooks.esc;
+    const onMove = (ev) => {
+      if (!ghost) {
+        if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < 6) return;
+        ghost = document.createElement('div');
+        ghost.className = 'invGhost';
+        ghost.innerHTML = `${esc(item.icon || '📦')} ${esc(item.name)}`;
+        document.body.appendChild(ghost);
+      }
+      ghost.style.left = `${ev.clientX + 10}px`;
+      ghost.style.top = `${ev.clientY + 10}px`;
+      const cv = document.getElementById('cv');
+      const r = cv.getBoundingClientRect();
+      const overCanvas = ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom;
+      const tile = overCanvas ? this.eventTile(ev) : null;
+      const ok = this.tilePlaceable(tile);
+      ghost.classList.toggle('ok', Boolean(overCanvas && ok));
+      ghost.classList.toggle('bad', Boolean(overCanvas && !ok));
+      ghost.dataset.tile = tile ? `${tile.x},${tile.y}` : '';
+      ghost.dataset.ok = ok ? '1' : '';
+    };
+    const onUp = (ev) => {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      if (ghost) {
+        const ok = ghost.dataset.ok === '1';
+        const [tx, ty] = (ghost.dataset.tile || '').split(',').map(Number);
+        ghost.remove();
+        if (ok && Number.isInteger(tx)) {
+          this.hooks.send({ type: 'studio-place', instanceItemId: instanceId, x: tx, y: ty, rot: 0 });
+        }
+      }
+    };
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
   },
 
   // ------------------------------------------------------------ devices

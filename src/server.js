@@ -102,6 +102,7 @@ casino.initFromMaps(MAPS);
 // scene ids on demand, and this system only handles studio messages.
 const studios = new StudioSystem(game);
 game.studioSystem = studios; // Phase 10: portal routing (home door / studio door exit)
+game.stageSystem = stages;   // v1.2 (Item A): the sim asks it who owns the stage
 // Phase 9: friends / navigator / profiles (needs studios for home travel).
 const social = new SocialSystem(game, studios);
 // Phase 9: trophy fanfare — the record lands in the performer's home
@@ -347,10 +348,10 @@ wss.on('connection', (ws, req) => {
   }
 
   // Owner top-up: Zan's accounts floor at 1,000,000z on every connect
-  // (his ruling, 2026-10-21). Keyed by lowercase username; no other
-  // account can trigger it.
-  const OWNER_TOPUPS = { zantheon: 1000000, upem: 1000000 };
-  const topUp = OWNER_TOPUPS[String(session.user.username || '').toLowerCase()];
+  // (his ruling, 2026-10-21). The owner set lives in src/owners.js —
+  // one source of truth, shared with fast-travel enforcement.
+  const { ownerFloorFor, isOwnerName } = require('./owners');
+  const topUp = ownerFloorFor(session.user.username);
   if (topUp) {
     const r = q.ownerTopUp.run(topUp, session.user.id, topUp);
     if (r.changes) {
@@ -360,9 +361,14 @@ wss.on('connection', (ws, req) => {
   }
 
   const map = MAPS[p.mapId];
+  const youPub = game.publicPlayer(p);
+  // v1.2 (Item J): the client needs to know whether THIS account
+  // gets the owner-only fast-travel controls. (Enforcement is
+  // server-side regardless; this only shapes the UI.)
+  youPub.isOwner = isOwnerName(session.user.username);
   game.send(p, {
     type: 'hello',
-    you: game.publicPlayer(p),
+    you: youPub,
     map: clientMap(map),
     players: game.playersInMap(p.mapId),
     chat: game.historyFor(p.mapId),

@@ -61,6 +61,8 @@ const TEST_FILES = [
   ['test/phase10.test.js',   50500, 20,    0,     2],   // 50540
   ['test/sprites.test.js',   null,  0,     0,     0],   // no server
   ['test/input-guard.test.js', null, 0,    0,     0],   // no server
+  ['test/slotgui.test.js',   null,  0,     0,     0],   // no server (v1.2 Item H)
+  ['test/audio.test.js',     null,  0,     0,     0],   // no server (v1.2 Items D/S)
 ].map(([file, base, stride, extra, run]) => ({ file, base, stride, extra, run }));
 
 const ALL_TESTS = TEST_FILES.map(t => t.file);

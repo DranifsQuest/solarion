@@ -68,12 +68,19 @@ const Social = {
     if (!this.nav) return;
     const esc = this.hooks.esc;
     const dots = (n) => '●'.repeat(n) + '○'.repeat(6 - n);
-    this.el.navList.innerHTML = this.nav.places.map(pl => `
+    // v1.2 (Item J): the Navigator's who's-where INFO is for
+    // everyone; the Travel ACTIONS are owner-only (the server
+    // rejects forged warps regardless — this is just the UI).
+    const me = this.hooks.getMe();
+    const owner = Boolean(me && me.isOwner);
+    this.el.navList.innerHTML =
+      (owner ? '' : '<div class="pkDim">🚶 Fast travel is owner-only — getting around is on foot, through the gatehouses.</div>') +
+      this.nav.places.map(pl => `
       <div class="navRow">
         <span>${pl.kind === 'casino' ? '🎰' : pl.kind === 'hub' ? '⛩️' : pl.kind === 'interior' ? '🚪' : '🏙️'}</span>
         <span><b>${esc(pl.name)}</b><br><span class="fullDots">${dots(pl.fullness)}</span>
         <span class="pkDim">${pl.count} here${pl.friends.length ? ` · 👥 ${pl.friends.map(esc).join(', ')}` : ''}</span></span>
-        ${pl.here ? '<span class="pkDim">you are here</span>' : `<button data-nav="${esc(pl.id)}">Travel</button>`}
+        ${pl.here ? '<span class="pkDim">you are here</span>' : owner ? `<button data-nav="${esc(pl.id)}">Travel</button>` : ''}
       </div>`).join('');
     for (const b of this.el.navList.querySelectorAll('[data-nav]')) {
       b.onclick = () => {
@@ -110,10 +117,11 @@ const Social = {
     for (const b of this.el.friendIncoming.querySelectorAll('[data-decline]')) {
       b.onclick = () => this.hooks.send({ type: 'friend-respond', userId: Number(b.dataset.decline), accept: false });
     }
+    const meF = this.hooks.getMe();
     const rows = f.friends.map(u => `
       <div class="friendRow">
         <span>${u.online ? '🟢' : '⚪'} <b>${esc(u.name)}</b>${u.online ? `<br><span class="pkDim">${esc(u.mapName || '')}</span>` : ''}</span>
-        ${u.online ? `<button data-join="${u.id}">Join</button>` : ''}
+        ${u.online && meF && meF.isOwner ? `<button data-join="${u.id}">Join</button>` : ''}
         <button data-remove="${u.id}">Remove</button>
       </div>`).join('');
     const out = f.outgoing.map(u => `
@@ -158,7 +166,8 @@ const Social = {
     const isSelf = me && me.id === pr.id;
     let actions = '';
     if (!isSelf) {
-      if (pr.friendStatus === 'friends') actions += `<button data-act="join">📍 Join</button>`;
+      const meP = this.hooks.getMe();
+      if (pr.friendStatus === 'friends' && meP && meP.isOwner) actions += `<button data-act="join">📍 Join</button>`;
       else if (pr.friendStatus === 'none') actions += `<button data-act="friend">👥 Add Friend</button>`;
       else if (pr.friendStatus === 'pending-in') actions += `<button data-act="accept">🤝 Accept Request</button>`;
       else if (pr.friendStatus === 'pending-out') actions += `<span class="pkDim">request sent</span>`;

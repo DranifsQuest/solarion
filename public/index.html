@@ -67,6 +67,9 @@
       <button id="soundBtn" title="Sound settings">🔊</button>
       <div id="mapName"></div>
     </div>
+    <!-- fishing proximity prompt (v1.2 Item O): appears only while
+         standing at a fishable bank; tappable for touch players -->
+    <button id="fishHint" class="hidden">🎣 Press E to fish</button>
     <!-- stage panel (shown only in maps with a stage) -->
     <div id="stagePanel" class="hidden">
       <div class="spTitle">🎤 STAGE</div>
@@ -95,9 +98,12 @@
       </div>
       <div id="chartBox"></div>
     </div>
-    <!-- casino tray (v1.1.1: NO sidebar \u2014 poker plays on the
+    <!-- casino tray (v1.1.1: NO sidebar — poker plays on the
          felt and slots on the cabinet; this is only a compact
-         bottom-centre control tray inside the casino lounges) -->
+         bottom-centre control tray inside the casino lounges.
+         v1.2 Item F2: sections are CONTEXT-EXCLUSIVE — poker (+table
+         chat) only while seated at a table, slots only at a machine
+         (and the Item H GUI supersedes them), bar only at the bar) -->
     <div id="casinoTray" class="hidden">
       <div id="trayPoker" class="traySection hidden">
         <span id="myCards"></span>
@@ -105,28 +111,56 @@
           <button id="actFold">Fold</button>
           <button id="actCheck">Check</button>
           <button id="actCall">Call</button>
-          <input id="raiseAmt" type="number" min="0" step="1" placeholder="Raise to\u2026">
+          <input id="raiseAmt" type="number" min="0" step="1" placeholder="Raise to…">
           <button id="actRaise">Raise</button>
           <button id="actAllin">All-in</button>
           <button id="pokerRebuy">Rebuy</button>
           <button id="pokerStand">Stand / Cash out</button>
         </span>
       </div>
-      <div id="traySlots" class="traySection">
-        <span id="slotJackpot" class="pkWin">\U0001F4B0 JACKPOT: \u2026z</span>
+      <div id="traySlots" class="traySection hidden">
+        <span id="slotJackpot" class="pkWin">💰 JACKPOT: …z</span>
         <button class="slotBetBtn" data-bet="5">5z</button>
         <button class="slotBetBtn active" data-bet="10">10z</button>
         <button class="slotBetBtn" data-bet="25">25z</button>
-        <button id="slotSpin">SPIN \U0001F3B0</button>
-        <span id="slotMsg" class="pkDim">Sit at a machine to play \u00B7 pair pays 2\u00D7 \u00B7 three \u2600\uFE0F take the jackpot</span>
+        <button id="slotSpin">SPIN 🎰</button>
+        <span id="slotMsg" class="pkDim">Sit at a machine to play · pair pays 2× · three ☀️ take the jackpot</span>
       </div>
-      <div id="trayChat" class="traySection">
-        <input id="tableChatInput" placeholder="Say it to the table\u2026" maxlength="200">
+      <div id="trayChat" class="traySection hidden">
+        <input id="tableChatInput" placeholder="Say it to the table…" maxlength="200">
         <button id="tableChatBtn">Say</button>
       </div>
-      <div id="trayBar" class="traySection">
-        <button id="drinkBtn">\U0001F378 Drink \u2014 5z</button>
+      <div id="trayBar" class="traySection hidden">
+        <button id="drinkBtn">🍸 Drink — 5z</button>
         <span id="viceInfo" class="pkDim">Stand at the bar and order.</span>
+      </div>
+    </div>
+    <!-- slot machine GUI (v1.2 Item H): the seated player's own
+         cabinet window — big reels that tumble and settle on the
+         server's symbols, left to right. The in-world cabinet glass
+         still animates for spectators via slot-fx. -->
+    <div id="slotGui" class="hidden">
+      <div class="slotCabinet">
+        <div class="slotHead">
+          <span class="spTitle">🎰 SOLARION SLOTS</span>
+          <button id="slotGuiClose" title="Close">✕</button>
+        </div>
+        <div id="slotGuiJackpot" class="pkWin">💰 JACKPOT: …z</div>
+        <div class="slotReels">
+          <div class="slotReel"><div class="reelStrip" id="reelStrip0"></div></div>
+          <div class="slotReel"><div class="reelStrip" id="reelStrip1"></div></div>
+          <div class="slotReel"><div class="reelStrip" id="reelStrip2"></div></div>
+          <div class="slotPayline"></div>
+        </div>
+        <div class="slotPayDim pkDim">pair pays 2× · three of a kind pays the line · three ☀️ take the JACKPOT</div>
+        <div class="spRow slotControls">
+          <button class="guiBetBtn" data-bet="5">5z</button>
+          <button class="guiBetBtn active" data-bet="10">10z</button>
+          <button class="guiBetBtn" data-bet="25">25z</button>
+          <span class="pkDim">Balance: <span id="slotGuiBalance">0</span>z</span>
+        </div>
+        <button id="slotGuiSpin">SPIN 🎰</button>
+        <div id="slotGuiMsg" class="pkDim">Pull up a stool and spin!</div>
       </div>
     </div>
     <!-- poker buy-in offer (v1.1.1): sitting at a table asks first -->
@@ -134,6 +168,7 @@
       <div class="offerCard">
         <div class="spTitle" id="offerTitle">\U0001F0CF POKER TABLE</div>
         <div id="offerText" class="pkDim">Buy in?</div>
+        <div id="offerChoices" class="spRow hidden"></div>
         <div class="spRow">
           <button id="offerBuy">Buy in</button>
           <button id="offerWatch">Just watch</button>
@@ -178,14 +213,25 @@
             <button id="homeLock">🔓 Lock home</button>
           </div>
         </div>
-        <div class="spTitle">🛋️ CATALOG</div>
-        <div id="catalogList"></div>
-        <div class="spTitle">🎒 MY ITEMS — click Place, then click a tile</div>
+        <div class="spRow">
+          <button id="storeOpen">🛒 Furniture Store — browse &amp; buy</button>
+        </div>
+        <div class="spTitle">🎒 MY ITEMS — drag one into the room to place it (or Place, then click a tile)</div>
         <div id="inventoryList"></div>
         <div class="spRow">
           <select id="kickSel"></select>
           <button id="kickBtn">Kick visitor</button>
         </div>
+      </div>
+    </div>
+    <!-- furniture store window (v1.2 Item C): a real shop popup —
+         full catalog grid, Buy lands the item in your inventory.
+         Opens from the home panel, closes cleanly, re-opens anytime. -->
+    <div id="storeModal" class="hidden">
+      <div class="storeCard">
+        <div class="storeHead"><span>🛒 FURNITURE STORE</span><button id="storeClose">✕ Close</button></div>
+        <div class="pkDim">Bought items land in your 🎒 inventory — drag them into your home to place them.</div>
+        <div id="storeGrid"></div>
       </div>
     </div>
     <!-- look panel (Phase 4 editor, rebuilt in Phase 6 on the shared
@@ -309,6 +355,7 @@
 <script src="create.js"></script>
 <script src="mixer.js"></script>
 <script src="zonemusic.js"></script>
+<script src="slotreels.js"></script>
 <script src="casino.js"></script>
 <script src="studio.js"></script>
 <script src="social.js"></script>

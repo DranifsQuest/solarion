@@ -285,6 +285,12 @@ test('performer audibility (v1.1): a cold context defers instead of scheduling i
     static instances = [];
     constructor() { this.state = 'suspended'; this.currentTime = 0; this.sampleRate = 44100; this.destination = {}; this._ls = {}; FakeCtx.instances.push(this); }
     createGain() { return new FakeNode('gain'); }
+    createDynamicsCompressor() { // v1.2: AE's limiter sits in the master chain
+      const n = new FakeNode('compressor');
+      n.threshold = new FakeParam(-24); n.knee = new FakeParam(30); n.ratio = new FakeParam(12);
+      n.attack = new FakeParam(0.003); n.release = new FakeParam(0.25);
+      return n;
+    }
     createOscillator() { return new FakeNode('osc'); }
     createBiquadFilter() { return new FakeNode('filter'); }
     createBufferSource() { return new FakeNode('src'); }

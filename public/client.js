@@ -24,6 +24,7 @@ let sceneFurniture = []; // Phase 4: placed studio furniture in this scene
 let sceneDevices = {};   // Phase 8: instanceId -> TV/radio state in this scene
 const renderPos = new Map(); // id -> { x, y, moving }
 const bubbles = new Map();   // id -> { text, until }
+const castFx = new Map();    // v1.2: playerId -> { landX, landY, ice, at } for cast animation
 let keys = { up: false, down: false, left: false, right: false };
 let lastSentKeys = '';
 let coins = 0;
@@ -271,7 +272,8 @@ function drawProp(pr) {
     case 'icesculpt': drawIceSculptAt(px2, py2); break;
     case 'greattree': drawGreatTreeAt(px2, py2); break;
     case 'table': drawTableAt(px2, py2); break;
-    case 'fishingpole': drawFishingPoleAt(px2, py2); break;
+    case 'volleyball': drawVolleyballAt(px2, py2); break;
+    case 'umbrella': drawUmbrellaAt(px2, py2); break;
     case 'stall': drawStallAt(px2, py2, (pr.x + pr.y) % 5); break;
     case 'flowers': {
       const cols = ['#ff8fab', '#ffd23f', '#fff6e6', '#c77dff'];
@@ -426,6 +428,62 @@ function drawGreatTreeAt(x, y) {
     ctx.arc(x - 18 + i * 9, y - 36 - ((i * 7) % 9), 1.5, 0, Math.PI * 2);
     ctx.fill();
   }
+}
+
+/** v1.2 (Item L): a beach volleyball net — two poles, a sagging
+ *  net, and the ball resting in the sand beside it. One prop,
+ *  drawn wide across its tile. Decorative only. */
+function drawVolleyballAt(x, y) {
+  ctx.strokeStyle = '#8a5a2b'; ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(x - 30, y + 4); ctx.lineTo(x - 30, y - 30);
+  ctx.moveTo(x + 30, y + 4); ctx.lineTo(x + 30, y - 30);
+  ctx.stroke();
+  // the net: a light grid with a gentle sag
+  ctx.strokeStyle = 'rgba(245,240,230,.85)'; ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const t = i / 4, sag = Math.sin(t * Math.PI) * 3;
+    ctx.beginPath(); ctx.moveTo(x - 30 + t * 60, y - 30 + sag); ctx.lineTo(x - 30 + t * 60, y - 16 + sag); ctx.stroke();
+  }
+  for (let j = 0; j <= 2; j++) {
+    ctx.beginPath();
+    ctx.moveTo(x - 30, y - 30 + j * 7);
+    ctx.quadraticCurveTo(x, y - 30 + j * 7 + 3, x + 30, y - 30 + j * 7);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = '#e2543e'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(x - 30, y - 30); ctx.quadraticCurveTo(x, y - 27, x + 30, y - 30); ctx.stroke();
+  // the ball, resting by the east pole
+  ctx.beginPath(); ctx.arc(x + 22, y + 6, 5, 0, Math.PI * 2);
+  ctx.fillStyle = '#f5f0e6'; ctx.fill();
+  ctx.strokeStyle = '#e2543e'; ctx.lineWidth = 1.4;
+  ctx.beginPath(); ctx.arc(x + 22, y + 6, 5, -0.6, 1.1); ctx.stroke();
+}
+
+/** v1.2 (Item L): a beach umbrella — pole, scalloped canopy in
+ *  warm coral, and a towel spread on the sand beside it. */
+function drawUmbrellaAt(x, y) {
+  diamond(x + 13, y + 7, 24, 9, '#37b6d9');       // the towel
+  diamond(x + 13, y + 7, 16, 6, '#f5f0e6');
+  ctx.strokeStyle = '#8a5a2b'; ctx.lineWidth = 2.6;
+  ctx.beginPath(); ctx.moveTo(x, y + 6); ctx.lineTo(x - 3, y - 24); ctx.stroke();
+  // canopy: a wide shallow dome of alternating coral/cream panels
+  ctx.beginPath();
+  ctx.moveTo(x - 27, y - 22);
+  ctx.quadraticCurveTo(x - 3, y - 40, x + 21, y - 22);
+  ctx.quadraticCurveTo(x + 12, y - 18, x + 6, y - 21);
+  ctx.quadraticCurveTo(x - 3, y - 18, x - 12, y - 21);
+  ctx.quadraticCurveTo(x - 21, y - 18, x - 27, y - 22);
+  ctx.closePath();
+  ctx.fillStyle = '#e86a5a'; ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(x - 12, y - 21);
+  ctx.quadraticCurveTo(x - 3, y - 33, x + 6, y - 21);
+  ctx.quadraticCurveTo(x - 3, y - 18.5, x - 12, y - 21);
+  ctx.closePath();
+  ctx.fillStyle = '#f5e8d2'; ctx.fill();
+  ctx.fillStyle = '#ffd23f';
+  ctx.beginPath(); ctx.arc(x - 3, y - 33, 2.4, 0, Math.PI * 2); ctx.fill();
 }
 
 function drawStallAt(x, y, seed) {
@@ -1085,6 +1143,12 @@ function handle(m) {
       if (me.puffs > 0) myViceAt.puffs = Date.now();
       break;
     }
+    case 'fish-cast': {
+      // v1.2 (Item O): a cast just started somewhere in the room —
+      // clients animate the rod + line arcing out to the landing.
+      castFx.set(m.playerId, { landX: m.landX, landY: m.landY, ice: !!m.ice, at: Date.now() });
+      break;
+    }
     case 'snapshot': {
       players = m.players;
       // v1.1 (Items 11/12 — the in-zone haze bug): `me` used to be
@@ -1214,6 +1278,7 @@ setInterval(() => {
 }, 50);
 
 $('sitBtn').onclick = () => { if (!transfer) send({ type: 'interact' }); };
+$('fishHint').onclick = () => { if (!transfer) send({ type: 'interact' }); };
 
 // ------------------------------------------------------------------
 // Phase 9 — click/tap-to-move + run toggle. A click (or phone tap)
@@ -1689,89 +1754,103 @@ function drawTvScene(channelId, x, y, w, h, t) {
 // and a slatted BACKREST on the side away from its facing — never
 // the old 12px diamond "dot". Warm wood throughout (Phase 10).
 function drawChairAt(x, y, dir) {
-  // v1.1.1 chair art v2 — must read as A CHAIR at play zoom: a TALL
-  // backrest (posts + top rail + slats) rising ~30px above a warm
-  // russet cushion, visible legs, soft ground shadow. The back
-  // stands on the side opposite the sitter's facing.
+  // Chair art v3 (v1.2, Items E/K/P): EVERY facing visibly has a
+  // BACK — drawn in iso-correct order per facing so no facing can
+  // collapse to a bare seat pad (the v2 bug: 'up' backs were drawn
+  // first and swallowed by the cushion drawn over them):
+  //   down (back on the far side): back first, cushion over its base.
+  //   up   (back on the near side): cushion first, then a SOLID
+  //        back panel over the cushion's near edge — the panel you
+  //        see from behind a chair, posts + slats + top rail.
+  //   left/right: a filled ladder panel on the far side, thick
+  //        enough to read at play zoom (v2's hairlines vanished).
+  // Same footprint/anchor as v2 (seat centre at x,y) — seats and
+  // sitters aligned to v2 keep their spots.
   ctx.beginPath(); ctx.ellipse(x, y + 9, 16, 6, 0, 0, Math.PI * 2);
   ctx.fillStyle = 'rgba(0,0,0,.28)'; ctx.fill();
   const FRAME = '#8a5a2b', DARK = '#5a3d1f', SLAT = '#a5713a';
   const CUSH = '#c96f4a', CUSH_D = '#9c4f30';
-  if (dir === 'left' || dir === 'right') {
-    const s = dir === 'left' ? 1 : -1; // facing left -> back on the east side
+  const legs = () => {
     ctx.strokeStyle = DARK; ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.moveTo(x - 10, y + 1); ctx.lineTo(x - 11, y + 9);
-    ctx.moveTo(x + 10, y + 1); ctx.lineTo(x + 11, y + 9);
+    ctx.moveTo(x - 11, y + 2); ctx.lineTo(x - 12, y + 10);
+    ctx.moveTo(x + 11, y + 2); ctx.lineTo(x + 12, y + 10);
     ctx.stroke();
-    diamond(x, y, 30, 12, CUSH_D);
-    diamond(x, y - 2.5, 27, 10, CUSH);
-    // ladder side panel: two posts, two slats, a top rail
-    const bx = x + s * 14;
-    ctx.strokeStyle = FRAME; ctx.lineWidth = 3.4;
+  };
+  const cushion = () => {
+    diamond(x, y, 32, 13, CUSH_D);
+    diamond(x, y - 2.5, 28, 10.5, CUSH);
+  };
+  // A ladder back whose BASE sits at baseY, rising `rise` px. With
+  // panel=true the slat field gets a warm translucent fill first
+  // so the back reads as one solid piece, not floating lines.
+  const ladderBack = (baseY, rise, panel) => {
+    if (panel) {
+      ctx.beginPath();
+      ctx.moveTo(x - 13, baseY); ctx.lineTo(x - 14, baseY - rise);
+      ctx.lineTo(x + 14, baseY - rise); ctx.lineTo(x + 13, baseY);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(138,90,43,.38)'; ctx.fill();
+    }
+    ctx.strokeStyle = FRAME; ctx.lineWidth = 3.6;
+    ctx.beginPath();
+    ctx.moveTo(x - 12, baseY); ctx.lineTo(x - 13, baseY - rise + 5);
+    ctx.moveTo(x + 12, baseY); ctx.lineTo(x + 13, baseY - rise + 5);
+    ctx.stroke();
+    ctx.strokeStyle = SLAT; ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(x - 12.6, baseY - rise * 0.45); ctx.lineTo(x + 12.6, baseY - rise * 0.45);
+    ctx.moveTo(x - 12.9, baseY - rise * 0.72); ctx.lineTo(x + 12.9, baseY - rise * 0.72);
+    ctx.stroke();
+    ctx.fillStyle = FRAME;
+    ctx.fillRect(x - 15, baseY - rise, 30, 6); // top rail
+    ctx.fillStyle = 'rgba(255,220,150,.35)';
+    ctx.fillRect(x - 15, baseY - rise, 30, 2);
+  };
+  if (dir === 'left' || dir === 'right') {
+    const s = dir === 'left' ? 1 : -1; // facing left -> back on the east side
+    legs();
+    cushion();
+    // filled side panel: a quad behind the ladder lines
+    const bx = x + s * 13;
+    ctx.beginPath();
+    ctx.moveTo(bx - s * 4, y + 1); ctx.lineTo(bx - s * 2, y - 27);
+    ctx.lineTo(bx + s * 6, y - 23); ctx.lineTo(bx + s * 5, y + 2);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(138,90,43,.42)'; ctx.fill();
+    ctx.strokeStyle = FRAME; ctx.lineWidth = 3.6;
     ctx.beginPath();
     ctx.moveTo(bx - s * 3, y - 2); ctx.lineTo(bx - s * 1, y - 29);
     ctx.moveTo(bx + s * 4, y + 1); ctx.lineTo(bx + s * 5, y - 25);
     ctx.stroke();
-    ctx.strokeStyle = SLAT; ctx.lineWidth = 2.6;
+    ctx.strokeStyle = SLAT; ctx.lineWidth = 3;
     for (const t of [0.4, 0.68]) {
       ctx.beginPath();
       ctx.moveTo(bx - s * 3 + s * 2 * t, y - 2 - 27 * t);
       ctx.lineTo(bx + s * 4 + s * 1 * t, y + 1 - 26 * t);
       ctx.stroke();
     }
-    ctx.strokeStyle = FRAME; ctx.lineWidth = 4.4;
+    ctx.strokeStyle = FRAME; ctx.lineWidth = 4.6;
     ctx.beginPath();
     ctx.moveTo(bx - s * 2, y - 30); ctx.lineTo(bx + s * 6, y - 26);
     ctx.stroke();
     return;
   }
-  const s = dir === 'up' ? 1 : -1; // 'down': back up-screen; 'up': back near-side
-  const by = s * 8;
-  // back assembly first — seat and sitter overlap its base
-  ctx.strokeStyle = FRAME; ctx.lineWidth = 3.4;
-  ctx.beginPath();
-  ctx.moveTo(x - 12, y + by); ctx.lineTo(x - 13, y + by - 25);
-  ctx.moveTo(x + 12, y + by); ctx.lineTo(x + 13, y + by - 25);
-  ctx.stroke();
-  ctx.strokeStyle = SLAT; ctx.lineWidth = 2.6;
-  ctx.beginPath();
-  ctx.moveTo(x - 12.6, y + by - 12); ctx.lineTo(x + 12.6, y + by - 12);
-  ctx.moveTo(x - 12.9, y + by - 19); ctx.lineTo(x + 12.9, y + by - 19);
-  ctx.stroke();
-  ctx.fillStyle = FRAME;
-  ctx.fillRect(x - 15, y + by - 30, 30, 6); // top rail
-  ctx.fillStyle = 'rgba(255,220,150,.35)';
-  ctx.fillRect(x - 15, y + by - 30, 30, 2);
-  // legs
-  ctx.strokeStyle = DARK; ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.moveTo(x - 11, y + 2); ctx.lineTo(x - 12, y + 10);
-  ctx.moveTo(x + 11, y + 2); ctx.lineTo(x + 12, y + 10);
-  ctx.stroke();
-  // seat cushion
-  diamond(x, y, 32, 13, CUSH_D);
-  diamond(x, y - 2.5, 28, 10.5, CUSH);
+  if (dir === 'up') {
+    // Back on the NEAR side: cushion first, panel over its edge.
+    legs();
+    cushion();
+    ladderBack(y + 7, 26, true);
+    return;
+  }
+  // 'down' (and default): back on the far side, cushion over base.
+  ladderBack(y - 6, 26, true);
+  legs();
+  cushion();
 }
 
-/** A built-in fishing-pole stand at a pond edge: crossed sticks, a
- *  leaning rod, a reel dot, and a faint line dropping to the water. */
-function drawFishingPoleAt(x, y) {
-  ctx.beginPath(); ctx.ellipse(x, y + 3, 10, 3.6, 0, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fill();
-  ctx.strokeStyle = '#6d4c26'; ctx.lineWidth = 2.4;
-  ctx.beginPath();
-  ctx.moveTo(x - 6, y + 2); ctx.lineTo(x + 4, y - 10);
-  ctx.moveTo(x + 6, y + 2); ctx.lineTo(x - 4, y - 10);
-  ctx.stroke();
-  // the rod: leans out over the water (screen-down = toward the pond)
-  ctx.strokeStyle = '#8a5a2b'; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.moveTo(x - 3, y - 9); ctx.quadraticCurveTo(x + 3, y - 20, x + 9, y - 27); ctx.stroke();
-  ctx.beginPath(); ctx.arc(x + 1, y - 13, 2, 0, Math.PI * 2); ctx.fillStyle = '#c99700'; ctx.fill();
-  ctx.strokeStyle = 'rgba(240,248,255,.75)'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(x + 9, y - 27); ctx.lineTo(x + 10, y - 12); ctx.stroke();
-  ctx.beginPath(); ctx.arc(x + 10, y - 11, 1.6, 0, Math.PI * 2); ctx.fillStyle = '#e2543e'; ctx.fill();
-}
+// (v1.2 Item O: the static pole-stand art retired with the stands
+// themselves — the rod now appears in the caster's hand instead.)
 
 // ------------------------------------------------------------------ fish (v1.1.1)
 // Ten species, one shared little-fish silhouette; colour + markings
@@ -1834,7 +1913,9 @@ function drawFishShape(x, y, id, s = 1, wiggle = 0) {
 const pondLeaps = [];
 let leapState = { mapId: null, tiles: [], nextAt: 0 };
 function tickPondLeaps(now) {
-  if (!mapDef || !mapDef.fishing || !mapDef.fishing.length || !mapDef.rows) return;
+  // v1.2: leaps belong to OPEN fishable water — a frozen pond's
+  // fish stay under the ice.
+  if (!mapDef || !mapDef.fishable || mapDef.frozen || !mapDef.rows) return;
   if (leapState.mapId !== mapDef.id) {
     const tiles = [];
     mapDef.rows.forEach((row, ty) => {
@@ -2121,15 +2202,15 @@ function draw() {
       const [tx2, ty2] = proj(t.x, t.y);
       for (const ch2 of t.chairs) {
         const [chx, chy] = proj(ch2.x, ch2.y);
-        // v1.1: poker chairs read as chairs — a backrest crescent on
-        // the side away from the table + a plush cushion. (Art only:
-        // table geometry and seat positions are untouched.)
-        const away = Math.atan2(chy - ty2, chx - tx2);
-        ctx.beginPath(); ctx.ellipse(chx + Math.cos(away) * 9, chy + Math.sin(away) * 5 - 2, 13, 6.5, 0, 0, Math.PI * 2);
-        ctx.fillStyle = '#571a24'; ctx.fill();
-        ctx.beginPath(); ctx.ellipse(chx, chy, 15, 8, 0, 0, Math.PI * 2);
-        ctx.fillStyle = '#6e1f2a'; ctx.fill();
-        ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = 1; ctx.stroke();
+        // v1.2 (Item E/K): poker chairs are the SHARED v3 chair —
+        // a real chair with a back, ringed at the unchanged seat
+        // positions. Facing derives from the chair's side of the
+        // table (the sitter faces the felt): north chair faces
+        // down-screen, south chair up, east chair left, west right.
+        const face = Math.abs(chx - tx2) > Math.abs(chy - ty2)
+          ? (chx > tx2 ? 'left' : 'right')
+          : (chy > ty2 ? 'up' : 'down');
+        drawChairAt(chx, chy, face);
       }
       ctx.beginPath(); ctx.ellipse(tx2, ty2, 44, 23, 0, 0, Math.PI * 2);
       ctx.fillStyle = '#7a5a2b'; ctx.fill();
@@ -2155,6 +2236,21 @@ function draw() {
     // (the way out is drawn by the generic doors pass below)
     // tell the casino tray whether we are inside the lounge
     if (window.SolarionCasino && myRp) window.SolarionCasino.updatePresence(myRp.x, myRp.y, mapDef);
+    // v1.2 (Item O): the fishing proximity prompt — visible only
+    // while I stand at a fishable bank, unseated, line not out.
+    {
+      const hint = $('fishHint');
+      let show = false;
+      if (mapDef && mapDef.fishable && mapDef.rows && myRp && me && !me.seated && !me.casting) {
+        const ts = mapDef.tileSize || 32;
+        const mtx = Math.floor(myRp.x / ts), mty = Math.floor(myRp.y / ts);
+        for (let ty = mty - 2; ty <= mty + 2 && !show; ty++) {
+          const row = mapDef.rows[ty]; if (!row) continue;
+          for (let tx = mtx - 2; tx <= mtx + 2; tx++) if (row[tx] === '%') { show = true; break; }
+        }
+      }
+      hint.classList.toggle('hidden', !show);
+    }
   }
 
   // hookah stations (Phase B amendment): a brass hookah on a low
@@ -2255,11 +2351,32 @@ function draw() {
   for (const s of mapDef.seats || []) {
     const [sx3, sy3] = proj(s.x, s.y);
     if (s.kind === 'bench') {
+      // v1.2 (Items K/Q): a bench has a BACK — slatted, on the side
+      // opposite the sitter's facing (drawn before the seat when
+      // it's on the far side, over the seat's edge when near).
+      const bk = { down: [0, -7], up: [0, 7], left: [10, 2], right: [-10, 2] }[s.dir] || [0, -7];
+      const benchBack = () => {
+        ctx.strokeStyle = '#5a3d1f'; ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(sx3 + bk[0] - 11, sy3 + bk[1] + 3); ctx.lineTo(sx3 + bk[0] - 11, sy3 + bk[1] - 8);
+        ctx.moveTo(sx3 + bk[0] + 11, sy3 + bk[1] + 3); ctx.lineTo(sx3 + bk[0] + 11, sy3 + bk[1] - 8);
+        ctx.stroke();
+        ctx.strokeStyle = '#a5713a'; ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(sx3 + bk[0] - 12, sy3 + bk[1] - 4); ctx.lineTo(sx3 + bk[0] + 12, sy3 + bk[1] - 4);
+        ctx.moveTo(sx3 + bk[0] - 12, sy3 + bk[1] - 8); ctx.lineTo(sx3 + bk[0] + 12, sy3 + bk[1] - 8);
+        ctx.stroke();
+      };
+      if (s.dir !== 'up') benchBack();
       diamond(sx3, sy3, 30, 10, '#8a5a2b');
-      diamond(sx3, sy3 - 5, 30, 6, '#a5713a');
+      diamond(sx3, sy3 - 4, 30, 6, '#a5713a');
+      if (s.dir === 'up') benchBack();
     } else if (s.kind === 'sofa') {
       diamond(sx3, sy3, 34, 13, '#7a3b4f');
       diamond(sx3, sy3 - 5, 34, 9, '#93536b');
+      // v1.2: a hint of backrest crest on the far side per facing.
+      const sb = { down: [0, -9], up: [0, 6], left: [12, 0], right: [-12, 0] }[s.dir] || [0, -9];
+      diamond(sx3 + sb[0], sy3 + sb[1], 30, 8, '#a8667e');
     } else if (s.kind === 'cafe') {
       // Lane C booth seating, v1.1 scale: the table sits at the TRUE
       // projected midpoint between the facing pair (the old hand-tuned
@@ -2392,21 +2509,49 @@ function draw() {
     ctx.strokeText(p.name, sx, sy - dh - 6 - bob);
     ctx.fillText(p.name, sx, sy - dh - 6 - bob);
 
-    // v1.1.1 fishing: cast line + bobber over the water while a
-    // cast is live (the server drives p.casting and p.dir).
+    // Fishing cast (v1.2 Item O): the fish-cast event carries the
+    // real landing point ~2–3 tiles out. First ~450ms: the bobber
+    // ARCS out along a curve while the rod (a line from the hand)
+    // swings with it; then the bobber sits on the water with
+    // ripples — or, on ice, a dark drill hole at the landing.
     if (p.casting) {
-      const off = { down: [44, 44], up: [-44, -44], right: [22, -22], left: [-22, 22] }[p.dir] || [44, 44];
-      const [bx2, by2] = proj(rp.x + off[0], rp.y + off[1]);
-      ctx.strokeStyle = 'rgba(240,248,255,.8)'; ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(sx + (p.dir === 'left' ? -12 : 12), sy - 52 - bob);
-      ctx.quadraticCurveTo((sx + bx2) / 2, Math.min(sy - 52 - bob, by2) - 14, bx2, by2);
-      ctx.stroke();
-      const rip = 3 + ((now / 320) % 1) * 6;
-      ctx.beginPath(); ctx.ellipse(bx2, by2, rip, rip * 0.45, 0, 0, Math.PI * 2);
-      ctx.strokeStyle = 'rgba(210,240,255,.55)'; ctx.stroke();
-      ctx.beginPath(); ctx.arc(bx2, by2 - 2, 2.6, 0, Math.PI * 2); ctx.fillStyle = '#e2543e'; ctx.fill();
-      ctx.beginPath(); ctx.arc(bx2, by2 - 0.4, 2.6, Math.PI, Math.PI * 2); ctx.fillStyle = '#fff6e6'; ctx.fill();
+      const fx = castFx.get(p.id);
+      const handX = sx + (p.dir === 'left' ? -12 : 12), handY = sy - 52 - bob;
+      let lx, ly, landed = true, ice = false;
+      if (fx && now - fx.at < 3400) {
+        const [tx2, ty2] = proj(fx.landX, fx.landY);
+        ice = fx.ice;
+        const t = Math.min(1, (now - fx.at) / 450);
+        landed = t >= 1;
+        const mx = (handX + tx2) / 2, my = Math.min(handY, ty2) - 34;
+        lx = (1 - t) * (1 - t) * handX + 2 * (1 - t) * t * mx + t * t * tx2;
+        ly = (1 - t) * (1 - t) * handY + 2 * (1 - t) * t * my + t * t * ty2;
+        // the rod: hand to a tip that leads the bobber's arc.
+        const tipX = handX + (lx - handX) * 0.42, tipY = handY - 16 + (ly - handY) * 0.3;
+        ctx.strokeStyle = '#6b4a26'; ctx.lineWidth = 2.4;
+        ctx.beginPath(); ctx.moveTo(handX, handY + 6); ctx.lineTo(tipX, tipY); ctx.stroke();
+        ctx.strokeStyle = 'rgba(240,248,255,.8)'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(tipX, tipY); ctx.quadraticCurveTo(mx, my, lx, ly); ctx.stroke();
+      } else {
+        const off = { down: [44, 44], up: [-44, -44], right: [22, -22], left: [-22, 22] }[p.dir] || [44, 44];
+        [lx, ly] = proj(rp.x + off[0], rp.y + off[1]);
+        ctx.strokeStyle = 'rgba(240,248,255,.8)'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(handX, handY);
+        ctx.quadraticCurveTo((handX + lx) / 2, Math.min(handY, ly) - 14, lx, ly); ctx.stroke();
+      }
+      if (landed && ice) {
+        // the drill hole on the ice + the line dropping into it
+        ctx.beginPath(); ctx.ellipse(lx, ly, 7, 3.4, 0, 0, Math.PI * 2);
+        ctx.fillStyle = '#16222e'; ctx.fill();
+        ctx.beginPath(); ctx.ellipse(lx, ly, 9.5, 4.6, 0, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(230,244,255,.5)'; ctx.lineWidth = 1; ctx.stroke();
+      } else if (landed) {
+        const rip = 3 + ((now / 320) % 1) * 6;
+        ctx.beginPath(); ctx.ellipse(lx, ly, rip, rip * 0.45, 0, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(210,240,255,.55)'; ctx.lineWidth = 1.2; ctx.stroke();
+        ctx.beginPath(); ctx.arc(lx, ly - 2, 2.6, 0, Math.PI * 2); ctx.fillStyle = '#e2543e'; ctx.fill();
+        ctx.beginPath(); ctx.arc(lx, ly - 0.4, 2.6, Math.PI, Math.PI * 2); ctx.fillStyle = '#fff6e6'; ctx.fill();
+      }
     }
     // v1.1.1: the catch hold-up — the fish, overhead, for its second.
     if (p.heldFish) {

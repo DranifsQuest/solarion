@@ -102,10 +102,10 @@ async function walkTo(client, tx, ty, { timeout = 40000, arrive = 14, stopWhen =
 
 /**
  * Walk onto a gateway/door rect and wait for the map switch.
- * Phase B: every transfer runs a fixed 3s load-screen window during
- * which the server locks movement — so after each arrival we wait
- * out the full window (which also covers the 1.5s portal debounce)
- * before walking again.
+ * Every transfer runs a fixed load-screen window during which the
+ * server locks movement (3s in Phase B; 1.5s since v1.2 Item T) —
+ * so after each arrival we wait out the full window (which also
+ * covers the 1.5s portal debounce) before walking again.
  */
 async function travel(client, tx, ty, expectMap, label) {
   await sleep(1750);
@@ -113,7 +113,7 @@ async function travel(client, tx, ty, expectMap, label) {
   const arrived = () => client.msgs.slice(marker).some(m => m.type === 'map' && m.map.id === expectMap) ? true : null;
   await walkTo(client, tx, ty, { timeout: 60000, stopWhen: arrived });
   const m = await waitFor(() => client.msgs.slice(marker).filter(x => x.type === 'map' && x.map.id === expectMap).pop(), 8000, label);
-  await sleep(3400); // 3s transfer lock + debounce for the next hop
+  await sleep(2000); // 1.5s transfer lock (v1.2 Item T) + debounce margin for the next hop
   return m;
 }
 
@@ -322,31 +322,46 @@ async function main() {
   // but the order is harmless and keeps the balance trail
   // easy to follow.
   // ---- casino: poker hand with chip conservation
+  // Per-table buy-ins (v1.1.2): the FIRST player SETS the table's
+  // buy-in through the offer flow; the second JOINS at exactly that
+  // amount. Conservation is derived from the amounts actually
+  // debited, never hardcoded to 200z stacks.
   try {
     const T1 = 'casino-lounge-poker-1';
+    const SET_BUYIN = 100; // the amount A chooses when setting the table
     const preA = await balA(), preB = await balB();
     await travel(B.client, 496, 1200, 'casino-lounge', 'B bay -> casino lounge door');
     await walkTo(A.client, 176, 144);
     await walkTo(B.client, 176, 144);
     const tbl = (u) => lastOf(u.client, 'poker-state', s => s.id === T1);
-    // A real player whose first click doesn't take clicks again —
-    // re-send the sit once mid-wait instead of failing on one race.
-    const sitAndWait = async (u, chair, tag) => {
-      const t0 = Date.now();
-      let resent = false;
-      u.client.send({ type: 'poker', action: 'sit', table: T1, chair });
-      await waitFor(() => {
-        const s = tbl(u);
-        if (s && s.chairs.some(c => c.name === u.name)) return true;
-        if (!resent && Date.now() - t0 > 5000) {
-          resent = true;
-          u.client.send({ type: 'poker', action: 'sit', table: T1, chair });
-        }
-        return null;
-      }, 14000, `${tag} seated`);
+    // The offer flow: E at the table snaps you into a chair and pops
+    // the buy-in offer. One retry — a first interact can land while
+    // the player is still standing up from a previous seat.
+    const offerFor = async (u, tag) => {
+      u.client.send({ type: 'interact' });
+      try {
+        return await waitFor(() => lastOf(u.client, 'poker-offer'), 3000, `${tag} offer (first try)`);
+      } catch (e) {
+        u.client.send({ type: 'interact' });
+        return await waitFor(() => lastOf(u.client, 'poker-offer'), 9000, `${tag} buy-in offer`);
+      }
     };
-    await sitAndWait(A, 'N', 'A');
-    await sitAndWait(B, 'S', 'B');
+    // A starts the table and SETS the buy-in at SET_BUYIN.
+    const offerA = await offerFor(A, 'A');
+    if (offerA.established !== false || offerA.amount !== null) throw new Error(`A's offer should start an unset table: ${JSON.stringify(offerA)}`);
+    A.client.send({ type: 'poker', action: 'buyin', amount: SET_BUYIN });
+    await waitFor(() => { const s = tbl(A); return s && s.chairs.some(c => c.name === A.name); }, 10000, 'A seated after setting the buy-in');
+    const debA = preA - (await balA());
+    if (debA !== SET_BUYIN) throw new Error(`A debited ${debA}, want exactly the chosen ${SET_BUYIN}`);
+    if (tbl(A).buyin !== SET_BUYIN) throw new Error(`table buy-in reads ${tbl(A).buyin}, want ${SET_BUYIN}`);
+    // B joins at A's amount — exactly SET_BUYIN, not B's own cap.
+    const offerB = await offerFor(B, 'B');
+    if (offerB.established !== true || offerB.amount !== SET_BUYIN) throw new Error(`B's offer should quote the table's ${SET_BUYIN}: ${JSON.stringify(offerB)}`);
+    const midB = await balB();
+    B.client.send({ type: 'poker', action: 'buyin' });
+    await waitFor(() => { const s = tbl(B); return s && s.chairs.some(c => c.name === B.name); }, 10000, 'B seated after joining');
+    const debB = midB - (await balB());
+    if (debB !== SET_BUYIN) throw new Error(`B debited ${debB}, want exactly the table's ${SET_BUYIN}`);
     await waitFor(() => lastOf(A.client, 'poker-cards'), 30000, 'hole cards dealt');
     // check/call the hand down
     const start = Date.now();
@@ -374,7 +389,7 @@ async function main() {
     await sleep(800);
     const postA = await balA(), postB = await balB();
     if (postA + postB !== preA + preB) throw new Error(`conservation: before ${preA}+${preB}=${preA + preB}, after ${postA}+${postB}=${postA + postB}`);
-    report('casino poker: full hand to showdown, pot paid in full, chips conserved', true, `pot=${doneState.pot} winners=${doneState.winners.map(w => w.name + ':' + w.amount).join(',')} totals ${preA + preB} -> ${postA + postB}`);
+    report('casino poker: full hand to showdown, pot paid in full, chips conserved', true, `A set the buy-in at ${SET_BUYIN}z, B joined at ${SET_BUYIN}z, pot=${doneState.pot} winners=${doneState.winners.map(w => w.name + ':' + w.amount).join(',')} totals ${preA + preB} -> ${postA + postB}`);
   } catch (e) { report('casino poker: full hand to showdown, pot paid in full, chips conserved', false, e.message); }
 
   // ---- casino bar: the day's first drink is the Phase 9 treat
@@ -481,8 +496,8 @@ async function main() {
     if (prompt.fromName !== NAME_D || prompt.ownerId !== D.id) throw new Error(`invite payload ${JSON.stringify(prompt)}`);
     B.client.send({ type: 'studio-invite-response', ownerId: D.id, accept: true });
     const bArr = await waitFor(() => lastOf(B.client, 'map', m => m.map.id === `studio:${D.id}`), 8000, 'B lands in D studio');
-    if (bArr.transferMs !== 3000) throw new Error(`invite transferMs ${bArr.transferMs}`);
-    report('room invite: B accepted from the Casino Lounge and landed in D\'s home via the 3s transfer', true, 'prompt -> accept -> map studio:<D> transferMs=3000');
+    if (bArr.transferMs !== 1500) throw new Error(`invite transferMs ${bArr.transferMs}`);
+    report('room invite: B accepted from the Casino Lounge and landed in D\'s home via the 1.5s transfer', true, 'prompt -> accept -> map studio:<D> transferMs=1500');
     await sleep(3400); // ride out B's transfer window
 
     // radio: D plays the loop library; B watches play + next; B stops it
@@ -660,17 +675,23 @@ async function main() {
     C.client.ws.close();
   } catch (e) { report('hookah lounge: 10 puffs at 5z turn C hippy (broadcast); hippy holds in the window and reverts 30s after the last puff', false, e.message); }
 
-  // ---- Phase 9: friends + join-friend + navigator travel
+  // ---- Phase 9: friends + navigator (v1.2 Item J: fast travel is
+  // owner-only now — these legs assert the NEW contract: regular
+  // accounts keep the who's-where INFO but their join-friend /
+  // navigate warps are refused server-side, so B WALKS instead.)
   try {
     A.client.send({ type: 'friend-request', username: B.name });
     await waitFor(() => lastOf(B.client, 'friend-request', f => f.fromId === A.id), 6000, 'B got friend request');
     B.client.send({ type: 'friend-respond', userId: A.id, accept: true });
     await waitFor(() => lastOf(A.client, 'friends', f => f.friends.some(u => u.id === B.id && u.online)), 6000, 'A sees B as online friend');
+    if (lastOf(B.client, 'hello').you.isOwner !== false) throw new Error('harness account B should NOT be flagged owner');
+    const mark = B.client.msgs.length;
     B.client.send({ type: 'join-friend', userId: A.id });
-    const jm = await waitFor(() => lastOf(B.client, 'map', m => m.map.id === 'the-gateway'), 10000, 'B joins A in the Gateway');
-    if (jm.transferMs !== 3000) throw new Error(`join transferMs=${jm.transferMs}`);
-    report('friends + join: request/accept, presence, B joins A via the 3s transfer', true, 'B landed in the-gateway with A');
-  } catch (e) { report('friends + join: request/accept, presence, B joins A via the 3s transfer', false, e.message); }
+    const refusal = await waitFor(() => B.client.msgs.slice(mark).filter(m => m.type === 'notice' && /Fast travel is owner-only/.test(m.text)).pop(), 6000, 'join-friend refused for a regular account');
+    if (!refusal) throw new Error('no owner-only refusal notice');
+    if (B.client.msgs.slice(mark).some(m => m.type === 'map')) throw new Error('a forged join-friend MOVED a regular account');
+    report('friends + join: request/accept + presence work; join-friend warp is owner-only (B refused, stays put)', true, 'refusal notice received, no map change');
+  } catch (e) { report('friends + join: request/accept + presence work; join-friend warp is owner-only (B refused, stays put)', false, e.message); }
 
   try {
     B.client.send({ type: 'navigator' });
@@ -679,11 +700,16 @@ async function main() {
     const gw = nav.places.find(p => p.id === 'the-gateway');
     if (!gw || gw.count < 2) throw new Error(`gateway count=${gw && gw.count} (A and B are there)`);
     if (!gw.friends.includes(A.name)) throw new Error('navigator does not mark A as a friend in the Gateway');
+    const mark2 = B.client.msgs.length;
     B.client.send({ type: 'navigate', mapId: 'frosthaven' });
-    const nm = await waitFor(() => lastOf(B.client, 'map', m => m.map.id === 'frosthaven'), 10000, 'B navigates to Frosthaven');
-    if (nm.transferMs !== 3000) throw new Error(`navigate transferMs=${nm.transferMs}`);
-    report('navigator: 10 places with live counts + friend markers, click-to-travel works', true, 'B travelled Gateway -> Frosthaven from the panel');
-  } catch (e) { report('navigator: 10 places with live counts + friend markers, click-to-travel works', false, e.message); }
+    const refusal2 = await waitFor(() => B.client.msgs.slice(mark2).filter(m => m.type === 'notice' && /Fast travel is owner-only/.test(m.text)).pop(), 6000, 'navigate refused for a regular account');
+    if (!refusal2) throw new Error('no owner-only refusal notice for navigate');
+    // So B walks the gatehouse like everyone else (this also sets
+    // up the reconnect leg's premise: B respawns in Frosthaven).
+    const nm = await travel(B.client, 1568, 48, 'frosthaven', 'B walks the Frosthaven gatehouse');
+    if (nm.transferMs !== 1500) throw new Error(`walk transferMs=${nm.transferMs}`);
+    report('navigator: 10 places with live counts + friend markers for everyone; travel owner-only — B walks the gatehouse', true, 'B refused the warp, then walked Gateway -> Frosthaven (1.5s transfer)');
+  } catch (e) { report('navigator: 10 places with live counts + friend markers for everyone; travel owner-only — B walks the gatehouse', false, e.message); }
 
   // ---- abrupt-drop reconnect
   try {

@@ -304,7 +304,7 @@ test('door transfer bay ⇄ lounge with the 3s input lock', { timeout: 60000 }, 
   teleport(u, 496, 1200); // the casino door tile in the bay
   const arrived = await arriveMap(u, 'casino-lounge');
   const t0 = Date.now();
-  assert.equal(arrived.transferMs, 3000, 'map message carries the fixed transfer window');
+  assert.equal(arrived.transferMs, 1500, 'map message carries the fixed transfer window');
   assert.equal(arrived.map.name, 'Casino Lounge');
   assert.ok(Math.abs(arrived.you.x - 496) < 2 && Math.abs(arrived.you.y - 528) < 2, 'placed at the lounge entryway');
   assert.equal(arrived.map.casino.tables.length, 6, 'client payload lists 6 tables');
@@ -333,7 +333,7 @@ test('door transfer bay ⇄ lounge with the 3s input lock', { timeout: 60000 }, 
   await sleep(1600);
   teleport(u, 480, 592); // lounge door-back rect
   const back = await arriveMap(u, 'solstice-bay');
-  assert.equal(back.transferMs, 3000);
+  assert.equal(back.transferMs, 1500);
   assert.ok(Math.abs(back.you.x - 528) < 2 && Math.abs(back.you.y - 1200) < 2, 'lands outside the casino door (off the pad, so it cannot bounce back in)');
   u.client.ws.close();
 });
@@ -560,12 +560,35 @@ test('fishing: the math contract + pond geography', () => {
   const audience = verdant.seats.filter(s => Number(s.id.split('-').pop()) >= 101);
   const backRow = Math.max(...audience.map(s => Math.floor(s.y / 32)));
   assert.ok(waterTop - backRow >= 4, `back row ty${backRow} vs waterline ty${waterTop}: >=3 clear tiles`);
-  // Fishing spots: several, all standable, riding the client payload.
-  assert.ok(verdant.fishing.length >= 4, `${verdant.fishing.length} fishing spots`);
-  for (const s of verdant.fishing) {
-    assert.equal(collides(verdant, s.x, s.y, 12), false, 'fishing spot stands on walkable ground');
+  // v1.2 (Items N/O): NO fixed spots — proximity fishing. The maps
+  // opt in via `fishable` (Frosthaven: `frozen` ice fishing), the
+  // flags ride the client payload (the prompt needs them), and
+  // every fishable map has standable bank tiles next to its water.
+  assert.equal(verdant.fishing, undefined, 'fixed Verdant spots are gone');
+  assert.ok(!verdant.props.some(p => p.kind === 'fishingpole'), 'rod-stand props removed');
+  assert.equal(verdant.fishable, true);
+  const frost = MAPS['frosthaven'];
+  assert.equal(frost.fishable, true, 'Frosthaven offers ice fishing');
+  assert.equal(frost.frozen, true);
+  assert.equal(clientMap(verdant).fishable, true, 'fishable rides the client payload');
+  assert.equal(clientMap(frost).fishable, true);
+  assert.equal(clientMap(frost).frozen, true);
+  for (const m of [verdant, frost]) {
+    let banks = 0, ice = 0;
+    m.tiles.rows.forEach((row, ty) => {
+      [...row].forEach((ch, tx) => {
+        if (ch === '%') ice++;
+      });
+    });
+    for (let ty = 1; ty < m.tiles.h - 1; ty++) for (let tx = 1; tx < m.tiles.w - 1; tx++) {
+      const here = m.tiles.rows[ty][tx];
+      if (here === '%') continue;
+      const nearWater = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => m.tiles.rows[ty + dy][tx + dx] === '%');
+      if (nearWater && !collides(m, tx * 32 + 16, ty * 32 + 16, 12)) banks++;
+    }
+    assert.ok(ice >= 30, `${m.id}: ${ice} water/ice tiles`);
+    assert.ok(banks >= 8, `${m.id}: ${banks} standable bank tiles for proximity casts`);
   }
-  assert.equal(clientMap(verdant).fishing.length, verdant.fishing.length, 'spots ride the client payload');
 });
 
 test('fishing: cast → catch pays exactly 1z, holds the fish up, one cast at a time', { timeout: 90000 }, async () => {
@@ -576,7 +599,8 @@ test('fishing: cast → catch pays exactly 1z, holds the fish up, one cast at a 
   teleport(w, 2016, 48);
   await arriveMap(w, 'verdant-hollow');
   await sleep(3300); // outlast the transfer lock
-  const spot = MAPS['verdant-hollow'].fishing[0];
+  // v1.2: any bank tile works — this is the pond's north shore.
+  const spot = { x: 33 * 32 + 16, y: 39 * 32 + 16 };
   teleport(u, spot.x, spot.y);
   teleport(w, spot.x + 64, spot.y);
   await sleep(300);
@@ -615,6 +639,60 @@ test('fishing: cast → catch pays exactly 1z, holds the fish up, one cast at a 
   await sleep(300);
   assert.equal(u.client.msgs.filter(m => m.type === 'fish-caught').length, catchCount, 'no catch broadcast on a miss');
   assert.equal(await balanceOf(u), before + 1, 'a miss pays nothing');
+  // v1.2: the room saw the CASTS too, each landing ON the water.
+  const casts = w.client.msgs.filter(m => m.type === 'fish-cast' && m.playerId === u.id);
+  assert.ok(casts.length >= 2, `witness saw ${casts.length} cast events`);
+  for (const c of casts) {
+    const lt = MAPS['verdant-hollow'].tiles.rows[Math.floor(c.landY / 32)][Math.floor(c.landX / 32)];
+    assert.equal(lt, '%', 'the bobber lands on water, 2-3 tiles out');
+    assert.equal(c.ice, false, 'open pond, not ice');
+  }
   u.client.ws.close();
   w.client.ws.close();
+});
+
+test('fishing v1.2: ice fishing at Frosthaven + water notices, never the sit error', { timeout: 120000 }, async () => {
+  const u = await makeUser('ice_ingrid');
+  // --- Frosthaven: cast from the frozen pond's south edge.
+  teleport(u, 1568, 48); // the Gateway's Frosthaven arch
+  await arriveMap(u, 'frosthaven');
+  await sleep(3300);
+  teleport(u, 10 * 32 + 16, 11 * 32 + 16); // ice edge, pond spans y3-10
+  await sleep(300);
+  const before = await balanceOf(u);
+  u.client.send({ type: 'debug-fish', op: 'force-catch' });
+  u.client.send({ type: 'interact' });
+  const drill = await waitFor(() => u.client.msgs.filter(m => m.type === 'notice' && /drill a hole/.test(m.text)).pop(),
+    5000, 'ice cast starts with the drill notice');
+  assert.ok(drill, 'ice fishing casts at the frozen pond');
+  const castEv = u.client.msgs.filter(m => m.type === 'fish-cast').pop();
+  assert.equal(castEv.ice, true, 'cast event flagged as ice');
+  assert.equal(MAPS['frosthaven'].tiles.rows[Math.floor(castEv.landY / 32)][Math.floor(castEv.landX / 32)], '%',
+    'the hole lands ON the ice');
+  u.client.send({ type: 'debug-fish', op: 'resolve-now' });
+  const caught = await waitFor(() => u.client.msgs.filter(m => m.type === 'fish-caught').pop(), 5000, 'ice catch broadcasts');
+  assert.ok(caught);
+  assert.equal(await balanceOf(u), before + 1, 'ice fish pays the same flat 1z');
+  assert.ok(!u.client.msgs.some(m => m.type === 'notice' && /Nothing to sit on/.test(m.text)),
+    'E at a pond NEVER returns the sit error (Item N sit-spam regression)');
+  // --- Gateway fountain: one clear notice, not silence/sit error.
+  const g = await makeUser('fount_fred');
+  teleport(g, 32 * 32 + 16, 21 * 32 + 16); // one tile west of the fountain water
+  await sleep(300);
+  g.client.send({ type: 'interact' });
+  const fn = await waitFor(() => g.client.msgs.filter(m => m.type === 'notice' && /No fishing in the fountain/.test(m.text)).pop(),
+    5000, 'fountain edge answers with the fountain notice');
+  assert.ok(fn);
+  // --- Solstice Bay waterline: the open-sea notice.
+  const b = await makeUser('sea_sue');
+  teleport(b, 1120, 48); // the Gateway's Solstice Bay arch
+  await arriveMap(b, 'solstice-bay');
+  await sleep(3300);
+  teleport(b, 36 * 32 + 16, 5 * 32 + 16); // boardwalk at the waterline
+  await sleep(300);
+  b.client.send({ type: 'interact' });
+  const sn = await waitFor(() => b.client.msgs.filter(m => m.type === 'notice' && /open sea is too rough/.test(m.text)).pop(),
+    5000, 'bay waterline answers with the rough-sea notice');
+  assert.ok(sn);
+  u.client.ws.close(); g.client.ws.close(); b.client.ws.close();
 });

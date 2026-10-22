@@ -229,6 +229,43 @@ html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; ba
 .traySection input { background: #171126; color: #ffe9c9; border: 1.5px solid #8a5a2b; border-radius: 8px; padding: 5px 8px; }
 #raiseAmt { width: 92px; }
 #tableChatInput { width: 170px; }
+/* slot machine GUI (v1.2 Item H): the seated player's cabinet
+   window — chunky warm frame, three big reel windows with a
+   payline, bet + balance + a big SPIN. */
+#slotGui { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: rgba(10,5,16,.38); z-index: 7; }
+#slotGui.hidden { display: none; }
+.slotCabinet { background: linear-gradient(180deg, #3a1c10, #241207); border: 3px solid #ffd23f;
+  border-radius: 18px; padding: 16px 20px 14px; width: 340px; text-align: center;
+  box-shadow: 0 18px 50px rgba(0,0,0,.75), inset 0 2px 0 rgba(255,220,150,.35); color: #ffe9c9; }
+.slotHead { display: flex; justify-content: space-between; align-items: center; }
+.slotHead .spTitle { color: #ffd23f; font-weight: 900; letter-spacing: 1px; }
+#slotGuiClose { background: #3a2817; color: #ffe9c9; border: 1.5px solid #8a5a2b; border-radius: 8px;
+  width: 28px; height: 28px; cursor: pointer; font-weight: 800; }
+#slotGuiJackpot { margin: 8px 0 10px; font-size: 14px; }
+.slotReels { position: relative; display: flex; gap: 8px; justify-content: center;
+  background: #171126; border: 2px solid #8a5a2b; border-radius: 12px; padding: 10px; }
+.slotReel { width: 84px; height: 64px; overflow: hidden; border-radius: 8px; position: relative;
+  background: linear-gradient(180deg, #f5ead2, #e8d9b8); box-shadow: inset 0 0 0 2px #8a5a2b, inset 0 10px 14px rgba(0,0,0,.28), inset 0 -10px 14px rgba(0,0,0,.28); }
+.slotReel.win { box-shadow: inset 0 0 0 3px #57d977, 0 0 18px #57d977; }
+.slotReel.jackpot { box-shadow: inset 0 0 0 3px #ffd23f, 0 0 26px #ffd23f; animation: slotJackpotPulse .5s ease-in-out 6 alternate; }
+@keyframes slotJackpotPulse { from { transform: scale(1); } to { transform: scale(1.05); } }
+.reelStrip { position: absolute; left: 0; right: 0; top: 0; will-change: transform; }
+.reelStrip.spinning { filter: blur(2.5px); }
+.reelSym { height: 64px; display: flex; align-items: center; justify-content: center; font-size: 40px; }
+.slotPayline { position: absolute; left: 4px; right: 4px; top: 50%; height: 2px; margin-top: -1px;
+  background: rgba(255,45,120,.55); pointer-events: none; }
+.slotPayDim { margin-top: 8px; }
+.slotControls { justify-content: center; align-items: center; margin-top: 10px; }
+.guiBetBtn { background: #3a2817; color: #ffe9c9; border: 1.5px solid #8a5a2b; border-radius: 8px;
+  padding: 5px 10px; cursor: pointer; font-weight: 700; }
+.guiBetBtn.active { background: #ffd23f; color: #2b1d12; border-color: #ffd23f; }
+#slotGuiSpin { margin-top: 10px; background: #ffd23f; color: #2b1d12; border: 2px solid #ffd23f;
+  border-radius: 12px; padding: 12px 42px; font-size: 19px; font-weight: 900; letter-spacing: 1px; cursor: pointer;
+  box-shadow: 0 6px 0 #b8960f; }
+#slotGuiSpin:hover:not(:disabled) { filter: brightness(1.07); }
+#slotGuiSpin:disabled { opacity: .5; cursor: default; box-shadow: none; }
+#slotGuiMsg { margin-top: 10px; min-height: 16px; }
 #pokerOffer { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
   background: rgba(10,5,16,.45); z-index: 8; }
 #pokerOffer.hidden { display: none; }
@@ -349,3 +386,39 @@ html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; ba
 #cdBox button, #chartBtn { padding: 3px 8px; border-radius: 6px; border: 1px solid #8a6a45;
   background: #3a2a18; color: #eef; cursor: pointer; font-size: 11px; margin-left: 6px; }
 #cdBox button:hover, #chartBtn:hover { border-color: #ffd23f; color: #ffd23f; }
+
+/* Fishing proximity prompt (v1.2 Item O): a warm pill floating
+   bottom-center, shown only at a fishable bank. Sibling of #hud,
+   so it takes pointer events directly (no opt-in needed). */
+#fishHint { position: absolute; left: 50%; bottom: 92px; transform: translateX(-50%); z-index: 30;
+  background: linear-gradient(180deg, #8a5a2b, #6f4520); color: #ffe9c4; border: 2px solid #3d2712;
+  border-radius: 999px; padding: 9px 20px; font: 600 15px system-ui; cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0,0,0,.45); }
+#fishHint:hover { filter: brightness(1.12); }
+
+/* Furniture store window (v1.2 Item C): dim backdrop + warm card,
+   scrollable catalog grid. */
+#storeModal { position: fixed; inset: 0; z-index: 60; background: rgba(20,10,4,.62);
+  display: flex; align-items: center; justify-content: center; }
+#storeModal.hidden { display: none; }
+.storeCard { background: linear-gradient(180deg, #3a2417, #2a1a10); color: #ffe9c4;
+  border: 2px solid #8a5a2b; border-radius: 14px; width: min(680px, 94vw);
+  max-height: 84vh; display: flex; flex-direction: column; padding: 14px 16px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.6); }
+.storeHead { display: flex; justify-content: space-between; align-items: center;
+  font: 700 17px system-ui; margin-bottom: 4px; }
+#storeGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  gap: 8px; overflow-y: auto; margin-top: 10px; padding-right: 4px; }
+.storeItem { background: rgba(255,233,196,.07); border: 1px solid rgba(255,233,196,.18);
+  border-radius: 10px; padding: 8px; text-align: center; }
+.storeIcon { font-size: 24px; }
+.storeName { font: 600 12.5px system-ui; margin: 3px 0; }
+.storePrice { color: #ffd98a; font: 700 13px system-ui; margin-bottom: 4px; }
+/* Inventory drag chips + the drag ghost (v1.2 Item C). */
+.invChip { cursor: grab; touch-action: none; user-select: none; }
+.invGrip { opacity: .55; }
+.invGhost { position: fixed; z-index: 80; pointer-events: none;
+  background: #3a2417; color: #ffe9c4; border: 2px solid #8a5a2b; border-radius: 10px;
+  padding: 6px 12px; font: 600 14px system-ui; box-shadow: 0 6px 18px rgba(0,0,0,.5); }
+.invGhost.ok { border-color: #7dc95e; }
+.invGhost.bad { border-color: #e2543e; opacity: .75; }

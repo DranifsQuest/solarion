@@ -163,7 +163,7 @@ async function toHookah(user) {
 test('neon casino: door transfer works both ways, payload is a full casino', { timeout: 60000 }, async () => {
   const u = await makeUser('neon_nina');
   const arrived = await toNeonCasino(u);
-  assert.equal(arrived.transferMs, 3000, 'door transfer uses the 3s load screen');
+  assert.equal(arrived.transferMs, 1500, 'door transfer uses the 1.5s load screen');
   assert.equal(arrived.map.name, 'Neon Casino');
   assert.ok(Math.abs(arrived.you.x - 496) < 2 && Math.abs(arrived.you.y - 528) < 2, 'placed at the entryway');
   assert.equal(arrived.map.casino.tables.length, 6, 'neon casino has 6 tables');

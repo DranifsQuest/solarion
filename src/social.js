@@ -26,6 +26,7 @@
 
 const { db, q } = require('./db');
 const { MAPS, collides } = require('./maps');
+const { isOwnerName } = require('./owners');
 const music = require('./music');
 
 const SCENE_CAPACITY = 25; // soul doc §2: the original capped rooms at 25
@@ -243,7 +244,21 @@ class SocialSystem {
     return { type: 'navigator', places, homes: homes.filter(h => !h.locked || h.mine || h.here) };
   }
 
+  /**
+   * v1.2 (Item J): fast travel is an OWNER-ONLY perk — everyone
+   * else walks through the gatehouses. Enforced HERE, server-side:
+   * the client hides the controls for non-owners, but a forged
+   * navigate / join-friend message must still go nowhere.
+   */
+  ownerGate(p) {
+    const u = q.userById.get(p.userId);
+    if (u && isOwnerName(u.username)) return true;
+    this.game.send(p, { type: 'notice', text: '🚪 Fast travel is owner-only — use the gatehouses.' });
+    return false;
+  }
+
   handleNavigate(p, msg) {
+    if (!this.ownerGate(p)) return;
     const target = typeof msg.mapId === 'string' ? MAPS[msg.mapId] : null;
     if (!target) { this.game.send(p, { type: 'notice', text: 'No such place.' }); return; }
     if (p.mapId === target.id) { this.game.send(p, { type: 'notice', text: 'You are already here.' }); return; }
@@ -258,6 +273,7 @@ class SocialSystem {
   }
 
   handleJoinFriend(p, msg) {
+    if (!this.ownerGate(p)) return;
     const friendId = Number.isInteger(msg.userId) ? msg.userId : null;
     if (friendId === null) return;
     if (!areFriends(p.userId, friendId)) {

@@ -130,6 +130,17 @@ async function toBay(user) {
     5000, `${user.name} arrives in solstice-bay`);
 }
 
+/** One walking hop: let the 1.5s transfer lock lapse, teleport onto
+ *  a gateway/door pad, wait for the map switch. (v1.2: navigate is
+ *  owner-only now, so test transport walks like everyone else.) */
+async function hop(user, x, y, mapId) {
+  await sleep(1750);
+  user.client.send({ type: 'debug-teleport', x, y });
+  await waitFor(
+    () => user.client.msgs.filter(m => m.type === 'map' && m.map.id === mapId).pop(),
+    8000, `${user.name} arrives in ${mapId}`);
+}
+
 // ------------------------------------------------------------ item 10: homes v2
 
 test('homes v2: name/paint/floor persist, expansion keeps furniture, lock + invite rules', { timeout: 120000 }, async () => {
@@ -220,11 +231,17 @@ test('homes v2: name/paint/floor persist, expansion keeps furniture, lock + invi
 test('bartender daily: first drink free + 10z tip, once per day across BOTH bars', { timeout: 90000 }, async () => {
   const u = await makeUser('barfly_p9');
   async function atBar(mapId) {
-    u.client.send({ type: 'navigate', mapId });
-    await waitFor(() => {
-      const m = [...u.client.msgs].reverse().find(x => x.type === 'map');
-      return m && m.map.id === mapId ? m : null;
-    }, 8000, `arrives in ${mapId}`);
+    // v1.2: walk it — Gateway -> Bay arch -> lounge door; then out
+    // the lounge door, Bay -> Gateway gateway, Neon arch, casino door.
+    if (mapId === 'casino-lounge') {
+      await hop(u, 1120, 48, 'solstice-bay');
+      await hop(u, 496, 1200, 'casino-lounge');
+    } else {
+      await hop(u, 480, 592, 'solstice-bay');
+      await hop(u, 1152, 1392, 'the-gateway');
+      await hop(u, 224, 48, 'neon-district');
+      await hop(u, 1968, 944, 'neon-casino');
+    }
     u.client.send({ type: 'debug-teleport', x: 176, y: 528 }); // patron spot, both bars
     await sleep(350);
   }
@@ -249,8 +266,8 @@ test('casino social: table chat reaches the table only; jackpot accrues 2% per b
   const b = await makeUser('table_b_p9'); // spectator at the same table
   const c = await makeUser('table_c_p9'); // same casino, far away
   for (const u of [a, b, c]) {
-    u.client.send({ type: 'navigate', mapId: 'casino-lounge' });
-    await waitFor(() => u.client.msgs.filter(m => m.type === 'map' && m.map.id === 'casino-lounge').pop(), 8000, `${u.name} in the lounge`);
+    await hop(u, 1120, 48, 'solstice-bay');
+    await hop(u, 496, 1200, 'casino-lounge');
   }
   const loungeMap = a.client.msgs.filter(m => m.type === 'map' && m.map.id === 'casino-lounge').pop();
   const t1 = loungeMap.map.casino.tables[0];
@@ -362,8 +379,9 @@ test('burn-to-CD: stage refuses without a CD; CDs are reusable + deletable, mixe
 
   // …then the SAME CD performs again across town (per-map cooldown),
   // and the collection sync on arrival still lists exactly one CD.
-  u.client.send({ type: 'navigate', mapId: 'neon-district' });
-  await waitFor(() => u.client.msgs.filter(m => m.type === 'map' && m.map.id === 'neon-district').pop(), 8000, 'arrives in neon');
+  // v1.2: walk Bay -> Gateway -> Neon (navigate is owner-only now).
+  await hop(u, 1152, 1392, 'the-gateway');
+  await hop(u, 224, 48, 'neon-district');
   const sync = await waitFor(() => u.client.msgs.filter(m => m.type === 'cds' && m.cds.length === 1).pop(), 5000, 'CD still in the collection after set #1');
   assert.equal(sync.cds[0].id, burned.cds[0].id, 'same physical CD');
   u.client.send({ type: 'stage-join', mixId: mix.id });
@@ -385,8 +403,9 @@ test('burn-to-CD: stage refuses without a CD; CDs are reusable + deletable, mixe
   // Cinder Mesa: a fresh stage, so the per-map cooldown can't mask
   // the missing-CD refusal.)
   await waitFor(() => u.client.msgs.filter(m => m.type === 'performance-end').pop(), 30000, 'performance #2 ends');
-  u.client.send({ type: 'navigate', mapId: 'cinder-mesa' });
-  await waitFor(() => u.client.msgs.filter(m => m.type === 'map' && m.map.id === 'cinder-mesa').pop(), 8000, 'arrives in the mesa');
+  // v1.2: walk Neon -> Gateway -> Mesa.
+  await hop(u, 1152, 1392, 'the-gateway');
+  await hop(u, 672, 48, 'cinder-mesa');
   u.client.send({ type: 'stage-join', mixId: mix.id });
   const refused2 = await waitFor(() => u.client.msgs.filter(m => m.type === 'notice' && /Burn .* to a CD first/.test(m.text)).pop(),
     5000, 'stage refuses the deleted CD');
@@ -497,7 +516,7 @@ test('records unit: platinum at 100 lifetime ups (once each), chart window exclu
   assert.equal(mine.ups, 150, 'chart counts only the trailing 7 days (60+39+1+50)');
 });
 
-test('friends: request → accept, presence + locations, join-friend travel, remove', { timeout: 60000 }, async () => {
+test('friends: request → accept, presence + locations, owner-only fast travel (Item J), remove', { timeout: 120000 }, async () => {
   const a = await makeUser('pal_a_p9');
   const b = await makeUser('pal_b_p9');
   // A asks; B is notified and sees the incoming request.
@@ -535,29 +554,68 @@ test('friends: request → accept, presence + locations, join-friend travel, rem
   assert.ok(bay.friends.includes(b.name), 'navigator marks where friends are');
   assert.ok(nav.places.some(pl => pl.id === 'casino-lounge'), 'navigator lists interiors');
 
-  // A joins B through the standard transfer.
+  // v1.2 (Item J): A is a REGULAR account — fast travel is
+  // owner-only. A's join-friend warp is refused server-side and A
+  // does not move; navigate is refused the same way. (The
+  // who's-where INFO above stays available to everyone.)
   a.client.msgs.length = 0;
   a.client.send({ type: 'join-friend', userId: b.id });
-  const arrived = await waitFor(() => a.client.msgs.filter(m => m.type === 'map' && m.map.id === 'solstice-bay').pop(),
-    8000, 'A joins B in the bay');
-  assert.equal(arrived.transferMs, 3000, 'join-friend rides the 3s transfer');
-  await waitPos(a, p => Math.hypot(p.x - myPos(b).x, p.y - myPos(b).y) < 160, 10000, 'A lands near B');
-
-  // Navigator travel to a city directly.
+  const gateRefusal = await waitFor(() => a.client.msgs.filter(m => m.type === 'notice' && /Fast travel is owner-only/.test(m.text)).pop(),
+    5000, 'regular join-friend refused by the owner gate');
+  assert.ok(gateRefusal);
+  await sleep(400);
+  assert.ok(!a.client.msgs.some(m => m.type === 'map'), 'a forged warp never moves a regular account');
   a.client.send({ type: 'navigate', mapId: 'frosthaven' });
-  await waitFor(() => a.client.msgs.filter(m => m.type === 'map' && m.map.id === 'frosthaven').pop(),
-    8000, 'A navigates to Frosthaven');
+  const navRefusal = await waitFor(() => a.client.msgs.filter(m => m.type === 'notice' && /Fast travel is owner-only/.test(m.text)).pop(),
+    5000, 'regular navigate refused by the owner gate');
+  assert.ok(navRefusal);
 
-  // Remove: both sides drop the friendship; join is refused afterwards.
+  // The owner flag rides the hello: regulars false, Zan's true.
+  assert.equal(a.client.hello.you.isOwner, false, 'regular account: isOwner false in hello');
+  const o = await makeUser('zantheon');
+  assert.equal(o.client.hello.you.isOwner, true, 'owner account: isOwner true in hello');
+
+  // The OWNER fast-travels exactly as before: walk to Verdant,
+  // befriend B (who is in the Bay), join-friend warps over.
+  await hop(o, 2016, 48, 'verdant-hollow');
+  o.client.send({ type: 'friend-request', username: b.name });
+  await waitFor(() => b.client.msgs.filter(m => m.type === 'friend-request' && m.fromId === o.id).pop(),
+    5000, 'B gets the owner friend request');
+  b.client.send({ type: 'friend-respond', userId: o.id, accept: true });
+  await waitFor(() => {
+    const f = o.client.msgs.filter(m => m.type === 'friends').pop();
+    return f && f.friends.some(u => u.id === b.id) ? f : null;
+  }, 5000, 'owner sees B as friend');
+  await sleep(1900); // outlast the Verdant hop's transfer lock
+  o.client.msgs.length = 0;
+  o.client.send({ type: 'join-friend', userId: b.id });
+  const arrived = await waitFor(() => o.client.msgs.filter(m => m.type === 'map' && m.map.id === 'solstice-bay').pop(),
+    8000, 'owner joins B in the bay');
+  assert.equal(arrived.transferMs, 1500, 'join-friend rides the 1.5s transfer');
+  await waitPos(o, p => Math.hypot(p.x - myPos(b).x, p.y - myPos(b).y) < 160, 10000, 'owner lands near B');
+
+  // Remove: both sides drop the friendship; joins are refused
+  // afterwards — regulars at the owner gate, the owner (past the
+  // gate) at the friend check.
   a.client.send({ type: 'friend-remove', userId: b.id });
   await waitFor(() => {
     const f = a.client.msgs.filter(m => m.type === 'friends').pop();
     return f && !f.friends.some(u => u.id === b.id) ? f : null;
   }, 5000, 'friendship removed for A');
   a.client.send({ type: 'join-friend', userId: b.id });
-  const refusal = await waitFor(() => a.client.msgs.filter(m => m.type === 'notice' && /only join a friend/.test(m.text)).pop(),
-    5000, 'join refused for non-friend');
+  const refusal = await waitFor(() => a.client.msgs.filter(m => m.type === 'notice' && /Fast travel is owner-only/.test(m.text)).pop(),
+    5000, 'regular join still owner-gated after removal');
   assert.ok(refusal);
+  o.client.send({ type: 'friend-remove', userId: b.id });
+  await waitFor(() => {
+    const f = o.client.msgs.filter(m => m.type === 'friends').pop();
+    return f && !f.friends.some(u => u.id === b.id) ? f : null;
+  }, 5000, 'friendship removed for the owner');
+  o.client.send({ type: 'join-friend', userId: b.id });
+  const refusalO = await waitFor(() => o.client.msgs.filter(m => m.type === 'notice' && /only join a friend/.test(m.text)).pop(),
+    5000, 'owner join refused for non-friend');
+  assert.ok(refusalO);
+  o.client.ws.close();
   a.client.ws.close(); b.client.ws.close();
 });
 
