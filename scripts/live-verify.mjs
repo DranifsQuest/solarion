@@ -15,8 +15,8 @@ import WebSocket from 'ws';
 const BASE = (process.env.SOLARION_BASE || 'https://solarion.onrender.com').replace(/\/$/, '');
 const WS_BASE = BASE.replace(/^http/, 'ws');
 const SFX = Date.now().toString(36).slice(-6);
-const NAME_A = `vfy${SFX}a`;
-const NAME_B = `vfy${SFX}b`;
+const NAME_A = `TestBot${SFX}a`;
+const NAME_B = `TestBot${SFX}b`;
 const PW = 'verify-pass-1';
 
 const results = [];
