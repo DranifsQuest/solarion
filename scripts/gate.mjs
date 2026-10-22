@@ -77,6 +77,7 @@ const TEST_FILES = [
   ['test/audio-glitch.test.js', null, 0,   0,     0],   // no server (v1.3 mixer static fix: offline renders + choke pins)
   ['test/playtest-gate.test.js', null, 0,  0,     0],   // no server (Playtest Gate: checker codec/projection/selftest)
   ['test/club.test.js',      50700, 20,    0,     0],   // 50700 (Club Mirage, v1.4)
+  ['test/blackjack.test.js', 50900, 20,    0,     0],   // 50900 (blackjack + solo poker, v1.5)
   ['test/dressing-validator.test.js', null, 0, 0, 0],   // no server (v1.4.1 seat audit: validator negative tests)
 ].map(([file, base, stride, extra, run]) => ({ file, base, stride, extra, run }));
 
@@ -93,7 +94,8 @@ const CORE_SET = ['test/test.js', 'test/expansion.test.js', 'test/phase9.test.js
 // ---------------------------------------------------------------------------
 const MAPPING = [
   { match: /^src\/(music|stage)\.js$/,            tests: ['test/music.test.js', 'test/audibility.test.js', 'test/mixer-cells.test.js'], why: 'music/stage engine' },
-  { match: /^src\/casino\.js$/,                   tests: ['test/casino.test.js', 'test/vice.test.js'], why: 'casino engine (vice covers the casino bars/hookah)' },
+  { match: /^src\/casino\.js$/,                   tests: ['test/casino.test.js', 'test/vice.test.js', 'test/blackjack.test.js'], why: 'casino engine (vice covers the casino bars/hookah; blackjack shares its ledger + deck)' },
+  { match: /^src\/blackjack\.js$/,                tests: ['test/blackjack.test.js', 'test/casino.test.js'], why: 'blackjack engine (v1.5; casino covers the shared ledger/seat paths)' },
   { match: /^src\/club\.js$/,                     tests: ['test/club.test.js'], why: 'Club Mirage dancer tips (v1.4)' },
   { match: /^src\/studio\.js$/,                   tests: ['test/studios.test.js', 'test/homes.test.js'], why: 'studios/homes engine' },
   { match: /^src\/appearance\.js$/,               tests: ['test/creation.test.js', 'test/sprites.test.js'], why: 'appearance options feed creation + sprite rendering' },

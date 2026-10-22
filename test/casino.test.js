@@ -962,3 +962,134 @@ test('slot stools: seated player faces the machine in BOTH casinos (Item G)', { 
   await sitAndCheck(v, { x: 624, y: 140 }, 'up', 'neon north-row slot');
   v.client.ws.close();
 });
+
+// ------------------------------------------------------------------ v1.5
+// Feature 2 (one-player minimum + house match) and the accounting
+// fix that shipped with it. Unit legs are deterministic against
+// the ported table; live legs drive real hands at table 2.
+
+test('accounting: raise-and-fold pays the TRUE pot (bet is a subset of committed)', { timeout: 30000 }, () => {
+  const fakeGame = { getPlayer: () => null, send: () => {}, broadcastToMap: () => {}, savePosition: () => {} };
+  const fakeCasino = { mapId: 'casino-lounge', stepOffChair: () => {} };
+  const def = { id: 'unit-acct', x: 0, y: 0, chairs: ['N', 'E', 'S', 'W'].map((dir, i) => ({ dir, x: i * 10, y: 0 })) };
+  const t = new casino.PokerTable(fakeGame, fakeCasino, def);
+  const mk = (userId, name) => ({ userId, name, chips: 200, buyin: 200, bet: 0, committed: 0, hole: [], inHand: false, folded: false, allIn: false, sittingOut: false });
+  const P = (userId) => ({ userId, x: 0, y: 0 }); // act() proximity-guards: stand AT the table (0,0)
+  t.chairs[0].seat = mk(1, 'A'); t.chairs[1].seat = mk(2, 'B');
+  t.startHand();
+  t.act(P(2), 'raise', 25); // small blind raises to 25 (committed 25)
+  t.act(P(1), 'fold');      // big blind folds (committed 5)
+  const total = t.chairs.reduce((a, c) => a + (c.seat ? c.seat.chips : 0), 0);
+  assert.equal(total, 400, 'no chips created by the settlement');
+  assert.equal(t.lastWinners[0].amount, 30, 'the pot was 25 + 5, not double-counted');
+});
+
+test('solo poker unit: lone hand runs the full board, house matches 1:1', { timeout: 30000 }, () => {
+  const fakeGame = { getPlayer: () => null, send: () => {}, broadcastToMap: () => {}, savePosition: () => {} };
+  const fakeCasino = { mapId: 'casino-lounge', stepOffChair: () => {} };
+  const def = { id: 'unit-solo', x: 0, y: 0, chairs: ['N', 'E', 'S', 'W'].map((dir, i) => ({ dir, x: i * 10, y: 0 })) };
+  const mk = (userId, name) => ({ userId, name, chips: 200, buyin: 200, bet: 0, committed: 0, hole: [], inHand: false, folded: false, allIn: false, sittingOut: false });
+  const P = (userId) => ({ userId, x: 0, y: 0 }); // act() proximity-guards: stand AT the table (0,0)
+  // Check-down solo hand: ante 5, matched 5, wins 10.
+  const t = new casino.PokerTable(fakeGame, fakeCasino, def);
+  t.chairs[0].seat = mk(1, 'Solo');
+  t.startHand();
+  assert.equal(t.soloHand, true, 'the solo latch sets at the deal');
+  const st0 = t.publicState();
+  assert.equal(st0.solo, true);
+  assert.equal(st0.houseMatch, 5, 'the ante is already matched in the display pot');
+  assert.equal(st0.pot, 10, 'display pot = stake + house match');
+  let guard = 0;
+  while (t.state !== 'done' && guard++ < 40) {
+    if (t.actionChair >= 0) t.act(P(1), 'check'); else t.checkHandEnd();
+  }
+  assert.equal(t.state, 'done');
+  assert.equal(t.community.length, 5, 'the full board ran out');
+  assert.equal(t.chairs[0].seat.chips, 205, 'net = +own contribution (5), house matched');
+  // Solo hand with a raise: contribution 50, matched 50, wins 100.
+  const t2 = new casino.PokerTable(fakeGame, fakeCasino, def);
+  t2.chairs[0].seat = mk(1, 'Solo');
+  t2.startHand();
+  t2.act(P(1), 'raise', 50);
+  assert.equal(t2.publicState().pot, 100, 'the match grows with the contribution');
+  guard = 0;
+  while (t2.state !== 'done' && guard++ < 40) {
+    if (t2.actionChair >= 0) t2.act(P(1), 'check'); else t2.checkHandEnd();
+  }
+  assert.equal(t2.chairs[0].seat.chips, 250, 'net = +50 on a 50 contribution');
+});
+
+test('solo poker unit: a 2-player hand that folds to one pays NO house match', { timeout: 30000 }, () => {
+  const fakeGame = { getPlayer: () => null, send: () => {}, broadcastToMap: () => {}, savePosition: () => {} };
+  const fakeCasino = { mapId: 'casino-lounge', stepOffChair: () => {} };
+  const def = { id: 'unit-boundary', x: 0, y: 0, chairs: ['N', 'E', 'S', 'W'].map((dir, i) => ({ dir, x: i * 10, y: 0 })) };
+  const mk = (userId, name) => ({ userId, name, chips: 200, buyin: 200, bet: 0, committed: 0, hole: [], inHand: false, folded: false, allIn: false, sittingOut: false });
+  const P = (userId) => ({ userId, x: 0, y: 0 }); // act() proximity-guards: stand AT the table (0,0)
+  const t = new casino.PokerTable(fakeGame, fakeCasino, def);
+  t.chairs[0].seat = mk(1, 'A'); t.chairs[1].seat = mk(2, 'B');
+  t.startHand();
+  assert.equal(t.soloHand, false, 'dealt with two: never solo');
+  let guard = 0;
+  while (t.state !== 'done' && guard++ < 40) {
+    const i = t.actionChair;
+    if (i < 0) { t.checkHandEnd(); continue; }
+    if (t.chairs[i].seat.name === 'B') t.act(P(2), 'fold');
+    else t.act(P(1), t.currentBet > t.chairs[i].seat.bet ? 'call' : 'check');
+  }
+  assert.equal(t.state, 'done');
+  assert.equal(t.publicState().houseMatch, 0, 'no house money in a folded-down hand');
+  const total = t.chairs.reduce((a, c) => a + (c.seat ? c.seat.chips : 0), 0);
+  assert.equal(total, 400, 'chips conserved exactly — nothing matched, nothing created');
+});
+
+test('poker live: SOLO hand deals, board broadcasts street by street, matched pot pays', { timeout: 120000 }, async () => {
+  const u = await makeUser('solo_sam');
+  await toCasino(u);
+  await sitAt(u, T2, 'N'); // direct sit buys in 200; alone at the table
+  assert.equal(await balanceOf(u), 4800);
+  const done = await driveHand([u], T2.id, (usr, st) => {
+    usr.client.send({ type: 'poker', action: 'act', table: T2.id, act: st.toCall > 0 ? 'call' : 'check' });
+  });
+  assert.equal(done.solo, true, 'the hand was latched solo at the deal');
+  assert.ok(done.houseMatch > 0, 'the house matched the solo contribution');
+  assert.equal(done.houseMatch * 2, done.pot, 'pot = contribution + equal match');
+  const wonTotal = done.winners.reduce((s, w) => s + w.amount, 0);
+  assert.equal(wonTotal, done.pot, 'the winner collects the full matched pot');
+  // Feature 1's broadcast contract: the board arrived street by
+  // street in the table state (3 on the flop, 4 turn, 5 river).
+  const lengths = new Set(
+    u.client.msgs.filter(m => m.type === 'poker-state' && m.id === T2.id).map(m => (m.community || []).length));
+  assert.ok(lengths.has(3) && lengths.has(4) && lengths.has(5),
+    `board lengths broadcast: ${[...lengths].sort().join(',')}`);
+  const idle = await waitFor(() => {
+    const s = latestTable(u, T2.id);
+    return s && s.state === 'idle' ? s : null;
+  }, 15000, 'solo table back to idle');
+  assert.equal(seatChips(idle, u.name), 200 + done.houseMatch,
+    'stack grew by exactly the house match (own stake returned)');
+  u.client.ws.close();
+});
+
+test('poker live: 2-player hand folding down pays no match (boundary)', { timeout: 120000 }, async () => {
+  const a = await makeUser('bd_amy');
+  const b = await makeUser('bd_ben');
+  await toCasino(a); await toCasino(b);
+  await sitAt(a, T2, 'N');
+  await sitAt(b, T2, 'S');
+  const done = await driveHand([a, b], T2.id, (u, st) => {
+    if (u.name === b.name) u.client.send({ type: 'poker', action: 'act', table: T2.id, act: 'fold' });
+    else u.client.send({ type: 'poker', action: 'act', table: T2.id, act: st.toCall > 0 ? 'call' : 'check' });
+  });
+  assert.equal(done.solo, false, 'dealt with two players');
+  assert.equal(done.houseMatch, 0, 'no house match in a multi-player hand');
+  const wonTotal = done.winners.reduce((s, w) => s + w.amount, 0);
+  assert.equal(wonTotal, done.pot, 'winner paid the true pot only');
+  const idle = await waitFor(() => {
+    const s = latestTable(a, T2.id);
+    return s && s.state === 'idle' ? s : null;
+  }, 15000, 'boundary table back to idle');
+  const total = (await balanceOf(a)) + seatChips(idle, a.name)
+    + (await balanceOf(b)) + seatChips(idle, b.name);
+  assert.equal(total, 10000, 'chips conserved — the house added nothing');
+  a.client.ws.close(); b.client.ws.close();
+});

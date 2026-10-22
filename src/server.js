@@ -60,6 +60,7 @@ const { StageManager } = require('./stage');
 const { ClubSystem } = require('./club');
 const casinoModule = require('./casino');
 const { CasinoSystem } = casinoModule;
+const { BlackjackSystem } = require('./blackjack');
 const studioModule = require('./studio');
 const { StudioSystem } = studioModule;
 const socialModule = require('./social');
@@ -99,6 +100,13 @@ for (const [mapId, map] of Object.entries(MAPS)) {
 // defs, so future cities with a lounge get tables for free.
 const casino = new CasinoSystem(game);
 casino.initFromMaps(MAPS);
+// v1.5: blackjack — one converted table per casino (src/blackjack.js).
+// The two systems share the chips ledger, so each refuses the
+// other's seated players (one stack per player, one mirror row).
+const blackjack = new BlackjackSystem(game);
+blackjack.initFromMaps(MAPS);
+blackjack.pokerSeated = (userId) => casino.isSeated(userId);
+casino.blackjackSeated = (userId) => blackjack.isSeated(userId);
 // v1.4: Club Mirage — dancer tips (the drinks ride game.js's
 // shared bar/vice path; the club def comes from the map data).
 const club = new ClubSystem(game);
@@ -122,9 +130,15 @@ stages.onTrophy = (userId, kind, mixName) => {
     if (target.mapId.startsWith('studio:')) studios.sendState(target);
   }
 };
-game.onPlayerGone = (userId) => { stages.handlePlayerGone(userId); casino.handlePlayerGone(userId); };
-game.onStandUp = (p, seat, viaMovement) => casino.releaseSeatStand(p, seat, viaMovement);
-game.onMapEntered = (p) => { stages.syncPlayer(p); casino.syncPlayer(p); };
+game.onPlayerGone = (userId) => { stages.handlePlayerGone(userId); casino.handlePlayerGone(userId); blackjack.handlePlayerGone(userId); };
+game.onStandUp = (p, seat, viaMovement) => {
+  // v1.5: seat kinds route to their owning system.
+  if (seat && (seat.kind === 'blackjack' || seat.kind === 'blackjack-pending')) {
+    return blackjack.releaseSeatStand(p, seat, viaMovement);
+  }
+  return casino.releaseSeatStand(p, seat, viaMovement);
+};
+game.onMapEntered = (p) => { stages.syncPlayer(p); casino.syncPlayer(p); blackjack.syncPlayer(p); };
 
 function sendAvatar(res, result) {
   res.json({
@@ -358,6 +372,23 @@ if (TEST_MODE) {
         }
       }
       if (picks.length) groups.push({ id: 'poker', seats: picks });
+      // v1.5: mid-hand captures for the parent sign-off — a poker
+      // table with the board ON the felt (Feature 1) and the
+      // blackjack table with hands down (Feature 3). The payload
+      // builder attaches synthetic table states for exactly these
+      // shot ids (see tableFx below), so the frames show a live
+      // hand frozen mid-street.
+      const chairPick = (t, dirs) => dirs
+        .map(d => (t.chairs || []).find(c => c.dir === d)).filter(Boolean)
+        .map(c => {
+          const dx = c.x - t.x, dy = c.y - t.y;
+          const face = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'left' : 'right') : (dy > 0 ? 'up' : 'down');
+          return { id: `poker:${t.id}:${c.dir}`, x: c.x, y: c.y, dir: face, kind: 'poker' };
+        });
+      const t1 = map.casino.tables.find(t => t.game !== 'blackjack');
+      const bjt = map.casino.tables.find(t => t.game === 'blackjack');
+      if (t1) { const p = chairPick(t1, ['S', 'N']); if (p.length) groups.push({ id: 'board', seats: p }); }
+      if (bjt) { const p = chairPick(bjt, ['S', 'E']); if (p.length) groups.push({ id: 'bjhand', seats: p }); }
     }
     // Chunk each group into shots of <=5 sitters, clustered within
     // 16 tiles so a play-zoom frame holds the whole group.
@@ -519,6 +550,7 @@ if (TEST_MODE) {
     // the unit nearest the shot centroid: they are "you", so the
     // client camera centres on them, exactly like a player's.
     let playtest = null;
+    let tableFx = null;
     if (req.query.scene === 'playtest') {
       const shots = playtestShots(map);
       const shot = shots.find(s => s.id === req.query.shot) || shots[0];
@@ -566,11 +598,69 @@ if (TEST_MODE) {
       if (shot.id === 'club-stage' && map.club && map.club.stages[0]) {
         playtest.clubFlourish = { dancer: map.club.stages[0].dancer.id };
       }
+      // v1.5: the mid-hand shots carry synthetic table states,
+      // fed through the client's real message handlers by
+      // preview.js (hello.tableFx). Chair names come from the
+      // posed actors themselves, so the felt state lines up with
+      // the sitters in frame. Test-mode preview only — the live
+      // server never invents table state.
+      if (map.casino && (shot.id.startsWith('sit-board') || shot.id.startsWith('sit-bjhand'))) {
+        const bySeat = new Map(playtest.actors.filter(a => a.seatId).map(a => [a.seatId, a.name]));
+        const chairStates = (t, fill) => t.chairs.map((c) => {
+          const name = bySeat.get(`poker:${t.id}:${c.dir}`) || null;
+          return fill(c, name);
+        });
+        if (shot.id.startsWith('sit-board')) {
+          const t = map.casino.tables.find(t2 => t2.game !== 'blackjack');
+          if (t) {
+            let first = true;
+            tableFx = [{
+              type: 'poker-state', id: t.id, game: 'poker', state: 'flop',
+              pot: 75, toCall: 25, dealerChair: 0, actionChair: -1,
+              solo: false, houseMatch: 0, buyin: 100, streetDeadline: 0,
+              community: ['A♠', 'K♥', '7♦'], winners: [],
+              chairs: chairStates(t, (c, name) => {
+                const seated = Boolean(name);
+                const acting = seated && first; if (seated) first = false;
+                return {
+                  name, chips: seated ? 180 : null, bet: seated ? 25 : 0,
+                  folded: false, allIn: false, acting, sittingOut: false,
+                };
+              }),
+              reveal: [],
+            }, { type: 'poker-cards', table: t.id, cards: ['Q♠', 'Q♦'] }];
+          }
+        } else {
+          const t = map.casino.tables.find(t2 => t2.game === 'blackjack');
+          if (t) {
+            const hands = {
+              S: { hand: ['10♦', '8♣'], handTotal: 18, bet: 25, acting: false },
+              E: { hand: ['A♥', '6♠'], handTotal: 17, bet: 10, acting: true },
+            };
+            tableFx = [{
+              type: 'blackjack-state', id: t.id, game: 'blackjack', state: 'playing',
+              buyin: 100, buyinMin: 50, buyinMax: 500, minBet: 5, maxBet: 100,
+              countdown: 0, results: null,
+              dealer: { cards: ['K♠', null], total: 10 },
+              chairs: chairStates(t, (c, name) => {
+                const h = name ? hands[c.dir] : null;
+                return {
+                  dir: c.dir, x: Math.round(c.x), y: Math.round(c.y),
+                  name, chips: name ? 175 : 0, bet: h ? h.bet : 0,
+                  hand: h ? h.hand : [], handTotal: h ? h.handTotal : null,
+                  doubled: false, acting: h ? h.acting : false,
+                  result: null, sittingOut: false,
+                };
+              }),
+            }];
+          }
+        }
+      }
     }
     res.json({
       type: 'hello', you, map: clientMap(map, season), players, season,
       chat: [], zcoins: 0, bonusGranted: false, bonusAmount: 0, dayCycle,
-      playtest,
+      playtest, tableFx,
     });
   });
   app.get('/preview/:mapId', (req, res) => {
@@ -655,6 +745,7 @@ wss.on('connection', (ws, req) => {
   });
   stages.syncPlayer(p);
   casino.syncPlayer(p);
+  blackjack.syncPlayer(p);
   game.send(p, { type: 'mixes', mixes: music.listMixes(session.user.id) });
   social.sendFriends(p);
 
@@ -681,13 +772,13 @@ wss.on('connection', (ws, req) => {
     try {
     switch (msg.type) {
       case 'input':
-        // Seated at a poker table? Movement is locked until you stand.
-        if (!casino.isSeated(p.userId)) game.handleInput(p, msg.keys);
+        // Seated at a poker or blackjack table? Movement is locked until you stand.
+        if (!casino.isSeated(p.userId) && !blackjack.isSeated(p.userId)) game.handleInput(p, msg.keys);
         else p.keys = {};
         break;
       case 'move-to':
-        // Phase 9: click/tap-to-move (server-routed). Poker seats lock it too.
-        if (!casino.isSeated(p.userId)) game.handleMoveTo(p, msg.x, msg.y);
+        // Phase 9: click/tap-to-move (server-routed). Table seats lock it too.
+        if (!casino.isSeated(p.userId) && !blackjack.isSeated(p.userId)) game.handleMoveTo(p, msg.x, msg.y);
         break;
       case 'run':
         game.handleRun(p, msg.on);
@@ -709,6 +800,9 @@ wss.on('connection', (ws, req) => {
       case 'poker':
         casino.handlePoker(p, msg);
         break;
+      case 'blackjack':
+        blackjack.handleBlackjack(p, msg);
+        break;
       case 'slots':
         casino.handleSlots(p, msg);
         break;
@@ -718,28 +812,41 @@ wss.on('connection', (ws, req) => {
       case 'chat':
         game.handleChat(p, msg.text);
         break;
-      case 'interact':
-        // Sitting. Poker GAME seats are managed by the casino (the
-        // tray's Stand / Cash out) — but v1.1.1: E at a table first
-        // sits you down as a spectator and pops the buy-in offer.
-        if (casino.isSeated(p.userId)) {
-          game.send(p, { type: 'notice', text: 'You hold chips at a poker table — use Stand / Cash out in the tray to leave.' });
-        } else if (p.seated && p.seated.kind === 'poker-pending') {
+      case 'interact': {
+        // Sitting. Poker/blackjack GAME seats are managed by their
+        // systems (the tray's Stand / Cash out) — but v1.1.1: E at
+        // a table first sits you down as a spectator and pops the
+        // buy-in offer.
+        if (casino.isSeated(p.userId) || blackjack.isSeated(p.userId)) {
+          game.send(p, { type: 'notice', text: 'You hold chips at a table — use Stand / Cash out in the tray to leave.' });
+        } else if (p.seated && (p.seated.kind === 'poker-pending' || p.seated.kind === 'blackjack-pending')) {
           // v1.3.1: handleInteract -> standUp() -> the onStandUp
           // hook releases the spectator reservation (was: manual
           // clearPending here, which the movement-stand path
           // bypassed — the seat-leak bug).
           game.handleInteract(p);
         } else if (!p.seated
-          && !game.seatsInScene(p).some((s2) => Math.hypot(s2.x - p.x, s2.y - p.y) <= 52)
-          && casino.offerSeat(p)) {
-          // sat down at a poker table — the buy-in offer is on its way.
+          && !game.seatsInScene(p).some((s2) => Math.hypot(s2.x - p.x, s2.y - p.y) <= 52)) {
+          // v1.5: two table games share the floor — the table whose
+          // CENTRE is nearest owns the E press (a player standing
+          // at the blackjack table is ~60px from its centre but can
+          // be ~130px from the neighbouring poker table's centre,
+          // inside its wide sit radius; nearest-centre keeps each
+          // table's chairs unambiguous).
+          const pk = casino.tableFor(p);
+          const bj = blackjack.nearestTable(p);
+          const pkD = pk ? Math.hypot(pk.x - p.x, pk.y - p.y) : Infinity;
+          const bjD = bj ? bj.dist : Infinity;
+          const sat = bjD < pkD ? blackjack.offerSeat(p) : casino.offerSeat(p);
+          if (!sat) game.handleInteract(p);
+          // sat down at a table — the buy-in offer is on its way.
           // (A real seat under your feet — a slot stool, a bar stool —
-          // wins over the table offer: poker's reach is wide.)
+          // wins over the table offer: the tables' reach is wide.)
         } else {
           game.handleInteract(p);
         }
         break;
+      }
       case 'buy-drink':
         // Phase B amendment: bartender drink purchase (5z, casino bars).
         game.handleBuyDrink(p);
@@ -881,6 +988,14 @@ wss.on('connection', (ws, req) => {
               found.seat.chips = Math.min(10000000, Math.max(0, Math.floor(msg.chips)));
               found.table.persistSeat(found.seat);
               found.table.broadcast();
+            } else {
+              // v1.5: the same hook reaches blackjack stacks.
+              const bjFound = blackjack.findSeatByUser(p.userId);
+              if (bjFound) {
+                bjFound.seat.chips = Math.min(10000000, Math.max(0, Math.floor(msg.chips)));
+                bjFound.table.persistSeat(bjFound.seat);
+                bjFound.table.broadcast();
+              }
             }
           }
         }
@@ -912,10 +1027,12 @@ server.listen(PORT, () => {
   game.start();
   stages.start();
   casino.start();
+  blackjack.start();
 });
 
 function shutdown() {
   try { casino.stop(); } catch (e) { /* ignore */ }
+  try { blackjack.stop(); } catch (e) { /* ignore */ }
   try { stages.stop(); } catch (e) { /* ignore */ }
   try { game.stop(); } catch (e) { /* ignore */ }
   try { server.close(); } catch (e) { /* ignore */ }

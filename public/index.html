@@ -134,6 +134,26 @@
         <button id="drinkBtn">🍸 Drink — 5z</button>
         <span id="viceInfo" class="pkDim">Stand at the bar and order.</span>
       </div>
+      <!-- v1.5 blackjack tray: bet buttons during the betting
+           window, Hit / Stand / Double on your turn, rebuy +
+           stand/cash-out like the poker tray. -->
+      <div id="trayBlackjack" class="traySection hidden">
+        <span id="bjInfo" class="pkDim">Blackjack — pays 3:2 · dealer stands on 17</span>
+        <span id="bjBetRow">
+          <button class="bjBetBtn" data-bet="5">5z</button>
+          <button class="bjBetBtn" data-bet="10">10z</button>
+          <button class="bjBetBtn" data-bet="25">25z</button>
+          <button class="bjBetBtn" data-bet="50">50z</button>
+          <button class="bjBetBtn" data-bet="100">100z</button>
+        </span>
+        <span id="bjActions" class="hidden">
+          <button id="bjHit">Hit</button>
+          <button id="bjStandBtn">Stand</button>
+          <button id="bjDouble">Double</button>
+          <button id="bjRebuy">Rebuy</button>
+          <button id="bjLeave">Stand / Cash out</button>
+        </span>
+      </div>
     </div>
     <!-- club tray (v1.4, Club Mirage): the bar button + the dancer
          tip box. Shown only inside the club (the client toggles it
@@ -190,6 +210,18 @@
         <div class="spRow">
           <button id="offerBuy">Buy in</button>
           <button id="offerWatch">Just watch</button>
+        </div>
+      </div>
+    </div>
+    <!-- blackjack buy-in offer (v1.5): same ritual, blue felt -->
+    <div id="bjOffer" class="hidden">
+      <div class="offerCard">
+        <div class="spTitle">♠ BLACKJACK TABLE</div>
+        <div id="bjOfferText" class="pkDim">Buy in?</div>
+        <div id="bjOfferChoices" class="spRow hidden"></div>
+        <div class="spRow">
+          <button id="bjOfferBuy">Buy in</button>
+          <button id="bjOfferWatch">Just watch</button>
         </div>
       </div>
     </div>
@@ -376,6 +408,7 @@
 <script src="zonemusic.js"></script>
 <script src="slotreels.js"></script>
 <script src="casino.js"></script>
+<script src="blackjack.js"></script>
 <script src="studio.js"></script>
 <script src="social.js"></script>
 <script src="sfx.js"></script>

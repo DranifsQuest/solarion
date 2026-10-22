@@ -181,6 +181,15 @@ class PokerTable {
     this.stateUntil = 0;
     this.lastWinners = null;
     this.reveal = null;
+    // v1.5 (Zan, live playtest 2026-10-22): one-player minimum.
+    // soloHand is latched AT THE DEAL: a hand that starts with a
+    // single player is a solo hand for its whole life — the house
+    // matches that player's total contribution 1:1 and the matched
+    // pot shows in publicState. A hand that starts 2+ and folds
+    // down to one is NEVER solo (no match), and a spectator who
+    // buys in mid-hand is sittingOut until the next deal, so they
+    // cannot retro-solo or un-solo the running hand.
+    this.soloHand = false;
   }
 
   seatAt(i) { return this.chairs[i].seat; }
@@ -197,9 +206,19 @@ class PokerTable {
     return this.chairs.filter((c) => c.seat && !c.seat.sittingOut && c.seat.chips > 0).length;
   }
 
-  // Total table equity of a seat (chips + street bet + committed) — the
-  // value mirrored to the DB ledger (avatars.casino_chips).
-  seatTotal(seat) { return seat.chips + seat.bet + seat.committed; }
+  // Total table equity of a seat (chips + committed) — the value
+  // mirrored to the DB ledger (avatars.casino_chips). NOTE (v1.5
+  // accounting fix): a seat's street `bet` is a SUBSET of its
+  // `committed` — applyBet/postBlind increment committed at the
+  // moment chips move, and `bet` merely tracks the current street's
+  // portion. The ported engine summed bet + committed here and in
+  // potTotal(), double-counting the live street: a raise-and-fold
+  // uncontested win paid out MORE than everyone put in (probe:
+  // 400z of stacks became 430z). Showdown pots were immune (they
+  // are built from committed alone, and check-down hands end with
+  // bet = 0), which is how it survived validation. committed is
+  // the one true contribution total; use it everywhere.
+  seatTotal(seat) { return seat.chips + seat.committed; }
 
   persistSeat(seat) {
     try { CQ.setCasinoChips.run(this.seatTotal(seat), seat.userId); } catch (e) { /* ledger best-effort */ }
@@ -209,9 +228,29 @@ class PokerTable {
     let t = 0;
     for (const c of this.chairs) {
       const s = c.seat;
-      if (s) t += s.bet + s.committed;
+      if (s) t += s.committed;
     }
     return t;
+  }
+
+  /**
+   * v1.5 solo house match: in a solo hand the house matches the
+   * lone player's total contribution 1:1, continuously — the match
+   * IS their committed total (every chip they put in is doubled
+   * by house money). The match is not player equity until it is
+   * won: seatTotal()/the ledger never include it; showdown adds
+   * it to the pot being distributed, and publicState adds it to
+   * the displayed pot. If the solo player folds or leaves mid-hand
+   * the match simply never pays (abort refunds only their own
+   * committed chips).
+   */
+  currentHouseMatch() {
+    if (!this.soloHand) return 0;
+    for (const c of this.chairs) {
+      const s = c.seat;
+      if (s && s.inHand) return s.committed;
+    }
+    return 0;
   }
 
   playerOf(seat) {
@@ -241,7 +280,13 @@ class PokerTable {
         };
       }),
       community: this.community.map(cardStr),
-      pot: this.potTotal(),
+      // v1.5 solo: the displayed pot includes the house match, so
+      // the lone player sees the real (doubled) pot they are
+      // playing for. Non-solo hands never carry a match.
+      pot: this.potTotal() + this.currentHouseMatch(),
+      game: 'poker',
+      solo: this.soloHand,
+      houseMatch: this.currentHouseMatch(),
       currentBet: this.currentBet, minRaise: this.minRaise,
       toCall: this.actionChair >= 0 && this.chairs[this.actionChair].seat
         ? Math.max(0, this.currentBet - this.chairs[this.actionChair].seat.bet) : 0,
@@ -293,6 +338,9 @@ class PokerTable {
     if (p.mapId !== this.mapId) { this.game.send(p, { type: 'notice', text: 'The poker tables are in a casino lounge.' }); return { ok: false, reason: 'guard' }; }
     if (!this.nearTable(p)) { this.game.send(p, { type: 'notice', text: 'Walk up to the table to sit down.' }); return { ok: false, reason: 'guard' }; }
     if (this.casino.findSeatByUser(p.userId)) { this.game.send(p, { type: 'notice', text: 'You are already seated at a table.' }); return { ok: false, reason: 'guard' }; }
+    // v1.5: one stack per player across BOTH games (shared ledger
+    // mirror) — a blackjack-seated player can't also buy into poker.
+    if (this.casino.blackjackSeated && this.casino.blackjackSeated(p.userId)) { this.game.send(p, { type: 'notice', text: 'You are already seated at a table.' }); return { ok: false, reason: 'guard' }; }
     // Phase 5: chair must be a known chair string — no probing other shapes.
     if (typeof dir !== 'string' || dir.length > 8) { this.game.send(p, { type: 'notice', text: 'No such chair.' }); return { ok: false, reason: 'guard' }; }
     const i = this.chairs.findIndex((c) => c.dir === dir);
@@ -454,7 +502,7 @@ class PokerTable {
 
   startHand() {
     const now = Date.now();
-    if (this.eligibleCount() < 2) { this.state = 'idle'; this.broadcast(); return; }
+    if (this.eligibleCount() < 1) { this.state = 'idle'; this.broadcast(); return; }
     this.dealerChair = this.nextOccupied(this.dealerChair, true);
     this.deck = newDeck();
     this.community = [];
@@ -463,21 +511,36 @@ class PokerTable {
     this.currentBet = BB;
     this.minRaise = BB;
     this.acted = new Set();
-    for (const c of this.chairs) {
-      const s = c.seat;
+    const inHandIdx = [];
+    for (let i = 0; i < this.chairs.length; i++) {
+      const s = this.chairs[i].seat;
       if (!s || s.sittingOut || s.chips <= 0) { if (s) s.sittingOut = true; continue; }
       s.inHand = true; s.folded = false; s.allIn = false;
       s.bet = 0; s.committed = 0;
       s.hole = [this.deck.pop(), this.deck.pop()];
+      inHandIdx.push(i);
     }
-    // Blinds.
-    const sbI = this.nextOccupied(this.dealerChair, false);
-    let bbI = this.nextOccupied(sbI, false);
-    if (bbI === sbI) bbI = sbI; // heads-up: dealer is SB, other is BB
-    this.postBlind(sbI, SB);
-    this.postBlind(bbI, BB);
-    this.state = 'preflop';
-    this.actionChair = this.nextActive(bbI);
+    // v1.5: latch solo-ness at the deal (see constructor note).
+    this.soloHand = inHandIdx.length === 1;
+    if (this.soloHand) {
+      // Solo: the lone player posts the big blind as their ante
+      // (posting SB+BB from one stack would leave their street
+      // bet above currentBet and wedge the betting round). They
+      // then check the board down street by street — or raise
+      // their own bet, which the house still matches 1:1.
+      this.postBlind(inHandIdx[0], BB);
+      this.state = 'preflop';
+      this.actionChair = this.nextActive(this.dealerChair);
+    } else {
+      // Blinds.
+      const sbI = this.nextOccupied(this.dealerChair, false);
+      let bbI = this.nextOccupied(sbI, false);
+      if (bbI === sbI) bbI = sbI; // heads-up: dealer is SB, other is BB
+      this.postBlind(sbI, SB);
+      this.postBlind(bbI, BB);
+      this.state = 'preflop';
+      this.actionChair = this.nextActive(bbI);
+    }
     this.actionStart = now;
     this.turnDeadline = now + TURN_SECS * 1000;
     this.sendHoleCards();
@@ -629,8 +692,12 @@ class PokerTable {
   checkHandEnd() {
     if (!this.inHandState()) return;
     const nf = this.nonFolded();
-    if (nf.length === 1) { this.awardUncontested(nf[0].s); return; }
     if (nf.length === 0) { this.abortHand(); return; }
+    // v1.5: a SOLO hand never ends by "everyone else folded" —
+    // the board runs out in full so the lone player plays the
+    // hand they were dealt (and the house match pays at
+    // showdown). Non-solo hands keep the uncontested award.
+    if (nf.length === 1 && !this.soloHand) { this.awardUncontested(nf[0].s); return; }
     if (this.bettingComplete()) { this.nextStreet(); return; }
     this.advanceOrEnd();
   }
@@ -679,10 +746,12 @@ class PokerTable {
 
   abortHand() {
     // Should not happen; refund committed chips pro-rata to be safe.
+    // (v1.5 accounting fix: refund `committed` only — the street
+    // `bet` is already inside it; refunding both double-paid.)
     for (const c of this.chairs) {
       const s = c.seat;
-      if (s && (s.committed > 0 || s.bet > 0)) {
-        s.chips += s.bet + s.committed;
+      if (s && s.committed > 0) {
+        s.chips += s.committed;
         s.bet = 0; s.committed = 0;
         this.persistSeat(s);
       }
@@ -720,6 +789,13 @@ class PokerTable {
   showdown() {
     this.state = 'showdown';
     const pots = this.buildPots();
+    // v1.5 solo: the house match joins the pot before distribution.
+    // A solo hand has exactly one contributor, hence exactly one
+    // pot; the match equals that player's total contribution.
+    if (this.soloHand && pots.length) {
+      const match = this.currentHouseMatch();
+      if (match > 0) pots[0].amount += match;
+    }
     const scores = new Map();
     for (const c of this.chairs) {
       const s = c.seat;
@@ -781,6 +857,7 @@ class PokerTable {
     this.community = [];
     this.lastWinners = null;
     this.reveal = null;
+    this.soloHand = false;
     this.state = 'idle';
     this.broadcast();
   }
@@ -788,13 +865,15 @@ class PokerTable {
   // ------------------------------------------------------------------ tick
   tick(now) {
     if (this.state === 'idle') {
-      if (this.eligibleCount() >= 2) {
+      // v1.5: one-player minimum — a lone bought-in player starts
+      // the countdown too (their hand will be a solo hand).
+      if (this.eligibleCount() >= 1) {
         this.state = 'countdown';
         this.stateUntil = now + START_COUNTDOWN_SECS * 1000;
         this.broadcast();
       }
     } else if (this.state === 'countdown') {
-      if (this.eligibleCount() < 2) { this.state = 'idle'; this.broadcast(); }
+      if (this.eligibleCount() < 1) { this.state = 'idle'; this.broadcast(); }
       else if (now >= this.stateUntil) this.startHand();
     } else if (this.state === 'done') {
       if (now >= this.stateUntil) this.cleanupHand();
@@ -906,6 +985,9 @@ class CasinoSystem {
     this.lounges = new Map();  // scene id -> { mapId, tables: [], slots: [] }
     this.slotCd = new Map();   // userId -> timestamp (spin cooldown)
     this.timer = null;
+    // v1.5: wired by server.js — lets PokerTable.sit refuse players
+    // who already hold chips at a blackjack table.
+    this.blackjackSeated = null;
   }
 
   /**
@@ -920,6 +1002,9 @@ class CasinoSystem {
       if (!this.lounges.size) this.mapId = mapId;
       const lounge = { mapId, tables: [], slots: (map.casino.slots || []).map((s) => ({ ...s })) };
       for (const t of map.casino.tables) {
+        // v1.5: blackjack tables belong to the BlackjackSystem
+        // (src/blackjack.js) — the poker system never touches them.
+        if (t.game === 'blackjack') continue;
         const table = new PokerTable(this.game, this, { ...t, mapId });
         this.tables.set(t.id, table);
         lounge.tables.push(table);
@@ -1336,6 +1421,10 @@ class CasinoSystem {
 
 module.exports = {
   CasinoSystem, PokerTable, initLedger,
+  // v1.5: the blackjack system shares the casino ledger (the CQ
+  // prepared statements over avatars.casino_chips / zcoins) — it
+  // calls getLedger() lazily at runtime, after initLedger().
+  getLedger: () => CQ,
   evaluate7, cmpHands, cardStr, newDeck,
   slotRoll, slotPayout, theoreticalRTP, jackpotPoolZ,
   SLOT_SYMBOLS, SLOT_BETS, SLOT_PAIR_PAY, SLOT_COOLDOWN_MS,

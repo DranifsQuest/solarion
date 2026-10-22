@@ -76,6 +76,11 @@
       // snapshot registers the sample companions' render positions.
       window.handle(hello);
       window.handle({ type: 'snapshot', players: hello.players });
+      // v1.5: synthetic table states for the mid-hand playtest
+      // shots (poker board on the felt, blackjack hands down) —
+      // fed through the same real handlers, after hello, so the
+      // felt renders a frozen live hand.
+      if (Array.isArray(hello.tableFx)) for (const m of hello.tableFx) window.handle(m);
       // Playtest Gate: expose the posed-actor manifest (shot id,
       // camera anchor, per-actor seat/stand data) for the capture
       // driver to record alongside the screenshot.

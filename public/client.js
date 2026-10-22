@@ -953,23 +953,48 @@ function drawGatehouse(g, open, gm) {
 // your own hole cards face-up at your chair, bets as gold text on
 // the felt path, showdown reveals face-up. State comes straight
 // from the casino client's poker-state store.
-function drawMiniCard(x, y, text, isBack) {
+// A card face at an explicit size. The mini (12x16) is the
+// original hole-card rendering; v1.5 adds BIG faces for the
+// community board (Feature 1: "on screen kinda like the slot
+// machines" — the slot glass draws ~42px faces; the board cards
+// are drawn at a fixed screen size like all furniture art, so
+// they stay readable while the world scales at ZOOM 0.72).
+function drawCardFace(x, y, w, h, text, isBack) {
   ctx.save();
   ctx.translate(x, y);
   ctx.beginPath();
-  if (ctx.roundRect) ctx.roundRect(-6, -8, 12, 16, 2.5); else ctx.rect(-6, -8, 12, 16);
+  const r = Math.min(4, w * 0.18);
+  if (ctx.roundRect) ctx.roundRect(-w / 2, -h / 2, w, h, r); else ctx.rect(-w / 2, -h / 2, w, h);
   if (isBack) {
     ctx.fillStyle = '#7a1f2b'; ctx.fill();
-    ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = 1; ctx.stroke();
+    ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = 1.2; ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,210,63,.45)'; ctx.lineWidth = 0.8;
+    ctx.strokeRect(-w / 2 + 2.5, -h / 2 + 2.5, w - 5, h - 5);
   } else {
     ctx.fillStyle = '#f5f0e6'; ctx.fill();
-    ctx.strokeStyle = 'rgba(20,10,30,.6)'; ctx.lineWidth = 0.8; ctx.stroke();
+    ctx.strokeStyle = 'rgba(20,10,30,.6)'; ctx.lineWidth = 0.9; ctx.stroke();
+    const t = String(text || '');
+    const suit = t.slice(-1);
+    const rank = t.slice(0, -1) || t;
+    const red = /[♥♦]/.test(suit);
     ctx.textAlign = 'center';
-    ctx.fillStyle = /[♥♦]/.test(text || '') ? '#c22f3d' : '#23202b';
-    ctx.font = `bold ${(text || '').length > 2 ? 6.5 : 8.5}px system-ui`;
-    ctx.fillText(text || '', 0, 3.2);
+    ctx.fillStyle = red ? '#c22f3d' : '#23202b';
+    if (w >= 20) {
+      // Big face: rank over suit, like a real card corner blown up.
+      ctx.font = `bold ${Math.round(h * 0.38)}px system-ui`;
+      ctx.fillText(rank, 0, -h * 0.02);
+      ctx.font = `${Math.round(h * 0.36)}px system-ui`;
+      ctx.fillText(suit, 0, h * 0.36);
+    } else {
+      ctx.font = `bold ${(t || '').length > 2 ? 6.5 : 8.5}px system-ui`;
+      ctx.fillText(t || '', 0, 3.2);
+    }
   }
   ctx.restore();
+}
+
+function drawMiniCard(x, y, text, isBack) {
+  drawCardFace(x, y, 12, 16, text, isBack);
 }
 
 function drawFeltState(t, tx2, ty2) {
@@ -977,12 +1002,13 @@ function drawFeltState(t, tx2, ty2) {
   const st = C && C.tables ? C.tables.get(t.id) : null;
   if (!st) { ctx.font = '13px system-ui'; ctx.textAlign = 'center'; ctx.fillText('♠ ♥ ♦ ♣', tx2, ty2 + 3); return; }
   const comm = st.community || [];
-  if (!comm.length) { ctx.font = '13px system-ui'; ctx.textAlign = 'center'; ctx.fillText('♠ ♥ ♦ ♣', tx2, ty2 + 3); }
-  if (st.pot) {
-    ctx.font = 'bold 10px system-ui'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffd23f';
-    ctx.fillText(`POT ${st.pot}z`, tx2, ty2 - 13);
-  }
-  comm.forEach((card, i) => drawMiniCard(tx2 + (i - (comm.length - 1) / 2) * 14.5, ty2 + 2, card, false));
+  // The board itself (plaque + community cards + pot + winners)
+  // is drawn by drawBoardOverlay AFTER the entity pass — a
+  // seated player's tall sprite otherwise buries the first board
+  // cards (proven in the v1.5 playtest captures). Here in the
+  // furniture pass we only mark an idle table's felt.
+  const handLive = ['preflop', 'flop', 'turn', 'river', 'showdown'].includes(st.state);
+  if (!comm.length && !handLive) { ctx.font = '13px system-ui'; ctx.textAlign = 'center'; ctx.fillText('♠ ♥ ♦ ♣', tx2, ty2 + 3); }
   (t.chairs || []).forEach((ch3, ci) => {
     const cst = st.chairs && st.chairs[ci];
     if (!cst || !cst.name) return;
@@ -1009,10 +1035,121 @@ function drawFeltState(t, tx2, ty2) {
       drawMiniCard(mx + 7, my + 2, null, true);
     }
   });
-  if (st.winners && st.winners.length) {
-    ctx.font = 'bold 10px system-ui'; ctx.textAlign = 'center'; ctx.fillStyle = '#8dff9a';
-    ctx.fillText(`🏆 ${st.winners.map((w) => `${w.name} +${w.amount}z`).join(' · ')}`, tx2, ty2 - 25);
+}
+
+// v1.5 (Feature 1): THE BOARD ON THE TABLE — post-entity overlay.
+// The community cards rendered BIG on the felt, slot-glass style,
+// on a dark plaque with a brass rim so they read at play zoom for
+// players AND spectators. Fixed screen size (like all furniture
+// art): the plaque deliberately spills past the little felt oval.
+// Drawn AFTER the entity pass on purpose: characters are 1.5x and
+// a south sitter's sprite reaches back over the felt — in the
+// furniture pass it buried the first two board cards (v1.5
+// playtest capture, casino-lounge sit-board). During a live hand
+// the undealt slots show face-down backs, so the board visibly
+// fills in street by street; preflop = five backs.
+function drawBoardOverlay(t, tx2, ty2) {
+  const C = window.SolarionCasino;
+  const st = C && C.tables ? C.tables.get(t.id) : null;
+  if (!st) return;
+  const comm = st.community || [];
+  const handLive = ['preflop', 'flop', 'turn', 'river', 'showdown'].includes(st.state);
+  if (!comm.length && !handLive) return;
+  const bw = 24.5; // card pitch; cards are 22x31
+  ctx.save();
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(tx2 - 63, ty2 - 14, 126, 38, 7); else ctx.rect(tx2 - 63, ty2 - 14, 126, 38);
+  ctx.fillStyle = '#20242e'; ctx.fill();
+  ctx.strokeStyle = '#c99700'; ctx.lineWidth = 1.6; ctx.stroke();
+  ctx.restore();
+  for (let i = 0; i < 5; i++) {
+    const cxB = tx2 + (i - 2) * bw;
+    if (i < comm.length) drawCardFace(cxB, ty2 + 5, 22, 31, comm[i], false);
+    else drawCardFace(cxB, ty2 + 5, 22, 31, null, true);
   }
+  ctx.textAlign = 'center';
+  if (st.pot) {
+    ctx.font = 'bold 10.5px system-ui'; ctx.fillStyle = '#ffd23f';
+    ctx.fillText(st.solo && st.houseMatch ? `POT ${st.pot}z · house matched ${st.houseMatch}z 🏠` : `POT ${st.pot}z`, tx2, ty2 - 21);
+  }
+  if (st.winners && st.winners.length) {
+    ctx.font = 'bold 10px system-ui'; ctx.fillStyle = '#8dff9a';
+    ctx.fillText(`🏆 ${st.winners.map((w) => `${w.name} +${w.amount}z`).join(' · ')}`, tx2, ty2 - 33);
+  }
+}
+
+// v1.5 (Feature 3): blackjack ON the table — dealer row across
+// the far edge of the felt, each seat's hand in front of its
+// chair, bets and results as felt text. Same fixed-screen-size
+// card language as the poker board, a touch smaller (hands are
+// per-seat, not shared). State: SolarionBlackjack's store, in
+// the server's blackjack-state shape (chairs carry hand /
+// handTotal / bet / result; nets live in the table-level
+// results list; the dealer's hole card arrives as null).
+const BJ_RESULT_LABEL = {
+  blackjack: ['★ BLACKJACK!', '#8dff9a'], win: ['WIN', '#8dff9a'], 'dealer-bust': ['DEALER BUSTS', '#8dff9a'],
+  push: ['PUSH', '#ffe9a8'], bust: ['BUST', '#ff9a8d'], lose: ['LOSE', '#ff9a8d'], 'dealer-blackjack': ['DEALER BJ', '#ff9a8d'],
+};
+function drawBlackjackState(t, tx2, ty2) {
+  const B = window.SolarionBlackjack;
+  const st = B && B.tables ? B.tables.get(t.id) : null;
+  ctx.textAlign = 'center';
+  if (!st || (st.state === 'idle' && !(st.chairs || []).some((c) => c.name))) {
+    ctx.font = 'bold 11px system-ui'; ctx.fillStyle = '#ffd23f';
+    ctx.fillText('B L A C K J A C K', tx2, ty2 - 1);
+    ctx.font = '8.5px system-ui'; ctx.fillStyle = 'rgba(255,233,168,.8)';
+    ctx.fillText('pays 3 : 2', tx2, ty2 + 11);
+    return;
+  }
+  // Dealer row (far edge). A null card is the face-down hole card.
+  const dc = (st.dealer && st.dealer.cards) || [];
+  dc.forEach((card, i) => {
+    drawCardFace(tx2 + (i - (dc.length - 1) / 2) * 20, ty2 - 9, 18, 25, card, card === null);
+  });
+  if (dc.length) {
+    // Label UNDER the row: beside it, a far-side sitter's sprite
+    // clips the text (v1.5 playtest capture).
+    ctx.font = 'bold 8.5px system-ui'; ctx.fillStyle = '#ffe9a8';
+    const hidden = dc.includes(null);
+    const label = hidden ? `DEALER SHOWS ${dc[0]}` : `DEALER ${st.dealer.total}`;
+    ctx.fillText(label, tx2, ty2 + 19);
+  }
+  if (st.state === 'betting') {
+    ctx.font = 'bold 9.5px system-ui'; ctx.fillStyle = '#ffd23f';
+    ctx.fillText('PLACE YOUR BETS', tx2, ty2 + 16);
+  }
+  const netOf = (name) => {
+    const r = (st.results || []).find((x) => x.name === name);
+    return r ? r.amount : 0;
+  };
+  (t.chairs || []).forEach((ch3, ci) => {
+    const cst = st.chairs && st.chairs[ci];
+    if (!cst || !cst.name) return;
+    const [cx9, cy9] = proj(ch3.x, ch3.y);
+    if (cst.acting) {
+      ctx.beginPath(); ctx.ellipse(cx9, cy9, 19, 10, 0, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255,210,63,.9)'; ctx.lineWidth = 2; ctx.stroke();
+    }
+    ctx.font = '8.5px system-ui'; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(255,233,168,.85)';
+    if (Number.isFinite(cst.chips)) ctx.fillText(`${cst.chips}z`, cx9, cy9 + 18);
+    const mx = cx9 + (tx2 - cx9) * 0.42, my = cy9 + (ty2 - cy9) * 0.42;
+    if (cst.bet) {
+      ctx.font = 'bold 9px system-ui'; ctx.fillStyle = '#ffe9a8';
+      ctx.fillText(`bet ${cst.bet}z`, mx, my - 14);
+    }
+    const hand = cst.hand || [];
+    hand.forEach((card, i) => drawCardFace(mx + (i - (hand.length - 1) / 2) * 19, my + 3, 18, 25, card, false));
+    if (hand.length && cst.handTotal != null) {
+      ctx.font = 'bold 9px system-ui'; ctx.fillStyle = cst.handTotal > 21 ? '#ff9a8d' : '#f5f0e6';
+      ctx.fillText(`${cst.handTotal}`, mx, my + 23);
+    }
+    if (st.state === 'payout' && cst.result && BJ_RESULT_LABEL[cst.result]) {
+      const [label, color] = BJ_RESULT_LABEL[cst.result];
+      const net = netOf(cst.name);
+      ctx.font = 'bold 9.5px system-ui'; ctx.fillStyle = color;
+      ctx.fillText(net ? `${label} ${net > 0 ? '+' : ''}${net}z` : label, mx, my - 24);
+    }
+  });
 }
 
 // Reels for a cabinet: while a spin resolves, the faces tumble;
@@ -1337,6 +1474,7 @@ function setMap(m, you, chat) {
   $('mapName').textContent = m.name;
   if (window.SolarionMixer) window.SolarionMixer.onMapChanged(m);
   if (window.SolarionCasino) window.SolarionCasino.onMapChanged(m);
+  if (window.SolarionBlackjack) window.SolarionBlackjack.onMapChanged(m);
   if (window.SolarionStudio) window.SolarionStudio.onMapChanged(m);
   renderPos.clear();
   for (const c of chat || []) chatLine(`<span class="who">${esc(c.from)}:</span> ${esc(c.text)}`);
@@ -1353,6 +1491,7 @@ const myViceAt = { drinks: 0, puffs: 0 };
 function handle(m) {
   if (window.SolarionMixer) window.SolarionMixer.handle(m);
   if (window.SolarionCasino) window.SolarionCasino.handle(m);
+  if (window.SolarionBlackjack) window.SolarionBlackjack.handle(m);
   if (window.SolarionStudio) window.SolarionStudio.handle(m);
   if (window.SolarionSocial) window.SolarionSocial.handle(m);
   switch (m.type) {
@@ -2831,8 +2970,11 @@ function draw() {
       ctx.beginPath(); ctx.ellipse(tx2, ty2, 44, 23, 0, 0, Math.PI * 2);
       ctx.fillStyle = '#7a5a2b'; ctx.fill();
       ctx.beginPath(); ctx.ellipse(tx2, ty2 - 2, 38, 19, 0, 0, Math.PI * 2);
-      ctx.fillStyle = '#14663c'; ctx.fill();
-      drawFeltState(t, tx2, ty2);
+      // v1.5: blackjack tables wear a deep-blue felt so the two
+      // games read differently at a glance (poker stays green).
+      ctx.fillStyle = t.game === 'blackjack' ? '#1d4468' : '#14663c'; ctx.fill();
+      if (t.game === 'blackjack') drawBlackjackState(t, tx2, ty2);
+      else drawFeltState(t, tx2, ty2);
     }
     // Phase B amendment — the bar: counter frontage + the bartender
     // NPC behind it (a fixed-look layered sprite + name).
@@ -3249,6 +3391,17 @@ function draw() {
       ctx.fillStyle = '#1a2238';
       ctx.fillText(text, sx, by + 16);
       ctx.restore();
+    }
+  }
+
+  // v1.5 (Feature 1): the poker board overlay — plaque + community
+  // cards + pot + winners replayed OVER the entities, so a seated
+  // player's sprite can never bury the board (see drawBoardOverlay).
+  if (mapDef.casino) {
+    for (const t of mapDef.casino.tables) {
+      if (t.game === 'blackjack') continue;
+      const [btx, bty] = proj(t.x, t.y);
+      drawBoardOverlay(t, btx, bty);
     }
   }
 

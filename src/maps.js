@@ -531,11 +531,18 @@ function buildCasino({ id, name, hostId, hostLabel, hostSpawn, floor, floorAlt, 
     { dir: 'W', x: x - 60, y },
   ];
   const tableAt = (n, tx, ty) => ({
-    id: `${id}-poker-${n}`, x: cx(tx), y: cy(ty), chairs: chairSet(cx(tx), cy(ty)),
+    id: `${id}-poker-${n}`, game: 'poker', x: cx(tx), y: cy(ty), chairs: chairSet(cx(tx), cy(ty)),
   });
   const tables = [
     tableAt(1, 5, 5), tableAt(2, 12, 5),
-    tableAt(3, 5, 11), tableAt(4, 12, 11),
+    tableAt(3, 5, 11),
+    // v1.5 (Zan, live playtest 2026-10-22): "make a couple tables
+    // black jack instead" — ONE table per casino converts: the
+    // centre-east table (#4 spot, middle row, east column) in BOTH
+    // lounges (shared floor plan, so the conversion is symmetric).
+    // Same chairs at the same spots (seat laws untouched); the id
+    // and game type are what change.
+    { id: `${id}-blackjack-1`, game: 'blackjack', x: cx(12), y: cy(11), chairs: chairSet(cx(12), cy(11)) },
     tableAt(5, 5, 17), tableAt(6, 12, 17),
   ];
   // Slots section: 5 machines along the north wall + 5 down the east
@@ -1295,7 +1302,7 @@ function clientMap(map, seasonOverride) {
       x: map.casino.x, y: map.casino.y, w: map.casino.w, h: map.casino.h,
       floor: map.casino.floor, floorAlt: map.casino.floorAlt, wall: map.casino.wall,
       tables: map.casino.tables.map(t => ({
-        id: t.id, x: t.x, y: t.y,
+        id: t.id, game: t.game || 'poker', x: t.x, y: t.y,
         chairs: t.chairs.map(c => ({ dir: c.dir, x: c.x, y: c.y })),
       })),
       slots: map.casino.slots.map(s => ({ id: s.id, x: s.x, y: s.y, ix: s.ix, iy: s.iy })),

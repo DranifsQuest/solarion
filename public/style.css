@@ -272,15 +272,16 @@ html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; ba
 #slotGuiSpin:hover:not(:disabled) { filter: brightness(1.07); }
 #slotGuiSpin:disabled { opacity: .5; cursor: default; box-shadow: none; }
 #slotGuiMsg { margin-top: 10px; min-height: 16px; }
-#pokerOffer { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+#pokerOffer, #bjOffer { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
   background: rgba(10,5,16,.45); z-index: 8; }
-#pokerOffer.hidden { display: none; }
+#pokerOffer.hidden, #bjOffer.hidden { display: none; }
 .offerCard { background: rgba(24,14,10,.97); border: 2px solid #ffd23f; border-radius: 14px;
   padding: 18px 22px; max-width: 340px; text-align: center; box-shadow: 0 14px 44px rgba(0,0,0,.7); color: #ffe9c9; }
 .offerCard .spRow { justify-content: center; margin-top: 12px; }
 .offerCard button { background: #3a2817; color: #ffe9c9; border: 1.5px solid #8a5a2b; border-radius: 8px;
   padding: 8px 14px; cursor: pointer; font-weight: 800; }
-.offerCard #offerBuy { background: #ffd23f; color: #2b1d12; border-color: #ffd23f; }
+.offerCard #offerBuy, .offerCard #bjOfferBuy { background: #ffd23f; color: #2b1d12; border-color: #ffd23f; }
+.bjBetBtn:disabled { opacity: .45; cursor: default; }
 .pkTable { border: 1px solid #4a2f6e; border-radius: 8px; padding: 7px; margin-bottom: 8px; background: rgba(10,6,20,.65); }
 .pkHead { color: #ffd23f; font-weight: 800; font-size: 12px; letter-spacing: 1px; }
 .pkComm { margin: 5px 0; min-height: 24px; }

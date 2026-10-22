@@ -435,6 +435,74 @@ async function main() {
     report('casino poker: full hand to showdown, pot paid in full, chips conserved', true, `A set the buy-in at ${SET_BUYIN}z, B joined at ${SET_BUYIN}z, pot=${doneState.pot} winners=${doneState.winners.map(w => w.name + ':' + w.amount).join(',')} totals ${preA + preB} -> ${postA + postB}`);
   } catch (e) { report('casino poker: full hand to showdown, pot paid in full, chips conserved', false, e.message); }
 
+  // ---- v1.5 Feature 1: the board is IN the table state, street
+  // by street (the client renders it on the felt from exactly
+  // this). Pure read-back of the hand just played — the verify
+  // hand always checks/calls to showdown, so the flop (3) and
+  // the full board (5) must both appear in A's state stream.
+  try {
+    const states = A.client.msgs.filter(m => m.type === 'poker-state' && m.id === 'casino-lounge-poker-1');
+    const lens = new Set(states.map(s => (s.community || []).length));
+    if (!lens.has(3)) throw new Error(`flop never broadcast (lengths seen: ${[...lens].join(',')})`);
+    if (!lens.has(5)) throw new Error('full board never broadcast');
+    const doneS = states.filter(s => s.state === 'done').pop();
+    if (!doneS || doneS.community.length !== 5) throw new Error('showdown state does not carry all five board cards');
+    report('casino poker: community board broadcasts street by street (3 -> 5)', true, `board lengths seen: ${[...lens].sort().join(', ')}`);
+  } catch (e) { report('casino poker: community board broadcasts street by street (3 -> 5)', false, e.message); }
+
+  // ---- v1.5 Feature 3: blackjack — sit at the converted table,
+  // bet, stand-always to settlement; the stack delta must equal
+  // the server's reported net and cash-out must be exact.
+  try {
+    const BJT = 'casino-lounge-blackjack-1';
+    const pre = await balA();
+    await walkTo(A.client, 400, 368); // south of the blackjack table (400, 336)
+    const btbl = () => lastOf(A.client, 'blackjack-state', s => s.id === BJT);
+    A.client.send({ type: 'interact' });
+    let offer = null;
+    try {
+      offer = await waitFor(() => lastOf(A.client, 'blackjack-offer'), 3000, 'blackjack offer (first try)');
+    } catch (e) {
+      A.client.send({ type: 'interact' });
+      offer = await waitFor(() => lastOf(A.client, 'blackjack-offer'), 9000, 'blackjack buy-in offer');
+    }
+    if (offer.established !== false || offer.amount !== null) throw new Error(`first sitter should start an unset table: ${JSON.stringify(offer)}`);
+    A.client.send({ type: 'blackjack', action: 'buyin', amount: 100 });
+    await waitFor(() => { const s = btbl(); return s && s.chairs.some(c => c.name === A.name && Number.isFinite(c.chips)); }, 10000, 'A seated at blackjack with chips');
+    if ((await balA()) !== pre - 100) throw new Error(`buy-in debit wrong (${pre} -> ${await balA()})`);
+    // One full round, stand-always.
+    let betSent = false;
+    let payout = null;
+    const rStart = Date.now();
+    while (Date.now() - rStart < 90000) {
+      const s = btbl();
+      if (s) {
+        const mine = s.chairs.find(c => c.name === A.name);
+        if (mine) {
+          if (s.state === 'betting' && !mine.bet && !betSent) {
+            A.client.send({ type: 'blackjack', action: 'bet', table: BJT, amount: 10 });
+            betSent = true;
+          } else if (s.state === 'playing' && mine.acting) {
+            A.client.send({ type: 'blackjack', action: 'act', table: BJT, act: 'stand' });
+            await sleep(300);
+          } else if (s.state === 'payout' && mine.result) { payout = s; break; }
+        }
+      }
+      await sleep(200);
+    }
+    if (!payout) throw new Error('blackjack round did not settle in 90s');
+    const mine = payout.chairs.find(c => c.name === A.name);
+    const res = (payout.results || []).find(r => r.name === A.name);
+    if (!res) throw new Error('no result reported for A');
+    if (mine.bet !== 0) throw new Error(`bet left on the felt after settlement (${mine.bet})`);
+    if (mine.chips !== 100 + res.amount) throw new Error(`stack ${mine.chips} != 100 + net ${res.amount}`);
+    A.client.send({ type: 'blackjack', action: 'stand' });
+    await waitFor(() => { const s = btbl(); return s && !s.chairs.some(c => c.name === A.name); }, 10000, 'A cashed out of blackjack');
+    const post = await balA();
+    if (post !== pre + res.amount) throw new Error(`cash-out math: ${pre} + net ${res.amount} != ${post}`);
+    report('casino blackjack: full round settles, stack delta == reported net, cash-out exact', true, `result=${res.result} net=${res.amount} balance ${pre} -> ${post}`);
+  } catch (e) { report('casino blackjack: full round settles, stack delta == reported net, cash-out exact', false, e.message); }
+
   // ---- casino bar: the day's first drink is the Phase 9 treat
   // (free + 10z tip); drinks after cost exactly 5z; the 10th passes
   // A out cold. v1.1 rule: the WHOLE drunk state (count, haze,
