@@ -2299,8 +2299,9 @@ function deferredSeatBackPos(p) {
     return [fx, fy + 2];
   }
   const s = (mapDef.seats || []).find(s2 => s2.id === id);
-  if (!s || (s.kind !== 'chair' && s.kind !== 'stool') || s.dir !== 'up') return null;
-  return proj(s.x, s.y);
+  if (!s || (s.kind !== 'chair' && s.kind !== 'stool' && s.kind !== 'audience') || s.dir !== 'up') return null;
+  const pp = proj(s.x, s.y);
+  return [pp[0], pp[1], s.kind]; // v1.5.1: kind rides along so the entity pass replays the right back
 }
 
 function drawChairAt(x, y, dir, opts) {
@@ -2391,6 +2392,117 @@ function drawChairAt(x, y, dir, opts) {
   }
   // 'down' (and default): back on the far side, cushion over base.
   chairLadderBack(x, y - 6, 27, true);
+  legs();
+  cushion();
+}
+
+// ------------------------------------------------------------------
+// v1.5.1: the AUDIENCE chair (kind 'audience' — stage seating
+// blocks only). Zan circled the venue rows for the tenth time:
+// from behind, drawChairAt's panel-filled ladder back + the wide
+// cushion merged into a solid slab — "old chair models", crates
+// on red pads. The table chairs are APPROVED and untouched; the
+// audience chair is a sibling, not a restyle: same cushion, same
+// wood palette, same footprint/anchor — but its back is a real
+// OPEN ladder: two posts, two slats with REAL GAPS the floor
+// shows through, and an arched top rail. No translucent panel
+// fill anywhere, and four legs reach the floor, so a block of
+// twenty reads as twenty chairs. (The Playtest Gate's back
+// windows sample the post strips — the gaps are by design and
+// are not what the check measures; a backless audience chair
+// still fails it.)
+function audienceBack(x, baseY, rise) {
+  const top = baseY - rise;
+  ctx.strokeStyle = CHAIR_FRAME; ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(x - 13, baseY); ctx.lineTo(x - 13, top + 5);
+  ctx.moveTo(x + 13, baseY); ctx.lineTo(x + 13, top + 5);
+  ctx.stroke();
+  ctx.strokeStyle = CHAIR_SLAT; ctx.lineWidth = 3.2;
+  ctx.beginPath();
+  ctx.moveTo(x - 13, baseY - rise * 0.38); ctx.lineTo(x + 13, baseY - rise * 0.38);
+  ctx.moveTo(x - 13, baseY - rise * 0.66); ctx.lineTo(x + 13, baseY - rise * 0.66);
+  ctx.stroke();
+  // arched top rail — the shaped silhouette a box can't fake
+  ctx.strokeStyle = CHAIR_FRAME; ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.moveTo(x - 14, top + 6);
+  ctx.quadraticCurveTo(x, top - 5, x + 14, top + 6);
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,220,150,.35)'; ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.moveTo(x - 13, top + 4);
+  ctx.quadraticCurveTo(x, top - 6.5, x + 13, top + 4);
+  ctx.stroke();
+}
+
+// The near-side audience back, replayed alone over a sitter by
+// the entity pass (the drawChairBackNear contract, audience art).
+function drawAudienceBackNear(x, y) {
+  audienceBack(x, y + 8, 27);
+}
+
+function drawAudienceChairAt(x, y, dir, opts) {
+  const deferNearBack = Boolean(opts && opts.deferNearBack);
+  ctx.beginPath(); ctx.ellipse(x, y + 10, 20, 7, 0, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0,0,0,.30)'; ctx.fill();
+  const legs = () => {
+    ctx.strokeStyle = CHAIR_DARK; ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(x - 11, y + 2); ctx.lineTo(x - 12, y + 10);
+    ctx.moveTo(x + 11, y + 2); ctx.lineTo(x + 12, y + 10);
+    ctx.stroke();
+  };
+  const cushion = () => {
+    diamond(x, y + 3.5, 30, 12, CHAIR_CUSH_D); // skirt: the pad's thickness
+    diamond(x, y, 30, 12, CHAIR_CUSH);         // the pad itself
+    diamond(x, y - 2, 23, 8.5, CHAIR_CUSH_L);  // padded top catching light
+  };
+  if (dir === 'left' || dir === 'right') {
+    // Iso side panel on the cushion's back diagonal — same
+    // geometry as the table chair's (v1.3.1), but OPEN: slats
+    // with real gaps, no panel fill.
+    const s = dir === 'left' ? 1 : -1; // facing left -> back on the east edge
+    legs();
+    cushion();
+    const ax = x - s * 1, ay = y - 7;
+    const bx = x + s * 15, by = y - 1;
+    const RISE = 28;
+    ctx.strokeStyle = CHAIR_FRAME; ctx.lineWidth = 4.2;
+    ctx.beginPath();
+    ctx.moveTo(ax, ay + 1); ctx.lineTo(ax, ay - RISE + 4);
+    ctx.moveTo(bx, by + 1); ctx.lineTo(bx, by - RISE + 4);
+    ctx.stroke();
+    ctx.strokeStyle = CHAIR_SLAT; ctx.lineWidth = 3.4;
+    for (const t of [0.38, 0.66]) {
+      ctx.beginPath();
+      ctx.moveTo(ax, ay - RISE * t); ctx.lineTo(bx, by - RISE * t);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = CHAIR_FRAME; ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.moveTo(ax, ay - RISE); ctx.lineTo(bx, by - RISE);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,220,150,.35)'; ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(ax, ay - RISE - 2.5); ctx.lineTo(bx, by - RISE - 2.5);
+    ctx.stroke();
+    ctx.strokeStyle = CHAIR_FRAME; ctx.lineWidth = 3.6;
+    ctx.beginPath();
+    ctx.moveTo(ax, ay - RISE * 0.55); ctx.lineTo(ax - s * 11, ay - RISE * 0.55 + 3);
+    ctx.stroke();
+    return;
+  }
+  if (dir === 'up') {
+    // Back on the NEAR side: legs + cushion first, open back
+    // over the cushion's near edge (deferred when occupied).
+    legs();
+    cushion();
+    if (!deferNearBack) audienceBack(x, y + 8, 27);
+    return;
+  }
+  // 'down' (and default): open back on the far side.
+  audienceBack(x, y - 5, 27);
   legs();
   cushion();
 }
@@ -2874,6 +2986,22 @@ function draw() {
       ctx.quadraticCurveTo((ba[0] + bb[0]) / 2, Math.max(ba[1], bb[1]) - 28, bb[0], bb[1] - 56);
       ctx.stroke();
     }
+    // v1.5.1: ONE shared venue mat under the whole audience
+    // block — a single quiet ground cloth instead of the old
+    // read of twenty separate coloured pads under twenty slabs.
+    const audSeats = (mapDef.seats || []).filter(s2 => s2.kind === 'audience');
+    if (audSeats.length) {
+      const axs = audSeats.map(s2 => s2.x), ays = audSeats.map(s2 => s2.y);
+      const mx0 = Math.min(...axs) - 36, mx1 = Math.max(...axs) + 36;
+      const my0 = Math.min(...ays) - 28, my1 = Math.max(...ays) + 28;
+      const mc1 = proj(mx0, my0), mc2 = proj(mx1, my0), mc3 = proj(mx1, my1), mc4 = proj(mx0, my1);
+      ctx.beginPath();
+      ctx.moveTo(mc1[0], mc1[1]); ctx.lineTo(mc2[0], mc2[1]);
+      ctx.lineTo(mc3[0], mc3[1]); ctx.lineTo(mc4[0], mc4[1]);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(76,48,34,.34)'; ctx.fill();
+      ctx.strokeStyle = 'rgba(255,214,150,.16)'; ctx.lineWidth = 2; ctx.stroke();
+    }
     const perf = window.SolarionMixer && window.SolarionMixer.perf;
     const live = perf && perf.active;
     const pulse = live ? 1 + Math.abs(Math.sin(Date.now() / 130)) * 0.22 : 1;
@@ -3167,6 +3295,10 @@ function draw() {
       diamond(sx3 + hb[0], sy3 + hb[1], 22, 8, '#4a2740');
       diamond(sx3, sy3, 30, 10, '#5d3450');
       diamond(sx3, sy3 - 4, 30, 7, '#7a4666');
+    } else if (s.kind === 'audience') { // v1.5.1: the venue chair — open-ladder back, never a box
+      drawAudienceChairAt(sx3, sy3, s.dir, {
+        deferNearBack: s.dir === 'up' && occupiedSeatIds.has(s.id),
+      });
     } else { // chair — v1.1: a real chair (legs, cushion, backrest)
       drawChairAt(sx3, sy3, s.dir, {
         deferNearBack: s.dir === 'up' && occupiedSeatIds.has(s.id),
@@ -3260,7 +3392,9 @@ function draw() {
     // and slot seats read backless while occupied.
     if (p.seated && !p.fallen) {
       const bp = deferredSeatBackPos(p);
-      if (bp) drawChairBackNear(bp[0], bp[1]);
+      // v1.5.1: audience seats replay the AUDIENCE back (open
+      // ladder), every other deferred seat the table chair's.
+      if (bp) (bp[2] === 'audience' ? drawAudienceBackNear : drawChairBackNear)(bp[0], bp[1]);
     }
 
     // v1.2.3 (Item 1): the table's front replays over the

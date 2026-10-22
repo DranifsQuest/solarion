@@ -645,9 +645,11 @@ for (const map of Object.values(MAPS)) {
   //     counter, never on it or behind it.
   // (D) SPRITE PATH: seat kinds are a closed set (an unknown kind
   //     silently falls into the client's chair branch), and
-  //     audience seats (ids >= 101) are ALWAYS kind 'chair' — the
-  //     current drawChairAt art. (Verified in the audit: every
-  //     venue's audience already resolves there; this pins it.)
+  //     audience seats (ids >= 101) are ALWAYS kind 'audience' —
+  //     the dedicated venue-chair art (drawAudienceChairAt).
+  //     (v1.4.1 pinned them to 'chair'; v1.5.1 flips the pin: the
+  //     generic table chair's panel back read as a crate in a
+  //     20-seat block, so the audience path is its own kind now.)
   {
     const tallTiles = [];
     map.tiles.rows.forEach((row, ty) => {
@@ -667,7 +669,7 @@ for (const map of Object.values(MAPS)) {
       }
     };
     for (const s of map.seats || []) {
-      if (s.kind === 'chair' || s.kind === 'stool') cushionVsTall(s.x, s.y, `seat ${s.id}`);
+      if (s.kind === 'chair' || s.kind === 'stool' || s.kind === 'audience') cushionVsTall(s.x, s.y, `seat ${s.id}`);
     }
     if (map.casino) {
       for (const t of map.casino.tables) {
@@ -699,13 +701,18 @@ for (const map of Object.values(MAPS)) {
         err(map.id, `bar construction: bar stool ${s.id} at (${tx},${ty}) does not face a 'B' counter one tile south (found '${tileAt(map, tx, ty + 1)}') — bar stools stand on the patron side, one tile north of the counter (v1.4.1)`);
       }
     }
-    // (D) sprite path: closed kind set + audience is always 'chair'
-    const SEAT_KINDS = new Set(['chair', 'stool', 'sofa', 'bench', 'cafe', 'hookah', 'towel']);
+    // (D) sprite path: closed kind set + audience is always
+    // 'audience'. v1.5.1: the pin flips — venue audience seats
+    // resolve to the AUDIENCE chair art (drawAudienceChairAt),
+    // not the generic table chair whose panel-filled back read
+    // as a crate in a 20-seat block. An audience seat on any
+    // other path (or a kind outside the closed set) fails here.
+    const SEAT_KINDS = new Set(['chair', 'stool', 'sofa', 'bench', 'cafe', 'hookah', 'towel', 'audience']);
     for (const s of map.seats || []) {
-      if (!SEAT_KINDS.has(s.kind)) err(map.id, `sprite path: seat ${s.id} has unknown kind '${s.kind}' — kinds are a closed set; the current chair art is kind 'chair' (v1.4.1)`);
+      if (!SEAT_KINDS.has(s.kind)) err(map.id, `sprite path: seat ${s.id} has unknown kind '${s.kind}' — kinds are a closed set; table chairs are 'chair', venue audience chairs are 'audience' (v1.5.1)`);
       const m = /-seat-(\d+)$/.exec(s.id);
-      if (m && Number(m[1]) >= 101 && s.kind !== 'chair') {
-        err(map.id, `sprite path: audience seat ${s.id} is kind '${s.kind}' — audience seats always resolve to the current chair art (kind 'chair') (v1.4.1)`);
+      if (m && Number(m[1]) >= 101 && s.kind !== 'audience') {
+        err(map.id, `sprite path: audience seat ${s.id} is kind '${s.kind}' — audience seats always resolve to the audience chair art (kind 'audience') (v1.5.1)`);
       }
     }
   }

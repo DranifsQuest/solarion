@@ -143,11 +143,20 @@ function stageDef(tx, ty, facing = 'S') {
   return { x: px(tx), y: px(ty), w, h, pit, speakers };
 }
 
-/** v1.1: 20 audience chairs — 5 rows of 4 facing the stage. */
+/** v1.1: 20 audience chairs — 5 rows of 4 facing the stage.
+ *  v1.5.1: kind 'audience', NOT 'chair'. The generic table-chair
+ *  art (drawChairAt) reads fine at a table, but in a 20-seat block
+ *  seen from behind its panel-filled back + wide cushion merged
+ *  into a crate on a red pad — Zan circled it ten times ("old
+ *  chair models... those chairs all gotta go; the others are
+ *  fine"). Audience seats get their own draw path in the client
+ *  (drawAudienceChairAt): arched slatted back with real gaps,
+ *  four visible legs, same cushion — a chair, not a box. The
+ *  validator's sprite-path law pins this kind to these seats. */
 function audienceSeats(id, startN, cols, rows, dir) {
   const out = [];
   let n = startN;
-  for (const ty of rows) for (const tx of cols) out.push(seat(id, n++, tx, ty, dir, 'chair'));
+  for (const ty of rows) for (const tx of cols) out.push(seat(id, n++, tx, ty, dir, 'audience'));
   return out;
 }
 /** A sittable spot. dir = the way the sitter faces. */
@@ -993,13 +1002,17 @@ function buildCinderMesa() {
     [10, 36], [12, 37], [11, 38],
     [24, 20], [24, 21], [23, 19],
   ]) g[y][x] = 'R';
-  setRect(g, 24, 17, 9, 12, 's');   // Forge Plaza stone
+  setRect(g, 24, 17, 9, 12, 's');   // Hearth Plaza stone
   setRect(g, 31, 2, 16, 12, 's');   // Stage Grounds stone (v1.3.1: the venue moved north — see stage below)
   setRect(g, 27, 38, 7, 2, 's');    // Hookah Corner doorstep terrace (v1.2.2, Item 8: on the FRONT/south side now)
   setRect(g, 4, 40, 24, 1, 'p');    // south path from the gatehouse
   g[5][32] = '|'; g[5][43] = '|';   // stage speakers (v1.3.1: front corners of the north stage)
-  g[18][28] = '|'; g[24][28] = '|'; // forge posts
-  g[21][28] = 'R';                  // the forge monument's stone base (hero)
+  // v1.5.1 (Job B): the forge's two '|' POSTS are DELETED — as
+  // tiles they extrude into plain wooden cubes, and flanking the
+  // old forge they read as stray CRATES in the nook (Zan: "get
+  // rid of boxes"). The forge's 'R' stone-base tile goes too:
+  // the big hearth (below) draws its own stone floor, and the
+  // plaza's 's' stone shows through where all three stood.
   g[20][24] = 'R'; g[21][24] = 'R'; // plaza-edge boulders (after the stone fill)
   gatehouseWalls(g, 3, 43, 'S');
   setRect(g, 26, 32, 9, 6, '#');    // the Hookah Lounge building (S-centre) — a facade now
@@ -1020,10 +1033,16 @@ function buildCinderMesa() {
     props: [
       // v1.2.2 (Item 8): the doorstep lantern moved with the door.
       prop('lantern', 29, 39),
-      // The hero: the great forge between its posts, embers lit.
-      prop('forge', 28, 21),
-      // A forge-plaza nook: rug + lamp to sit by.
-      prop('rug', 28, 22), prop('lamp', 26, 21),
+      // v1.5.1 (Job B — Zan: "make cozy, get rid of boxes,
+      // bigger fireplace"): the old FORGE prop read as a little
+      // stove in the corner, so the plaza's hero is now the BIG
+      // HEARTH (the v3 chimney-breast fireplace, same as the
+      // café/hookah interiors) — a real fire to sit by, with the
+      // room-filling night glow that comes with the kind.
+      prop('hearth', 28, 21),
+      // The nook's rug sits in the middle of the hearth arc
+      // (below), the lamp keeps its spot west of the fire.
+      prop('rug', 29, 24), prop('lamp', 26, 21),
     ],
     // v1.3.1 (Item 3 — UNIFORM VENUE GEOMETRY): the stage stands
     // against the NORTH rim now, pit in front, audience behind —
@@ -1034,12 +1053,23 @@ function buildCinderMesa() {
     // (26,27) (Item 5). The forge nook sofa now faces the forge.
     stage: stageDef(33, 3, 'S'),
     areas: [
-      area('Forge Plaza', 20, 15, 16, 14),
+      area('Hearth Plaza', 20, 15, 16, 14),
       area('Stage Grounds', 31, 1, 16, 12),
       area('Hookah Corner', 24, 29, 16, 12),
     ],
     seats: [
-      seat(id, 5, 28, 25, 'up', 'sofa'),
+      // v1.5.1 (Job B): the hearth nook, recomposed as a proper
+      // SCREEN-SPACE hearth arc around the big hearth at (28,21)
+      // (the validator's hearth-aim law judges the fan in screen
+      // space; bearings noted per seat). The sofa used to sit due
+      // south of the fire at (28,25) — a screen bearing of 0.45,
+      // under the law's 0.55 floor — so it slides south-east onto
+      // the fan's spine, where 'up' aims true (0.89). The two
+      // chairs fan the arc's shoulders; the rug (29,24) lies
+      // between the fire and the seats.
+      seat(id, 5, 31, 26, 'up', 'sofa'),   // arc spine (bearing 0.89)
+      seat(id, 6, 27, 26, 'right', 'chair'), // west shoulder (0.71)
+      seat(id, 7, 33, 24, 'up', 'chair'),    // east shoulder (0.89)
       // v1.3.1: stage audience — pit rows 6-8, then 5 rows of 4
       // chairs facing straight at the stage ('up').
       ...audienceSeats(id, 101, [33, 36, 39, 42], [10, 12, 14, 16, 18], 'up'),

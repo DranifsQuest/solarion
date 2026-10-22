@@ -284,7 +284,7 @@ test('facades + zone character: one building per enterable place, heroes, textur
   // ground somewhere in every big map (no flat single-colour zones)
   const heroes = {
     'the-gateway': 'fountain', 'solstice-bay': 'lighthouse', 'neon-district': 'neonsign',
-    'cinder-mesa': 'forge', 'frosthaven': 'icesculpt', 'verdant-hollow': 'greattree',
+    'cinder-mesa': 'hearth', 'frosthaven': 'icesculpt', 'verdant-hollow': 'greattree',
   };
   for (const [id, kind] of Object.entries(heroes)) {
     assert.ok((MAPS[id].props || []).some(p => p.kind === kind), `${id} flies its hero: ${kind}`);

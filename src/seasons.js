@@ -136,7 +136,7 @@ const SEASONAL = {
       // outside pit + seat block. (The old pair flanked the retired
       // east-rim stage.)
       ['pumpkin', 32, 7], ['pumpkin', 44, 7],
-      // Forge Plaza.
+      // Hearth Plaza (the old forge nook, v1.5.1).
       ['jackolantern', 25, 25],
       // Hookah facade corner.
       ['cobweb', 27, 32],

@@ -13,7 +13,9 @@
  *     a data doctoring, FAILS BY NAME:
  *       1. club counter back to an extruded '#' cube
  *          ("chairs by the bar are still ON the bar"),
- *       2. an audience seat kind off the current chair art path,
+ *       2. an audience seat kind off the audience art path
+ *          (v1.5.1: audience seats resolve to kind 'audience';
+ *          doctored back to the generic table 'chair' here),
  *       3. the east slot stools back at their v1.3.1 offset
  *          ("still chairs on top of slot machines"),
  *     plus the north slot row at its old offset (the borderline
@@ -86,14 +88,14 @@ test('exhibit 1b: an extruded casino counter fails by name', () => {
   assert.match(out, /bar construction: interior 'W' tile/);
 });
 
-test('exhibit 2: an audience seat off the chair-art path fails by name (sprite path)', () => {
+test('exhibit 2: an audience seat off the audience-art path fails by name (sprite path)', () => {
   const dir = makeTree();
   doctor(dir, 'src/maps.js',
-    "out.push(seat(id, n++, tx, ty, dir, 'chair'));",
-    "out.push(seat(id, n++, tx, ty, dir, 'stool'));");
+    "out.push(seat(id, n++, tx, ty, dir, 'audience'));",
+    "out.push(seat(id, n++, tx, ty, dir, 'chair'));");
   const { code, out } = runValidator(dir);
   assert.equal(code, 1, `doctored tree must fail:\n${out}`);
-  assert.match(out, /sprite path: audience seat .* is kind 'stool'/);
+  assert.match(out, /sprite path: audience seat .* is kind 'chair'/);
 });
 
 test('exhibit 3: east slot stools at the v1.3.1 offset fail by name (slot footprint)', () => {

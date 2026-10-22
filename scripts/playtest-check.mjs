@@ -495,6 +495,31 @@ function checkRowAlignment(ctx) {
 // null for seat kinds with no backrest by design (hookah booths).
 export function backWindow(kind, dir, [sx, sy]) {
   const R = (rects, pal, th) => ({ rects: rects.map(([a, b, c, d]) => [sx + a, sy + b, sx + c, sy + d]), pal, th });
+  if (kind === 'audience') {
+    // v1.5.1: the venue chair's back is an OPEN ladder by design
+    // (audienceBack in public/client.js: posts at anchor ±13,
+    // slats at rise*0.38/0.66, arched rail — the FLOOR shows
+    // through the gaps). The windows therefore sample the two
+    // POST strips only, where posts + slat crossings + rail ends
+    // stack wood: the guarantee this check makes is "the back's
+    // structure stands in the back region" — a seat rendering
+    // with NO back (bare cushion/plank, the exact read Zan
+    // circled) still fails, while the open gaps are never
+    // measured as missing back. Same strips and bar as the
+    // table chair's 'up'/'down'; profile strips as its panels.
+    // CALIBRATION (v1.5.1, measured on the real Playtest
+    // captures with this sampler): unoccupied audience backs
+    // read 61.0–86.9% (n=100, median 65.4%), occupied 65.2–73.5%
+    // (n=20 posed sitters) — the posts+slats stack MORE wood in
+    // the strips than the table chair's panel does, so the
+    // shared 10% bar sits in the same kind of empty band as the
+    // chair's (drawn >= 61% vs backless 0.0% in the selftest).
+    // No threshold was loosened for the open design.
+    if (dir === 'down') return R([[9, -34, 16, -10], [-16, -34, -9, -10]], 'wood', TH.backFrac.chair);
+    if (dir === 'up') return R([[10, -20, 16, 8], [-16, -20, -10, 8]], 'wood', TH.backFrac.chair);
+    if (dir === 'left') return R([[8, -34, 17, -2]], 'wood', TH.backFrac.profile);
+    return R([[-17, -34, -8, -2]], 'wood', TH.backFrac.profile); // right
+  }
   if (kind === 'chair' || kind === 'stool' || kind === 'poker') {
     if (dir === 'down') return R([[9, -34, 16, -10], [-16, -34, -9, -10]], 'wood', TH.backFrac.chair);
     if (dir === 'up') return R([[10, -20, 16, 8], [-16, -20, -10, 8]], 'wood', TH.backFrac.chair);
@@ -998,6 +1023,24 @@ export function runSelftest() {
     for (const r of win.rects) paint(good, r, WOOD_RGB);
     const withBack = windowFracFor(good, e, seat);
     expect(`BACK VISIBILITY passes when the profile back is drawn (${dir})`, withBack.ok === true, `frac=${(withBack.frac || 0).toFixed(3)}`);
+  }
+  // BACK VISIBILITY (audience, v1.5.1): the venue chair's back
+  // is an OPEN ladder — the checker samples its post strips, so
+  // a seat that renders as the bare plank Zan circled (no back
+  // at all) must FAIL, and the same seat with its posts/slats
+  // standing must PASS, in both venue facings. The open gaps
+  // are never sampled, so the slatted design can't fail for
+  // being open — but backless still can and does.
+  for (const dir of ['up', 'down']) {
+    const seat = { x: 0, y: 0, kind: 'audience', dir };
+    const e = entryStub([]);
+    const bare = windowFracFor(blankImg(400, 400, FLOOR), e, seat);
+    expect(`BACK VISIBILITY fails on a backless audience seat (${dir})`, bare && bare.ok === false, `frac=${(bare.frac || 0).toFixed(3)}`);
+    const good = blankImg(400, 400, FLOOR);
+    const win = backWindow('audience', dir, seatAnchor(e, seat));
+    for (const r of win.rects) paint(good, r, WOOD_RGB);
+    const withBack = windowFracFor(good, e, seat);
+    expect(`BACK VISIBILITY passes when the audience back is drawn (${dir})`, withBack.ok === true, `frac=${(withBack.frac || 0).toFixed(3)}`);
   }
   // BACK VISIBILITY (neighbour rule): on a bare-floor render
   // (NO backs drawn anywhere), an occupied profile seat whose
