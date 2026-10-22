@@ -13,6 +13,7 @@ strict and makes iteration cheap.
 npm run gate              # fast tier (default) — tests for what changed
 npm run gate:standard     # standard tier — full suite once + load smoke
 npm run gate:release      # release tier — full suite 3x (+ live dispatch)
+npm run gate:playtest     # playtest tier — posed captures + image-space checks
 node scripts/gate.mjs fast --base main   # fast vs a different base ref
 node scripts/gate.mjs release --dispatch # release + fire Actions live-verify
 ```
@@ -29,6 +30,7 @@ wall time, and a final `VERDICT: PASS/FAIL`. Exit code is 0 only on PASS.
 | **FAST** | Only the test files mapped to your changed files, in parallel shards | Iterating on a change. A fast PASS means "the affected area works", nothing more. |
 | **STANDARD** | The full suite once (parallel shards) + the 50-bot load smoke | Before every push. |
 | **RELEASE** | The full suite **3x** + load smoke + GitHub Actions live-verify dispatch (`--dispatch`) | Before anything is called **live**. This tier codifies the standing release rule — outside-network verdict or it didn't happen. It does not weaken it: the Actions run must still be read and green. |
+| **PLAYTEST** | Posed play-zoom captures of every public room (avatars seated at every seat kind, standing in doorways, at pit fronts) + image-space checks over the renders: row alignment, chair-back visibility, legs under tables, clear zones, crowding, edge margin. Emits a contact sheet (`previews/playtest/contact-sheet.html`) + `gate-reports/<ts>-playtest.md` | Before any deploy that changes maps, seats, sprites or the renderer — the data validator cannot see render defects (jumbled rows, sitters painted over tabletops, backs hidden behind occupants). The parent eyeballs the contact sheet and signs before deploy. Runs in ~1–3 min; the checker self-tests against doctored fixtures on every run. |
 
 ## How FAST picks tests
 

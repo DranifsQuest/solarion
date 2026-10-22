@@ -69,12 +69,17 @@
       const base = cfg.apiBase || '';
       const seasonQ = cfg.season ? `&season=${encodeURIComponent(cfg.season)}` : '';
       const sceneQ = cfg.scene ? `&scene=${encodeURIComponent(cfg.scene)}` : '';
-      const r = await fetch(`${base}/preview-data/${encodeURIComponent(cfg.mapId)}?phase=${encodeURIComponent(cfg.phase)}${seasonQ}${sceneQ}`);
+      const shotQ = cfg.shot ? `&shot=${encodeURIComponent(cfg.shot)}` : '';
+      const r = await fetch(`${base}/preview-data/${encodeURIComponent(cfg.mapId)}?phase=${encodeURIComponent(cfg.phase)}${seasonQ}${sceneQ}${shotQ}`);
       const hello = await r.json();
       // The client's real handlers: hello places us + the map,
       // snapshot registers the sample companions' render positions.
       window.handle(hello);
       window.handle({ type: 'snapshot', players: hello.players });
+      // Playtest Gate: expose the posed-actor manifest (shot id,
+      // camera anchor, per-actor seat/stand data) for the capture
+      // driver to record alongside the screenshot.
+      if (hello.playtest) window.__PREVIEW_MANIFEST__ = hello.playtest;
       if (cfg.scene === 'mixer') await openMixerScene(base);
       document.title = `preview:${cfg.mapId}:${cfg.phase}`;
       window.__PREVIEW_READY__ = true;

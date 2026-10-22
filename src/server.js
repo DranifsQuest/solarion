@@ -274,6 +274,135 @@ if (TEST_MODE) {
     };
   }
 
+  // Playtest Gate (tooling only): the shot list for ?scene=playtest.
+  // Deterministic poses derived from the map's own data: sitters
+  // spread over every seat KIND present (table chairs first — the
+  // legs-under-tables pixel check needs them; hearth-arc seats;
+  // audience front rows; casino poker chairs as pseudo-seats), a
+  // doorway stander, a gateway stander, a pit-front stander. The
+  // checker (scripts/playtest-check.mjs) consumes the SAME shot ids
+  // plus the manifest the capture driver records.
+  function playtestShots(map) {
+    const TS = MTILE;
+    const tileOf = (v) => Math.floor(v / TS);
+    const seats = (map.seats || []).slice();
+    const props = map.props || [];
+    const tableNear = (s) => props.find(pr => pr.kind === 'table'
+      && Math.abs(pr.x - s.x) <= TS * 1.05 && Math.abs(pr.y - s.y) <= TS * 1.05
+      && (pr.x !== s.x || pr.y !== s.y));
+    const hearths = props.filter(p => p.kind === 'hearth');
+    const nearHearth = (s) => hearths.some(h =>
+      Math.max(Math.abs(tileOf(s.x) - tileOf(h.x)), Math.abs(tileOf(s.y) - tileOf(h.y))) <= 6);
+    const aud = seats.filter(s => {
+      const m = /-seat-(\d+)$/.exec(s.id);
+      return m && Number(m[1]) >= 101;
+    });
+    const used = new Set();
+    const groups = [];
+    const take = (list, n) => {
+      const picked = [];
+      for (const d of ['down', 'left', 'right', 'up']) {
+        const s = list.find(s2 => s2.dir === d && !used.has(s2.id) && !picked.includes(s2));
+        if (s && picked.length < n) picked.push(s);
+      }
+      for (const s of list) {
+        if (picked.length >= n) break;
+        if (!used.has(s.id) && !picked.includes(s)) picked.push(s);
+      }
+      picked.forEach(s => used.add(s.id));
+      return picked;
+    };
+    const pushGroup = (id, list, n) => {
+      const p = take(list, n);
+      if (p.length) groups.push({ id, seats: p });
+    };
+    pushGroup('table', seats.filter(s => s.kind === 'chair' && tableNear(s)), 4);
+    pushGroup('hearth', seats.filter(s => (s.kind === 'chair' || s.kind === 'sofa') && nearHearth(s)), 3);
+    for (const kind of ['chair', 'stool', 'sofa', 'bench', 'cafe', 'hookah']) {
+      pushGroup(kind, seats.filter(s => s.kind === kind), 4);
+    }
+    if (aud.length && map.stage) {
+      const pcx = map.stage.pit.x + map.stage.pit.w / 2, pcy = map.stage.pit.y + map.stage.pit.h / 2;
+      const sorted = aud.slice().sort((a, b) =>
+        (Math.abs(a.x - pcx) + Math.abs(a.y - pcy)) - (Math.abs(b.x - pcx) + Math.abs(b.y - pcy)));
+      pushGroup('audience', sorted, 4);
+    }
+    if (map.casino) {
+      // Every poker chair is posed (not one per table): the
+      // Playtest Gate verifies each chair's back on its
+      // unoccupied observations, so all of them need a posed
+      // appearance in the manifest.
+      const picks = [];
+      for (const t of map.casino.tables) {
+        for (const c of t.chairs || []) {
+          const dx = c.x - t.x, dy = c.y - t.y;
+          const face = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'left' : 'right') : (dy > 0 ? 'up' : 'down');
+          picks.push({ id: `poker:${t.id}:${c.dir}`, x: c.x, y: c.y, dir: face, kind: 'poker' });
+        }
+      }
+      if (picks.length) groups.push({ id: 'poker', seats: picks });
+    }
+    // Chunk each group into shots of <=5 sitters, clustered within
+    // 16 tiles so a play-zoom frame holds the whole group.
+    const shots = [];
+    for (const g of groups) {
+      const chunks = [];
+      let rest = g.seats.slice();
+      while (rest.length) {
+        const first = rest[0];
+        let cluster = rest.filter(s => Math.max(Math.abs(s.x - first.x), Math.abs(s.y - first.y)) <= TS * 16).slice(0, 5);
+        if (!cluster.length) cluster = [rest[0]];
+        const ids = new Set(cluster.map(s => s.id));
+        rest = rest.filter(s => !ids.has(s.id));
+        chunks.push(cluster);
+      }
+      chunks.forEach((cluster, i) => {
+        shots.push({
+          id: `sit-${g.id}${chunks.length > 1 ? '-' + (i + 1) : ''}`,
+          units: cluster.map(s => ({ seat: s })),
+        });
+      });
+    }
+    const faceToward = (fx, fy, tx2, ty2) => {
+      const dx = tx2 - fx, dy = ty2 - fy;
+      return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
+    };
+    const door = (map.doors || [])[0];
+    if (door) {
+      const cx = door.x + door.w / 2, cy = door.y + door.h / 2;
+      const mx = map.tiles.w * TS / 2, my = map.tiles.h * TS / 2;
+      const ix = cx + Math.sign(mx - cx) * TS, iy = cy + Math.sign(my - cy) * TS;
+      const spot = previewSpot(map, tileOf(ix), tileOf(iy));
+      shots.push({
+        id: 'door',
+        units: [{ stand: { x: spot.x, y: spot.y, dir: faceToward(spot.x, spot.y, cx, cy), at: 'door', label: door.label } }],
+      });
+    }
+    const gw = (map.gateways || [])[0];
+    if (gw) {
+      const spot = previewSpot(map, tileOf(gw.x + gw.w / 2), tileOf(gw.y + gw.h / 2));
+      shots.push({
+        id: 'gateway',
+        units: [{ stand: { x: spot.x, y: spot.y, dir: faceToward(spot.x, spot.y, map.tiles.w * TS / 2, map.tiles.h * TS / 2), at: 'gateway', label: gw.label } }],
+      });
+    }
+    if (map.stage && aud.length) {
+      const st = map.stage;
+      const pcx = st.pit.x + st.pit.w / 2, pcy = st.pit.y + st.pit.h / 2;
+      const acx = aud.reduce((a, s) => a + s.x, 0) / aud.length;
+      const acy = aud.reduce((a, s) => a + s.y, 0) / aud.length;
+      let px = pcx, py = pcy;
+      if (Math.abs(acx - pcx) > Math.abs(acy - pcy)) px = pcx + Math.sign(acx - pcx) * (st.pit.w / 2 + TS);
+      else py = pcy + Math.sign(acy - pcy) * (st.pit.h / 2 + TS);
+      const spot = previewSpot(map, tileOf(px), tileOf(py));
+      shots.push({
+        id: 'stage',
+        units: [{ stand: { x: spot.x, y: spot.y, dir: faceToward(spot.x, spot.y, st.x + st.w / 2, st.y + st.h / 2), at: 'pitfront' } }],
+      });
+    }
+    return shots;
+  }
+
   app.get('/preview-data/:mapId', (req, res) => {
     const map = MAPS[req.params.mapId];
     if (!map) return res.status(404).json({ ok: false, error: 'unknown map' });
@@ -291,6 +420,14 @@ if (TEST_MODE) {
     const sq = req.query.season;
     const season = sq === 'none' ? null
       : SEASONS.includes(sq) ? sq : seasonAt(new Date());
+    // Playtest Gate: ?scene=playtest&shot=__list__ enumerates the
+    // shots for this map (the capture driver hardcodes nothing).
+    if (req.query.scene === 'playtest' && req.query.shot === '__list__') {
+      return res.json({
+        ok: true, map: map.id, interior: !(map.gateways || []).length,
+        shots: playtestShots(map).map(s => ({ id: s.id, actors: s.units.length })),
+      });
+    }
     const ctx = Math.floor(map.tiles.w / 2), cty = Math.floor(map.tiles.h / 2);
     const v = previewSpot(map, ctx, cty);
     const s1 = previewSpot(map, ctx + 2, cty + 2);
@@ -322,9 +459,58 @@ if (TEST_MODE) {
       players = picks.map((s, i) => fakePub(folks[i][0], folks[i][1], folks[i][2], s.x, s.y, s.dir, s));
       you = players[0];
     }
+    // Playtest Gate scene: pose the shot's actors. Every posed
+    // actor wears neon-green pants (accent_color) — the checker's
+    // legs-under-tables pixel test keys on that marker. Actor 0 is
+    // the unit nearest the shot centroid: they are "you", so the
+    // client camera centres on them, exactly like a player's.
+    let playtest = null;
+    if (req.query.scene === 'playtest') {
+      const shots = playtestShots(map);
+      const shot = shots.find(s => s.id === req.query.shot) || shots[0];
+      const TS = MTILE;
+      const tableNear = (s) => (map.props || []).find(pr => pr.kind === 'table'
+        && Math.abs(pr.x - s.x) <= TS * 1.05 && Math.abs(pr.y - s.y) <= TS * 1.05
+        && (pr.x !== s.x || pr.y !== s.y));
+      const units = shot.units.map(u => u.seat
+        ? { x: u.seat.x, y: u.seat.y, dir: u.seat.dir, seat: u.seat }
+        : { x: u.stand.x, y: u.stand.y, dir: u.stand.dir, stand: u.stand });
+      const ccx = units.reduce((a, u) => a + u.x, 0) / units.length;
+      const ccy = units.reduce((a, u) => a + u.y, 0) / units.length;
+      units.sort((a, b) => (Math.abs(a.x - ccx) + Math.abs(a.y - ccy)) - (Math.abs(b.x - ccx) + Math.abs(b.y - ccy)));
+      const LOOKS = [
+        { ...appearance.defaultsFor('M'), hair_color: '#111111', body_color: '#22242c', top_style: 'button-up' },
+        { ...appearance.defaultsFor('F'), hair_style: 'ponytail', hair_color: '#ff2e88', body_color: '#17102b', accessory: 'sunglasses' },
+        { ...appearance.defaultsFor('M'), hair_color: '#ffd23f', body_color: '#3aa7e0', accessory: 'cap' },
+        { ...appearance.defaultsFor('F'), hair_color: '#7a4a21', body_color: '#7a3b4f' },
+        { ...appearance.defaultsFor('M'), hair_color: '#e8e8e8', body_color: '#5d7d43' },
+        { ...appearance.defaultsFor('F'), hair_color: '#3aa7e0', body_color: '#c4505f' },
+      ];
+      const NAMES = ['Preview', 'Pip', 'Juno', 'Ash', 'Rue', 'Sol'];
+      const actors = [];
+      players = units.map((u, i) => {
+        const look = { ...LOOKS[i % LOOKS.length], accent_color: '#2bff5e', bottom_style: 'pants', shoe_color: '#101010' };
+        const p = fakePub(900001 + i, NAMES[i % NAMES.length], look, u.x, u.y, u.dir, u.seat || null);
+        let pull = null;
+        if (u.seat && u.seat.kind === 'chair') {
+          const t = tableNear(u.seat);
+          if (t) pull = [Math.sign(t.x - u.seat.x) * 5, Math.sign(t.y - u.seat.y) * 5];
+        }
+        actors.push({
+          pid: p.id, name: p.name, x: u.x, y: u.y, dir: u.dir,
+          seated: Boolean(u.seat), seatId: u.seat ? u.seat.id : null,
+          seatKind: u.seat ? u.seat.kind : null, stand: u.stand ? u.stand.at : null,
+          pull,
+        });
+        return p;
+      });
+      you = players[0];
+      playtest = { shot: shot.id, map: map.id, camera: { x: units[0].x, y: units[0].y }, actors };
+    }
     res.json({
       type: 'hello', you, map: clientMap(map, season), players, season,
       chat: [], zcoins: 0, bonusGranted: false, bonusAmount: 0, dayCycle,
+      playtest,
     });
   });
   app.get('/preview/:mapId', (req, res) => {

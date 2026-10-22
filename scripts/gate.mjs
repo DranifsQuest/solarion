@@ -7,12 +7,20 @@
  *   node scripts/gate.mjs fast      [--base <git-ref>]   iteration gate
  *   node scripts/gate.mjs standard                       pre-push gate
  *   node scripts/gate.mjs release   [--dispatch]         live-release gate
+ *   node scripts/gate.mjs playtest                       visual gate
  *
  * Tiers (see docs/gatekeeper.md):
  *   fast     — run only the tests mapped to the files you changed.
  *   standard — the full suite once + the 50-bot load smoke.
  *   release  — the full suite 3x; with --dispatch it also fires the
  *              GitHub Actions live-verify and records the run URL.
+ *   playtest — the visual level (scripts/playtest.mjs): posed
+ *              play-zoom captures of every public room + image-space
+ *              checks (row alignment, chair backs, legs under
+ *              tables, clear zones, crowding, edge margin) + a
+ *              contact sheet the parent eyeballs before deploy.
+ *              Its report is gate-reports/<ts>-playtest.md, written
+ *              by the orchestrator itself.
  *
  * WHY THIS EXISTS: the suite's test files each derive their server
  * ports and DB paths from the TEST_RUN env var
@@ -67,6 +75,7 @@ const TEST_FILES = [
   ['test/glyphs.test.js',    null,  0,     0,     0],   // no server (v1.2.2 Item 6: raw-escape UI scan)
   ['test/mixer-cells.test.js', null, 0,    0,     0],   // no server (mixer rework: vm engine + grid + validateMix)
   ['test/audio-glitch.test.js', null, 0,   0,     0],   // no server (v1.3 mixer static fix: offline renders + choke pins)
+  ['test/playtest-gate.test.js', null, 0,  0,     0],   // no server (Playtest Gate: checker codec/projection/selftest)
 ].map(([file, base, stride, extra, run]) => ({ file, base, stride, extra, run }));
 
 const ALL_TESTS = TEST_FILES.map(t => t.file);
@@ -92,6 +101,8 @@ const MAPPING = [
   { match: /^public\//,                           tests: ['test/input-guard.test.js', 'test/sprites.test.js'], why: 'other client assets', fallback: true },
   { match: /^test\/(.+)$/,                        tests: null, why: 'the changed test file itself' }, // tests = the file itself
   { match: /^src\//,                              tests: CORE_SET, why: 'UNMAPPED source file — core fallback', fallback: true },
+  { match: /^scripts\/(playtest|playtest-check|preview)\.mjs$/, tests: ['test/playtest-gate.test.js'], why: 'Playtest Gate tooling + Bake Shop captures' },
+  { match: /^public\/preview\.js$/,               tests: ['test/playtest-gate.test.js'], why: 'preview page feeds the Bake Shop / Playtest captures' },
   { match: /^scripts\/live-verify\.mjs$/,         tests: [], why: 'live-verify harness is exercised by the release tier, not the local suite' },
   { match: /^scripts\//,                          tests: CORE_SET, why: 'tooling/scripts change — core fallback', fallback: true },
 ];
@@ -237,7 +248,7 @@ function dispatchLiveVerify() {
 
 async function main() {
   const args = process.argv.slice(2);
-  const tier = ['fast', 'standard', 'release'].includes(args[0]) ? args[0] : 'fast';
+  const tier = ['fast', 'standard', 'release', 'playtest'].includes(args[0]) ? args[0] : 'fast';
   const baseIdx = args.indexOf('--base');
   const baseRef = baseIdx >= 0 ? args[baseIdx + 1] : 'HEAD';
   const dispatch = args.includes('--dispatch');
@@ -286,6 +297,26 @@ async function main() {
       if (notRun.length) skipped.push(`Not run in FAST tier: ${notRun.join(', ')} — safe for iteration only because the changed files map to the selected suites; STANDARD remains required pre-push and RELEASE before anything is called live.`);
       await suitePass(`FAST — ${files.length} mapped test file(s)`, files);
     }
+  }
+
+  if (tier === 'playtest') {
+    // The visual level: scripts/playtest.mjs runs the posed
+    // captures + image-space checks and writes its own
+    // gate-reports/<ts>-playtest.md (the canonical report for
+    // this tier — this wrapper does not write a second one).
+    say('\n## PLAYTEST — posed captures + image-space checks (scripts/playtest.mjs)');
+    const code = await new Promise((resolve) => {
+      const p = spawn('node', ['scripts/playtest.mjs'], { cwd: ROOT, stdio: 'inherit' });
+      p.on('close', c => resolve(c ?? 1));
+      p.on('error', () => resolve(1));
+    });
+    if (code !== 0) verdict = 'FAIL';
+    say(`- ${code === 0 ? '✅' : '❌'} playtest orchestrator exit ${code} — full numbers in the newest gate-reports/*-playtest.md`);
+    say('\n## Summary');
+    say(`- Wall time: **${((Date.now() - t0) / 1000).toFixed(1)}s**`);
+    say(`\n## VERDICT: ${verdict === 'PASS' ? '✅ PASS' : '❌ FAIL'}`);
+    console.log('\nPlaytest report: see the newest gate-reports/*-playtest.md (written by scripts/playtest.mjs)');
+    process.exit(verdict === 'PASS' ? 0 : 1);
   }
 
   if (tier === 'standard' || tier === 'release') {

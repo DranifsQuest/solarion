@@ -36,6 +36,11 @@
  *   npm run preview -- --scene mixer       # the mixer panel open on
  *                             a per-cell draft (mixer rework; output
  *                             files gain a -mixer suffix)
+ *   npm run preview -- --scene playtest    # Playtest Gate captures:
+ *                             every map's posed shots at PLAY
+ *                             VIEWPORT (1440x900) into previews/
+ *                             playtest/ + a manifest.json of the
+ *                             posed actors (see playtest-check.mjs)
  *   npm run preview -- --factory     # also the factory demo scene
  *
  * Chrome binary: $SOLARION_CHROME, else the first of the known
@@ -155,15 +160,16 @@ async function shootOverCdp(cdp, fileUrl, out, expectTitle) {
 
 /** Build a preview page (the real index.html + injected config) in
  *  dir; its assets resolve against public/ via a file:// <base>. */
-function writePreviewPage(dir, apiBase, mapId, phase, season, scene) {
+function writePreviewPage(dir, apiBase, mapId, phase, season, scene, shot) {
   const pub = path.join(ROOT, 'public');
   let html = fs.readFileSync(path.join(pub, 'index.html'), 'utf8');
   html = html.replace('<head>', `<head>\n<base href="file://${pub}/">`);
   const cfg = { mapId, phase, apiBase };
   if (season) cfg.season = season;
   if (scene) cfg.scene = scene;
+  if (shot) cfg.shot = shot;
   const inject = `<script>window.__PREVIEW_CFG__ = ${JSON.stringify(cfg)};</script>\n<script src="preview.js"></script>\n</body>`;
-  const file = path.join(dir, `${mapId}-${phase}.html`);
+  const file = path.join(dir, `${mapId}-${phase}${shot ? '-' + shot : ''}.html`);
   fs.writeFileSync(file, html.replace('</body>', inject));
   return `file://${file}`;
 }
@@ -189,10 +195,13 @@ async function main() {
   }
   const sceneIdx = argv.indexOf('--scene');
   const scene = sceneIdx >= 0 ? argv[sceneIdx + 1] : null;
-  if (scene && !['sit', 'mixer'].includes(scene)) {
-    console.error(`unknown scene: ${scene} (sit | mixer)`);
+  if (scene && !['sit', 'mixer', 'playtest'].includes(scene)) {
+    console.error(`unknown scene: ${scene} (sit | mixer | playtest)`);
     process.exit(1);
   }
+  // Playtest Gate captures render at PLAY VIEWPORT — the crop a
+  // player's screen actually shows — not the whole-map bake view.
+  const view = scene === 'playtest' ? { w: 1440, h: 900 } : VIEW;
   const wantFactory = argv.includes('--factory');
   const named = [];
   for (let i = 0; i < argv.length; i++) {
@@ -219,7 +228,7 @@ async function main() {
     // This VM exports http_proxy env vars; localhost must go direct.
     '--no-proxy-server',
     `--user-data-dir=${profileDir}`, `--remote-debugging-port=${cdpPort}`,
-    `--window-size=${VIEW.w},${VIEW.h}`, 'about:blank',
+    `--window-size=${view.w},${view.h}`, 'about:blank',
   ], { stdio: 'ignore' });
   const cleanup = () => {
     try { server.kill('SIGTERM'); } catch (e) { /* gone */ }
@@ -247,6 +256,48 @@ async function main() {
     const maps = named.length ? named : allMaps;
     for (const m of maps) {
       if (!allMaps.includes(m)) { console.error(`unknown map: ${m}`); process.exitCode = 1; return; }
+    }
+    if (scene === 'playtest') {
+      // Playtest Gate captures: per map, ask the server for its
+      // shot list, render each shot at play viewport, and record
+      // the posed-actor manifest next to the PNGs. Night phases
+      // only for interior sit shots (the lit rooms) unless --phase
+      // was given explicitly.
+      const ptDir = path.join(OUT_DIR, 'playtest');
+      fs.mkdirSync(ptDir, { recursive: true });
+      const apiBase = `http://127.0.0.1:${port}`;
+      const entries = [];
+      const rows = [];
+      for (const m of maps) {
+        const list = await (await fetch(`${apiBase}/preview-data/${encodeURIComponent(m)}?scene=playtest&shot=__list__`)).json();
+        if (!list.ok) throw new Error(`shot list failed for ${m}`);
+        for (const shotInfo of list.shots) {
+          const shotPhases = phaseIdx >= 0 ? phases
+            : (shotInfo.id.startsWith('sit-') && list.interior ? ['day', 'night'] : ['day']);
+          for (const ph of shotPhases) {
+            const out = path.join(ptDir, `${m}-${ph}-${shotInfo.id}.png`);
+            await shootOverCdp(cdp, writePreviewPage(pageDir, apiBase, m, ph, season, scene, shotInfo.id), out, `preview:${m}:${ph}`);
+            const r = await cdp.send('Runtime.evaluate', {
+              expression: `(() => { const cv = document.getElementById('cv'); const rc = cv ? cv.getBoundingClientRect() : { left: 0, top: 0 }; return { m: window.__PREVIEW_MANIFEST__ || null, cw: (cv || {}).width || 0, ch: (cv || {}).height || 0, ox: rc.left, oy: rc.top }; })()`,
+              returnByValue: true,
+            });
+            const v = r && r.result && r.result.value;
+            if (!v || !v.m) throw new Error(`no playtest manifest from page: ${m}/${ph}/${shotInfo.id}`);
+            entries.push({
+              file: `previews/playtest/${m}-${ph}-${shotInfo.id}.png`,
+              map: m, phase: ph, shot: shotInfo.id,
+              canvas: { w: v.cw, h: v.ch, ox: v.ox, oy: v.oy }, camera: v.m.camera, actors: v.m.actors,
+            });
+            rows.push(`  ${m} (${ph}, shot=${shotInfo.id}) -> previews/playtest/${m}-${ph}-${shotInfo.id}.png`);
+          }
+        }
+      }
+      const manifest = { generated: new Date().toISOString(), viewport: view, entries };
+      fs.writeFileSync(path.join(ptDir, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
+      console.log(`playtest captures written to ${ptDir} (${entries.length} shots):`);
+      console.log(rows.join('\n'));
+      console.log('manifest: previews/playtest/manifest.json');
+      return;
     }
     fs.mkdirSync(OUT_DIR, { recursive: true });
     const apiBase = `http://127.0.0.1:${port}`;
