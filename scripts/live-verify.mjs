@@ -544,13 +544,25 @@ async function main() {
 
   // ---- sitting: A sits on a Gateway bench and stands back up
   try {
-    await walkTo(A.client, 1008, 624, { arrive: 10 });
-    A.client.send({ type: 'interact' });
-    await waitFor(() => {
+    const seatedInSnapshots = () => {
       const s = lastOf(A.client, 'snapshot');
       const me2 = s && s.players.find(p => p.id === A.id);
       return me2 && me2.seated ? true : null;
-    }, 6000, 'A seated in snapshots');
+    };
+    await walkTo(A.client, 1008, 624, { arrive: 10 });
+    A.client.send({ type: 'interact' });
+    try {
+      await waitFor(seatedInSnapshots, 6000, 'A seated in snapshots');
+    } catch (e) {
+      // One honest retry: a first interact can land while the walk
+      // is still settling (observed live — this leg timed out on an
+      // attempt where everything else passed). Re-approach the
+      // bench and interact once more; the assertion stays
+      // observational (seated=true must appear in snapshots).
+      await walkTo(A.client, 1008, 624, { arrive: 10 });
+      A.client.send({ type: 'interact' });
+      await waitFor(seatedInSnapshots, 6000, 'A seated in snapshots (retry)');
+    }
     A.client.send({ type: 'interact' });
     await waitFor(() => {
       const s = lastOf(A.client, 'snapshot');
@@ -675,6 +687,33 @@ async function main() {
     C.client.ws.close();
   } catch (e) { report('hookah lounge: 10 puffs at 5z turn C hippy (broadcast); hippy holds in the window and reverts 30s after the last puff', false, e.message); }
 
+  // ---- positioning: B walked home. The homes leg ends with B
+  // back in the Casino Lounge (its leave-studio return point), but
+  // the Phase 9 legs below premise B at the Gateway with A (the
+  // navigator count) — and B is a regular account, so no warping
+  // home: B walks, lounge door -> Bay -> gatehouse -> Gateway.
+  try {
+    let bMap = lastOf(B.client, 'map');
+    let bId = bMap && bMap.map.id;
+    if (bId && bId.startsWith('studio:')) {
+      B.client.send({ type: 'leave-studio' });
+      const m = await waitFor(() => lastOf(B.client, 'map', x => !x.map.id.startsWith('studio:')), 8000, 'B exits studio');
+      bId = m.map.id;
+    }
+    if (bId === 'casino-lounge') {
+      await travel(B.client, 480, 592, 'solstice-bay', 'B lounge door back to the bay');
+      bId = 'solstice-bay';
+    }
+    if (bId === 'solstice-bay') {
+      await travel(B.client, 1152, 1392, 'the-gateway', 'B bay return gateway');
+      bId = 'the-gateway';
+    }
+    if (bId !== 'the-gateway') throw new Error(`unexpected B map before Phase 9: ${bId}`);
+    const bm = lastOf(B.client, 'map');
+    if (!bm || bm.map.id !== 'the-gateway') throw new Error(`B map after walking home: ${bm && bm.map.id}`);
+    report('positioning: B walked home from the Casino Lounge to The Gateway', true, 'lounge door -> bay gatehouse, on foot');
+  } catch (e) { report('positioning: B walked home from the Casino Lounge to The Gateway', false, e.message); }
+
   // ---- Phase 9: friends + navigator (v1.2 Item J: fast travel is
   // owner-only now — these legs assert the NEW contract: regular
   // accounts keep the who's-where INFO but their join-friend /
@@ -684,7 +723,10 @@ async function main() {
     await waitFor(() => lastOf(B.client, 'friend-request', f => f.fromId === A.id), 6000, 'B got friend request');
     B.client.send({ type: 'friend-respond', userId: A.id, accept: true });
     await waitFor(() => lastOf(A.client, 'friends', f => f.friends.some(u => u.id === B.id && u.online)), 6000, 'A sees B as online friend');
-    if (lastOf(B.client, 'hello').you.isOwner !== false) throw new Error('harness account B should NOT be flagged owner');
+    // Read the connect-time hello (client.hello is stored separately
+    // at connect and never cleared) — the msgs buffer gets cleared
+    // by earlier legs, so lastOf(..., 'hello') can be null here.
+    if (B.client.hello.you.isOwner !== false) throw new Error('harness account B should NOT be flagged owner');
     const mark = B.client.msgs.length;
     B.client.send({ type: 'join-friend', userId: A.id });
     const refusal = await waitFor(() => B.client.msgs.slice(mark).filter(m => m.type === 'notice' && /Fast travel is owner-only/.test(m.text)).pop(), 6000, 'join-friend refused for a regular account');
