@@ -37,6 +37,20 @@
  *   - FRONT-DOOR LAW (v1.2.2, Item 8): a door adjacent to a
  *     building facade must sit on a FRONT (south or east) face —
  *     a door on a back (north/west) wall fails
+ *   - DOOR + LANDING CLEARANCE (v1.2.3, Items 2/8): no seat
+ *     within 2 tiles (Chebyshev) of a door tile in any map, and
+ *     no seat or table within 2 tiles of a door's landing in the
+ *     target map — doors and arrivals keep a clear apron
+ *   - TABLE GROUP SPACING (v1.2.3, Item 8): in interiors, table
+ *     props sit >=5 tiles apart centre-to-centre, so groups keep
+ *     >=2 clear tiles between their chair rings
+ *   - HEARTH AIM (v1.2.3, Item 7): a chair/sofa seat within 6
+ *     tiles of a fireplace is a hearth-arc seat and must AIM at
+ *     the fire (its facing carries toward the hearth) — never
+ *     sideways, never back-to-fire
+ *   - PIT-FRONT CLEAR (v1.2.3, Item 9): the band between a pit's
+ *     front edge and the audience block — the performer's apron
+ *     and the crowd's standing edge — holds no seats, no props
  *
  *   WARNINGS (Zan's standing rules, as far as the data supports)
  *   - an interior map with != 1 inbound door (one facade entrance)
@@ -187,6 +201,23 @@ for (const map of Object.values(MAPS)) {
         if (collides(target, x, y, 10)) {
           err(map.id, `door "${d.label}" lands its targetSpawn inside a solid tile in ${d.target}`);
         }
+        // v1.2.3 (Items 2/8): LANDING CLEARANCE — no seat and no
+        // table within 2 tiles (Chebyshev) of where the traveller
+        // appears in the target map.
+        const lx = tileOfPx(x), ly = tileOfPx(y);
+        for (const s of target.seats || []) {
+          const sx2 = tileOfPx(s.x), sy2 = tileOfPx(s.y);
+          if (Math.max(Math.abs(sx2 - lx), Math.abs(sy2 - ly)) <= 2) {
+            err(map.id, `landing clearance: door "${d.label}" lands within 2 tiles of seat ${s.id} in ${d.target} — landings stay clear`);
+          }
+        }
+        for (const pr of target.props || []) {
+          if (pr.kind !== 'table') continue;
+          const px2 = tileOfPx(pr.x), py2 = tileOfPx(pr.y);
+          if (Math.max(Math.abs(px2 - lx), Math.abs(py2 - ly)) <= 2) {
+            err(map.id, `landing clearance: door "${d.label}" lands within 2 tiles of a table in ${d.target} — landings stay clear`);
+          }
+        }
         for (const p of [...(target.doors || []), ...(target.gateways || [])]) {
           if (inRect(x, y, p)) {
             err(map.id, `door "${d.label}" targetSpawn lands inside ${d.target}'s "${p.label}" rect — bounce-back risk`);
@@ -244,6 +275,47 @@ for (const map of Object.values(MAPS)) {
     if (collides(map, s.x, s.y, 6)) err(map.id, `seat ${s.id} is embedded in a solid tile`);
   }
 
+  // -- v1.2.3 (SPACE PASS) layout laws
+  const seatTilesArr = (map.seats || []).map(s => [tileOfPx(s.x), tileOfPx(s.y), s]);
+  // DOOR CLEARANCE (Items 2/8): no seat crowds a door — every
+  // seat keeps >2 tiles (Chebyshev) from every door tile.
+  for (const d of map.doors || []) {
+    for (const [tx, ty] of rectTiles(d)) {
+      for (const [sx2, sy2, s] of seatTilesArr) {
+        if (Math.max(Math.abs(sx2 - tx), Math.abs(sy2 - ty)) <= 2) {
+          err(map.id, `door clearance: seat ${s.id} crowds door "${d.label}" (${sx2},${sy2} within 2 of door tile ${tx},${ty}) — doors keep a clear apron`);
+        }
+      }
+    }
+  }
+  // TABLE GROUP SPACING (Item 8): in interiors (no gateways),
+  // round-table groups keep >=2 clear tiles between their chair
+  // rings — centres >=5 tiles apart (Chebyshev).
+  if (!(map.gateways || []).length) {
+    const tables = (map.props || []).filter(p => p.kind === 'table')
+      .map(p => [tileOfPx(p.x), tileOfPx(p.y)]);
+    for (let i = 0; i < tables.length; i++) for (let j = i + 1; j < tables.length; j++) {
+      const dd = Math.max(Math.abs(tables[i][0] - tables[j][0]), Math.abs(tables[i][1] - tables[j][1]));
+      if (dd < 5) err(map.id, `group spacing: tables at (${tables[i]}) and (${tables[j]}) sit ${dd} tiles apart — table groups keep >=2 clear tiles between chair rings (>=5 centre to centre)`);
+    }
+  }
+  // HEARTH AIM (Item 7): a chair/sofa seat near a fireplace is a
+  // hearth-arc seat, and arc seats AIM AT THE FIRE — the facing
+  // must carry toward the hearth (positive dot product), never
+  // sideways or back-to-fire. (Hookah station seats are their
+  // own kind and aim at their stations, not the hearth.)
+  const DIRV = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
+  for (const hp of (map.props || []).filter(p => p.kind === 'hearth')) {
+    const hx = tileOfPx(hp.x), hy = tileOfPx(hp.y);
+    for (const [sx2, sy2, s] of seatTilesArr) {
+      if (s.kind !== 'chair' && s.kind !== 'sofa') continue;
+      if (Math.max(Math.abs(sx2 - hx), Math.abs(sy2 - hy)) > 6) continue;
+      const v = DIRV[s.dir] || [0, 0];
+      const dot = v[0] * (hx - sx2) + v[1] * (hy - sy2);
+      if (dot <= 0) err(map.id, `hearth aim: seat ${s.id} at (${sx2},${sy2}) faces '${s.dir}' — hearth-arc seats aim at the fireplace (${hx},${hy})`);
+    }
+  }
+
   // -- venue purity + facing + width (v1.2, Items B/M/P)
   // For maps with a stage, the venue rects are DERIVED from the
   // map's own data: the audience seat block is the tile bounding
@@ -280,6 +352,29 @@ for (const map of Object.values(MAPS)) {
       // so the apron is held clear too (the pit/platform keep
       // their own stricter rules above).
       const inApron = (tx, ty) => tx >= x0 - 1 && tx <= x1 + 1 && ty >= y0 - 1 && ty <= y1 + 1;
+      // v1.2.3 (Item 9): PIT-FRONT CLEAR — the band strictly
+      // between the pit's front edge and the audience block, on
+      // the audience axis, is the performer's apron and the
+      // crowd's standing edge: no seats, no props (any layer).
+      const pitX0 = tileOfPx(st.pit.x), pitX1 = tileOfPx(st.pit.x + st.pit.w - 1);
+      const pitY0 = tileOfPx(st.pit.y), pitY1 = tileOfPx(st.pit.y + st.pit.h - 1);
+      const bandSet = new Set();
+      if (y0 > pitY1) { for (let ty = pitY1 + 1; ty < y0; ty++) for (let tx = x0; tx <= x1; tx++) bandSet.add(`${tx},${ty}`); }
+      else if (y1 < pitY0) { for (let ty = y1 + 1; ty < pitY0; ty++) for (let tx = x0; tx <= x1; tx++) bandSet.add(`${tx},${ty}`); }
+      else if (x0 > pitX1) { for (let tx = pitX1 + 1; tx < x0; tx++) for (let ty = y0; ty <= y1; ty++) bandSet.add(`${tx},${ty}`); }
+      else if (x1 < pitX0) { for (let tx = x1 + 1; tx < pitX0; tx++) for (let ty = y0; ty <= y1; ty++) bandSet.add(`${tx},${ty}`); }
+      if (bandSet.size) {
+        for (const layer of layers) {
+          for (const pr of layer.props) {
+            const k = `${tileOfPx(pr.x)},${tileOfPx(pr.y)}`;
+            if (bandSet.has(k)) err(map.id, `pit-front clear: [${layer.label}] prop "${pr.kind}" stands in front of the pit (${k}) — the pit front stays clear`);
+          }
+        }
+        for (const s of map.seats || []) {
+          const k = `${tileOfPx(s.x)},${tileOfPx(s.y)}`;
+          if (bandSet.has(k)) err(map.id, `pit-front clear: seat ${s.id} stands in front of the pit (${k}) — the pit front stays clear`);
+        }
+      }
       for (const layer of layers) {
         for (const pr of layer.props) {
           const tx = tileOfPx(pr.x), ty = tileOfPx(pr.y), k = `${tx},${ty}`;

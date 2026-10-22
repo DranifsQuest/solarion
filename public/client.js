@@ -190,44 +190,52 @@ function drawDoor(d, open) {
 
 // ------------------------------------------------------------------ warm props (Phase 10)
 function drawHearthAt(x, y, seed) {
-  // Hearth v2 (v1.2.2, Item 4 — Zan: "bigger fireplaces"): a real
-  // fireplace, about two tiles across — a wide stone hearth floor,
-  // a glow pool spilling onto the boards in front, a brick body
-  // with a mantel shelf, and a firebox half again the old size
-  // with taller flames. (The night pass adds its own wide glow:
-  // see the hearth entry in the glow loop below.)
+  // Hearth v3 (v1.2.3, Item 6 — Zan: "fireplaces need to be big"):
+  // a proper CHIMNEY BREAST about three tiles across — a broad
+  // stone hearth floor, a wide brick body with a breast column
+  // rising above a deep mantel shelf, a LARGE firebox with big
+  // flames, and a glow pool that spills well into the room. The
+  // fireplace is the room's anchor; it should read from across
+  // the room, not as a little stove in the corner. (The night
+  // pass adds its own wide glow: see the hearth entries below.)
   const t = Date.now();
-  diamond(x, y + 4, 58, 21, '#4c3a2c'); // stone hearth floor (outer)
-  diamond(x, y + 2, 52, 18, '#5a4636'); // stone hearth floor (inner)
+  diamond(x, y + 6, 106, 38, '#4c3a2c'); // stone hearth floor (outer)
+  diamond(x, y + 3, 94, 32, '#5a4636');   // stone hearth floor (inner)
   // warm glow pool on the floor in front of the fire
-  const grd = ctx.createRadialGradient(x, y + 8, 6, x, y + 8, 76);
-  grd.addColorStop(0, 'rgba(255,150,50,.20)');
+  const grd = ctx.createRadialGradient(x, y + 10, 8, x, y + 10, 112);
+  grd.addColorStop(0, 'rgba(255,150,50,.22)');
   grd.addColorStop(1, 'rgba(255,150,50,0)');
   ctx.fillStyle = grd;
-  ctx.beginPath(); ctx.ellipse(x, y + 8, 76, 31, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(x, y + 10, 112, 46, 0, 0, Math.PI * 2); ctx.fill();
+  // the chimney breast: a narrower brick column rising above the
+  // mantel, so the fireplace has height as well as width
+  ctx.fillStyle = '#654631';
+  ctx.fillRect(x - 30, y - 94, 60, 42);
+  ctx.fillStyle = 'rgba(0,0,0,.18)';    // breast brick courses
+  for (let i = 0; i < 4; i++) ctx.fillRect(x - 30, y - 86 + i * 10, 60, 1.6);
   ctx.fillStyle = '#6e4a3a';
-  ctx.fillRect(x - 27, y - 46, 54, 44); // brick body
+  ctx.fillRect(x - 47, y - 54, 94, 52); // brick body
   ctx.fillStyle = 'rgba(0,0,0,.18)';    // brick courses
-  for (let i = 0; i < 4; i++) ctx.fillRect(x - 27, y - 37 + i * 10, 54, 1.6);
+  for (let i = 0; i < 5; i++) ctx.fillRect(x - 47, y - 45 + i * 10, 94, 1.6);
   ctx.fillStyle = '#54382a';
-  ctx.fillRect(x - 31, y - 51, 62, 7);  // mantel shelf
+  ctx.fillRect(x - 53, y - 61, 106, 8); // mantel shelf
   ctx.fillStyle = '#ffd9a0';
-  ctx.fillRect(x - 31, y - 45, 62, 2);  // mantel's warm trim line
+  ctx.fillRect(x - 53, y - 54, 106, 2); // mantel's warm trim line
   ctx.fillStyle = '#160b06';
-  ctx.fillRect(x - 16, y - 35, 32, 33); // firebox
+  ctx.fillRect(x - 27, y - 47, 54, 45); // firebox — big enough to sit by
   ctx.fillStyle = '#3a2415';
-  ctx.fillRect(x - 12, y - 9, 24, 4);   // logs
-  ctx.fillRect(x - 9, y - 14, 19, 4);
+  ctx.fillRect(x - 19, y - 13, 38, 6);  // logs
+  ctx.fillRect(x - 14, y - 20, 29, 6);
   const tongue = (i, w, h, col) => {
-    const fx = x + Math.sin(t / 130 + seed * 3 + i * 2.2) * 1.6;
+    const fx = x + Math.sin(t / 130 + seed * 3 + i * 2.2) * 2.2;
     const fh = h * (0.85 + 0.3 * Math.abs(Math.sin(t / 170 + seed + i * 1.7)));
     ctx.beginPath();
-    ctx.ellipse(fx, y - 5 - fh / 2, w, fh / 2, 0, 0, Math.PI * 2);
+    ctx.ellipse(fx, y - 7 - fh / 2, w, fh / 2, 0, 0, Math.PI * 2);
     ctx.fillStyle = col; ctx.fill();
   };
-  tongue(0, 11, 26, 'rgba(255,110,26,.9)');
-  tongue(1, 7.5, 20, 'rgba(255,176,66,.95)');
-  tongue(2, 4.2, 14, 'rgba(255,233,163,1)');
+  tongue(0, 18, 42, 'rgba(255,110,26,.9)');
+  tongue(1, 12.5, 33, 'rgba(255,176,66,.95)');
+  tongue(2, 7, 24, 'rgba(255,233,163,1)');
 }
 
 function drawStringLights(x, y, seed, cols) {
@@ -2234,6 +2242,51 @@ function drawTableAt(x, y) {
   ctx.strokeStyle = '#7a5a2b'; ctx.lineWidth = 1.2; ctx.stroke();
 }
 
+// v1.2.3 (Item 1 — Zan: "my legs should be under the table"): a
+// player seated at a TABLE seat (a chair one tile from a round
+// table — the café's and terrace's baked tables, or a placed
+// table piece in a home) gets two things: a small PULL-IN toward
+// the table when their sprite is projected, and the table's
+// FRONT replayed over their lap after the sprite (see
+// drawTableFrontAt) — so the lower body tucks under the tabletop
+// instead of painting over it. Poker felts render their own way
+// and are untouched: their seats are not 'chair' map seats.
+function tableSeatInfo(p) {
+  if (!p.seatId || !mapDef) return null;
+  const TS = mapDef.tileSize || 32;
+  let sx2, sy2, tx2, ty2;
+  if (p.seatId.startsWith('furn:')) {
+    const f = sceneFurniture.find(f2 => `furn:${f2.instanceId}` === p.seatId);
+    if (!f || f.type !== 'seating') return null;
+    const t = sceneFurniture.find(f2 => f2.type === 'table'
+      && Math.max(Math.abs(f2.x - f.x), Math.abs(f2.y - f.y)) === 1);
+    if (!t) return null;
+    sx2 = (f.x + 0.5) * TS; sy2 = (f.y + 0.5) * TS;
+    tx2 = (t.x + 0.5) * TS; ty2 = (t.y + 0.5) * TS;
+  } else {
+    const s = (mapDef.seats || []).find(s2 => s2.id === p.seatId);
+    if (!s || s.kind !== 'chair') return null;
+    const t = (mapDef.props || []).find(pr => pr.kind === 'table'
+      && Math.abs(pr.x - s.x) <= TS * 1.05 && Math.abs(pr.y - s.y) <= TS * 1.05
+      && (pr.x !== s.x || pr.y !== s.y));
+    if (!t) return null;
+    sx2 = s.x; sy2 = s.y; tx2 = t.x; ty2 = t.y;
+  }
+  const pull = [Math.sign(tx2 - sx2) * 5, Math.sign(ty2 - sy2) * 5];
+  const [px3, py3] = proj(tx2, ty2);
+  return { pull, tx: px3, ty: py3 };
+}
+
+// The table's front band (near rim + pedestal front), replayed
+// over a seated player: the part of the table the camera sees in
+// front of the sitter's legs.
+function drawTableFrontAt(x, y) {
+  ctx.save();
+  ctx.beginPath(); ctx.rect(x - 36, y - 7, 72, 22); ctx.clip();
+  drawTableAt(x, y);
+  ctx.restore();
+}
+
 // v1.1 stage pyrotechnics: bounded spark particles, spawned on the
 // performing mix's bar grid at the platform's front corners.
 const pyro = [];
@@ -2716,7 +2769,11 @@ function draw() {
   for (const p of sorted) {
     const rp = renderPos.get(p.id);
     if (!rp) continue;
-    const [sx, sy] = proj(rp.x, rp.y);
+    // v1.2.3 (Item 1): a table sitter is pulled in toward their
+    // table before projecting — shadow, nameplate and bubbles all
+    // ride the same nudged point.
+    const tbl = p.seated && !p.fallen ? tableSeatInfo(p) : null;
+    const [sx, sy] = tbl ? proj(rp.x + tbl.pull[0], rp.y + tbl.pull[1]) : proj(rp.x, rp.y);
     let bob = rp.moving ? Math.abs(Math.sin(now / 110 + p.id)) * 3 : 0;
     // Phase 9: dancing is a whole-body bounce (anywhere, anytime).
     if (p.emote === 'dance') bob += Math.abs(Math.sin(now / 130 + p.id * 1.3)) * 6;
@@ -2766,6 +2823,10 @@ function draw() {
       const bp = deferredSeatBackPos(p);
       if (bp) drawChairBackNear(bp[0], bp[1]);
     }
+
+    // v1.2.3 (Item 1): the table's front replays over the
+    // sitter's lap — legs under the table, not painted over it.
+    if (tbl) drawTableFrontAt(tbl.tx, tbl.ty);
 
     // performer holds the mic (soul doc §9.3)
     if (p.performing) {
@@ -2941,7 +3002,7 @@ function draw() {
     // map dressing, in placed home furniture, and beside a home's
     // own door — all punch warm holes in the night.
     for (const pr of mapDef.props || []) {
-      if (pr.kind === 'hearth') glow(pr.x, pr.y - 14, 130, 0.34); // v1.2.2: the bigger hearth throws a wider pool
+      if (pr.kind === 'hearth') glow(pr.x, pr.y - 16, 175, 0.38); // v1.2.3: the BIG hearth throws a room-filling pool
       else if (pr.kind === 'lamp' || pr.kind === 'lantern' || pr.kind === 'stringlights') glow(pr.x, pr.y - 14, 62, 0.24);
       // Lane C heroes that burn at night: the lighthouse lamp, the
       // great NEON sign, the forge's embers. (Equal x/y offsets
@@ -2968,7 +3029,7 @@ function draw() {
     }
     const TSg = mapDef.tileSize || 32;
     for (const f of sceneFurniture) {
-      if (f.type === 'hearth') glow((f.x + 0.5) * TSg, (f.y + 0.5) * TSg - 12, 120, 0.34);
+      if (f.type === 'hearth') glow((f.x + 0.5) * TSg, (f.y + 0.5) * TSg - 14, 165, 0.38);
       else if (f.type === 'lamp' || f.type === 'lantern' || f.type === 'lights') {
         glow((f.x + 0.5) * TSg, (f.y + 0.5) * TSg - 12, 60, 0.22);
       }

@@ -151,7 +151,7 @@ async function toCasino(user) {
 
 const T1 = { id: 'casino-lounge-poker-1', x: 176, y: 144 };
 const T2 = { id: 'casino-lounge-poker-2', x: 400, y: 144 };
-const SLOT1_SPOT = { x: 528, y: 112 }; // slot 1's stool in the slots section (sit to spin)
+const SLOT1_SPOT = { x: 624, y: 112 }; // slot 1 stool (slots section moved east in the 36x24 casino, v1.2.3)
 
 function latestTable(user, tableId) {
   return user.client.msgs.filter(m => m.type === 'poker-state' && m.id === tableId).pop() || null;
@@ -536,7 +536,7 @@ test('cleanup: disconnect and map change cash out and free the seat', { timeout:
   await sitAt(a, T1, 'W');
   assert.equal(await balanceOf(a), 4800);
   await sleep(1600); // portal debounce
-  a.client.send({ type: 'debug-teleport', x: 480, y: 592 }); // lounge door-back rect
+  a.client.send({ type: 'debug-teleport', x: 544, y: 720 }); // lounge door-back rect (door (16,22) since v1.2.3)
   await waitFor(() => a.client.msgs.filter(m => m.type === 'map' && m.map.id === 'solstice-bay').pop(),
     5000, 'gail leaves through the lounge door');
   await sleep(300);
@@ -866,8 +866,8 @@ test('slot stools: seated player faces the machine in BOTH casinos (Item G)', { 
   const u = await makeUser('facing_fay');
   await toCasino(u);
   await sleep(3400); // transfer lock
-  await sitAndCheck(u, { x: 528, y: 112 }, 'up', 'lounge north-row slot');
-  await sitAndCheck(u, { x: 880, y: 144 }, 'right', 'lounge east-wall slot');
+  await sitAndCheck(u, { x: 624, y: 112 }, 'up', 'lounge north-row slot');
+  await sitAndCheck(u, { x: 1072, y: 176 }, 'right', 'lounge east-wall slot');
   u.client.ws.close();
 
   // Neon Casino: the east-wall row from Zan's screenshot.
@@ -878,7 +878,7 @@ test('slot stools: seated player faces the machine in BOTH casinos (Item G)', { 
   v.client.send({ type: 'debug-teleport', x: 1968, y: 1232 }); // casino door (FRONT/south face since v1.2.2 Item 8)
   await waitFor(() => v.client.msgs.filter(m => m.type === 'map' && m.map.id === 'neon-casino').pop(), 5000, 'vic in neon-casino');
   await sleep(3400); // transfer lock
-  await sitAndCheck(v, { x: 880, y: 144 }, 'right', 'neon east-wall slot');
-  await sitAndCheck(v, { x: 528, y: 112 }, 'up', 'neon north-row slot');
+  await sitAndCheck(v, { x: 1072, y: 176 }, 'right', 'neon east-wall slot');
+  await sitAndCheck(v, { x: 624, y: 112 }, 'up', 'neon north-row slot');
   v.client.ws.close();
 });

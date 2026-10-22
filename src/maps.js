@@ -174,8 +174,9 @@ function area(name, tx, ty, tw, th) {
 // THE GATEWAY — entrance plaza / hub. Five gateway arches along the
 // north terrace, a fountain at the plaza centre, market corners, and
 // the Gateway Café building in the south-east (door on its FRONT,
-// south face since v1.2.2 Item 8). Benches ring the fountain; café
-// booths flank the café's front door on their terrace.
+// south face since v1.2.2 Item 8; shifted north off the map edge
+// in v1.2.3). Benches ring the fountain; composed terrace table
+// sets flank the café's front door.
 // ------------------------------------------------------------------
 function buildGateway() {
   const W = 72, H = 45;
@@ -184,7 +185,7 @@ function buildGateway() {
   // Lane C ground zoning: stone plaza at the centre, stone under
   // the café corner + south market + the two market terraces.
   setRect(g, 28, 15, 16, 14, 's');  // Fountain Plaza stone
-  setRect(g, 54, 28, 16, 16, 's');  // Café Corner stone (v1.2.2: reaches the café's new FRONT terrace, ty43)
+  setRect(g, 54, 28, 16, 16, 's');  // Café Corner stone (v1.2.3: plaza under the shifted café, its terrace, and the open margin to the map edge)
   setRect(g, 6, 32, 20, 10, 's');   // South Market stone
   setRect(g, 3, 4, 6, 6, 's');      // NW market terrace
   setRect(g, 63, 4, 6, 6, 's');     // NE market terrace
@@ -196,9 +197,12 @@ function buildGateway() {
   // v1.2 (Item Q): ONE post tile per stall prop — its own tile.
   // The old scatter of bare post cubes around the south plaza and
   // café corner read as stray crates; they're gone.
-  for (const [x, y] of [[10, 36], [57, 36]]) {
-    g[y][x] = '|';                // market stall posts, south plaza
-  }
+  g[36][10] = '|';                // market stall post, south plaza
+  // v1.2.3 (Item 3): the café-corner stall's post stood at (57,36),
+  // inside the café's footprint once the building shifted north —
+  // the stall now stands on open stone west of the café at (55,31),
+  // on its own post like every other stall.
+  g[31][55] = '|';
   // Market terraces: stall posts + trees instead of the old blocks.
   g[6][5] = '|'; g[6][64] = '|';
   g[8][7] = 'T'; g[8][66] = 'T';
@@ -207,7 +211,7 @@ function buildGateway() {
   g[19][66] = 'T'; g[25][68] = 'T'; g[22][65] = 'T';
   // Plaza shade trees.
   g[14][12] = 'T'; g[14][60] = 'T'; g[31][24] = 'T'; g[31][48] = 'T';
-  setRect(g, 57, 33, 12, 9, '#'); // the Gateway Café building (SE) — a facade now
+  setRect(g, 57, 27, 12, 9, '#'); // the Gateway Café building (SE) — a facade now (v1.2.3 Item 3: shifted north, off the map edge)
   // Gatehouse flank towers for the five north arches.
   for (const tx of [6, 20, 34, 48, 62]) gatehouseWalls(g, tx, 1, 'N');
   const id = 'the-gateway';
@@ -224,13 +228,15 @@ function buildGateway() {
     ],
     buildings: [
       building(3, 18, 4, 9, 'Homes', 'home'),
-      building(57, 33, 12, 9, 'Gateway Café', 'cafe'),
+      building(57, 27, 12, 9, 'Gateway Café', 'cafe'),
     ],
     doors: [
-      // v1.2.2 (Item 8 — doors front-facing): the café door moves
-      // from the BACK (north) wall to the FRONT (south) face —
-      // door centred on the camera-facing wall, terrace in front.
-      door(62, 42, 'gateway-cafe', { x: cx(13), y: cy(12) }, 'Gateway Café'),
+      // v1.2.2 (Item 8 — doors front-facing): the café door sits
+      // on the FRONT (south) face, centred on the camera-facing
+      // wall, terrace in front. v1.2.3 (Item 3): the whole building
+      // shifted north off the map edge; the door — and the landing
+      // inside the bigger café — moved with it.
+      door(62, 36, 'gateway-cafe', { x: cx(16), y: cy(16) }, 'Gateway Café'),
       // Phase 10: your own front door in the world — a real door on
       // the west block's east face. Stepping through takes you home
       // (game.js routes the 'studio:self' target to the studio system).
@@ -245,12 +251,18 @@ function buildGateway() {
       // A fountain-side nook: rug + lamps + a string of warm bulbs.
       prop('rug', 36, 31), prop('lamp', 34, 31), prop('lamp', 38, 31),
       prop('stringlights', 36, 30),
-      // Café Corner dressing (v1.2.2, Item 8): the doorstep
-      // composition moved WITH the door to the front terrace —
-      // lamp + string lights over the new south entrance.
-      prop('lamp', 59, 43), prop('stringlights', 62, 43),
+      // Café terrace (v1.2.3, Item 4): ONE composed arrangement
+      // set to the SIDES of the door — a round-table set west and
+      // east of the doorstep, string lights strung over each table
+      // (never across the doorway), a lamp at each terrace end.
+      // The doorstep itself — door tile, landing, a tile each
+      // side — stays fully clear; the old scatter of pads, discs
+      // and lights at the doorway is gone.
+      prop('table', 58, 38), prop('table', 66, 38),
+      prop('stringlights', 58, 38), prop('stringlights', 66, 38),
+      prop('lamp', 56, 38), prop('lamp', 68, 38),
       // Market stalls on their posts (Lane C).
-      prop('stall', 5, 6), prop('stall', 64, 6), prop('stall', 10, 36), prop('stall', 57, 36),
+      prop('stall', 5, 6), prop('stall', 64, 6), prop('stall', 10, 36), prop('stall', 55, 31),
       // Flower beds at the plaza's south edge + the south market.
       prop('flowers', 30, 29), prop('flowers', 42, 29), prop('flowers', 12, 33),
     ],
@@ -258,7 +270,7 @@ function buildGateway() {
       area('The Arches', 2, 0, 68, 4),
       area('Fountain Plaza', 28, 15, 16, 14),
       area('Homes Corner', 0, 16, 13, 12),
-      area('Café Corner', 54, 28, 16, 15),
+      area('Café Corner', 54, 25, 16, 18),
       area('South Market', 6, 32, 20, 10),
     ],
     seats: [
@@ -268,10 +280,17 @@ function buildGateway() {
       seat(id, 4, 40, 23, 'left', 'bench'),
       seat(id, 5, 34, 17, 'down', 'bench'),
       seat(id, 6, 37, 25, 'up', 'bench'),
-      // v1.2.2 (Item 8): the café terrace booths flank the new
-      // FRONT door on its terrace row, facing the entrance.
-      seat(id, 7, 60, 43, 'up', 'cafe'),
-      seat(id, 8, 64, 43, 'up', 'cafe'),
+      // v1.2.3 (Item 4): the terrace table sets — four chairs
+      // around each round table, the two sets flanking the door
+      // with the doorstep kept clear between them.
+      seat(id, 7, 58, 37, 'down', 'chair'),
+      seat(id, 8, 58, 39, 'up', 'chair'),
+      seat(id, 9, 57, 38, 'right', 'chair'),
+      seat(id, 10, 59, 38, 'left', 'chair'),
+      seat(id, 11, 66, 37, 'down', 'chair'),
+      seat(id, 12, 66, 39, 'up', 'chair'),
+      seat(id, 13, 65, 38, 'right', 'chair'),
+      seat(id, 14, 67, 38, 'left', 'chair'),
       // v1.2 (Item Q rider): the two lone mid-plaza chairs are gone —
       // plaza seating exists only as composed nooks (fountain ring,
       // café corner), never as orphan pads.
@@ -284,22 +303,28 @@ function buildGateway() {
 // north wall, THREE 4-seat tables (a chair on every side, facing
 // in), a hearth corner on the west wall, and a door on the south
 // wall back to the Gateway.
-// v1.1.1: enlarged 20x13 -> 26x16 — the v1.1 furniture scale-up in
-// the old footprint read stuffed. Table groups now keep >=3 clear
-// tiles between them on every side.
+// v1.1.1: enlarged 20x13 -> 26x16. v1.2.3 (SPACE PASS, Items 2/5/
+// 7/8): enlarged again to 32x20 and given real breathing room —
+// the exit door stands in its own clearing (no table or seat
+// within 2 tiles of the door or its landing; the old layout put a
+// 4-seat table right beside it), the hearth arc is SPACED with a
+// clear gap between every seat and every seat AIMED at the fire,
+// table groups keep >=2 clear tiles between their chair rings,
+// and the floor inside the door stays open as congregation space.
 // ------------------------------------------------------------------
 function buildCafe() {
-  const W = 26, H = 16;
+  const W = 32, H = 20;
   const g = makeGrid(W, H, '.');
   setBorder(g, W, H, '#');
-  setRect(g, 3, 2, 20, 1, '#');   // serving counter (north wall)
+  setRect(g, 3, 2, 26, 1, '#');   // serving counter (north wall)
   // v1.2 (Item K rider): the two south-corner post cubes are gone —
   // they rendered as stray crate boxes in the café corners.
-  g[7][1] = '#';                   // Phase 10: the hearth niche (west wall, centred)
+  g[10][1] = '#';                  // Phase 10: the hearth niche (west wall, centred)
   const id = 'gateway-cafe';
-  // 4-seat tables at (7,6), (15,6), (11,12): one chair per side.
+  // 4-seat tables at (13,7), (21,7), (20,13): one chair per side.
+  // The southern table stands well east of the door's clearing.
   const tableChairs = [];
-  for (const [tx, ty] of [[7, 6], [15, 6], [11, 12]]) {
+  for (const [tx, ty] of [[13, 7], [21, 7], [20, 13]]) {
     tableChairs.push(
       [tx, ty - 1, 'down'], [tx, ty + 1, 'up'],
       [tx - 1, ty, 'right'], [tx + 1, ty, 'left'],
@@ -308,33 +333,36 @@ function buildCafe() {
   return {
     id, name: 'Gateway Café', tiles: gridOf(g), tileSize: TILE,
     floor: '#4a3226', floorAlt: '#443022', wall: '#2e1d12',
-    spawn: { x: cx(13), y: cy(12) },
+    spawn: { x: cx(16), y: cy(16) },
     gateways: [],
     doors: [
-      // v1.2.2 (Item 8): the Gateway-side landing follows the café
-      // door to its new front face — you step out onto the terrace.
-      door(12, 14, 'the-gateway', { x: cx(62), y: cy(43) }, 'The Gateway', 2),
+      // v1.2.3: the Gateway-side landing follows the (shifted) café
+      // door — you step out onto the terrace's clear doorstep.
+      door(15, 18, 'the-gateway', { x: cx(62), y: cy(37) }, 'The Gateway', 2),
     ],
     props: [
-      prop('hearth', 1, 7),
-      prop('stringlights', 13, 3),
-      prop('lantern', 23, 4),
-      // v1.2.2 (Item 4): a hearth rug in front of the fire seats.
-      prop('rug', 3, 7),
+      prop('hearth', 1, 10),
+      prop('stringlights', 16, 3),
+      prop('lantern', 28, 4),
+      // v1.2.2 (Item 4): a hearth rug under the fire seats' arc.
+      prop('rug', 3, 10),
       // The tables themselves (v1.1.1): drawn furniture, chairs are seats.
-      prop('table', 7, 6), prop('table', 15, 6), prop('table', 11, 12),
+      prop('table', 13, 7), prop('table', 21, 7), prop('table', 20, 13),
     ],
-    areas: [area('The Hearth Corner', 0, 5, 8, 6), area('The Café', 1, 1, 24, 14)],
+    areas: [area('The Hearth Corner', 0, 5, 9, 11), area('The Café', 1, 1, 30, 18)],
     seats: [
       ...tableChairs.map(([x, y, dir], i) => seat(id, i + 1, x, y, dir, 'chair')),
-      // v1.2.2 (Item 4 — cozy hearths): FIVE seats in a shallow arc
-      // facing the (now bigger) fire — the ends step one tile east,
-      // opening the arc toward the hearth on the west wall.
-      seat(id, 13, 3, 5, 'left', 'chair'),
-      seat(id, 14, 2, 6, 'left', 'chair'),
-      seat(id, 15, 2, 7, 'left', 'sofa'),
-      seat(id, 16, 2, 8, 'left', 'chair'),
-      seat(id, 17, 3, 9, 'left', 'chair'),
+      // v1.2.3 (Item 7 — hearth seating done right): FIVE seats in
+      // a SPACED arc — a clear gap between every pair, the arc set
+      // back from the fire with the rug in front of it, a walkway
+      // behind it, and EVERY seat facing the fireplace (west).
+      // Sofa at the centre; the end chairs step one tile east,
+      // opening the arc toward the fire.
+      seat(id, 13, 5, 5, 'left', 'chair'),
+      seat(id, 14, 4, 7, 'left', 'chair'),
+      seat(id, 15, 4, 10, 'left', 'sofa'),
+      seat(id, 16, 4, 13, 'left', 'chair'),
+      seat(id, 17, 5, 15, 'left', 'chair'),
     ],
   };
 }
@@ -378,7 +406,7 @@ function buildSolsticeBay() {
       building(3, 33, 12, 10, 'Casino Lounge', 'casino'),
     ],
     doors: [
-      door(15, 37, 'casino-lounge', { x: cx(15), y: cy(16) }, 'Casino Lounge'),
+      door(15, 37, 'casino-lounge', { x: cx(17), y: cy(20) }, 'Casino Lounge'),
     ],
     props: [
       prop('lantern', 16, 36), prop('lantern', 16, 38),
@@ -421,7 +449,9 @@ function buildSolsticeBay() {
 // ------------------------------------------------------------------
 // CASINOS (Phase B amendment) — poker lives in exactly TWO grand
 // casino interiors: the Casino Lounge off Solstice Bay and the Neon
-// Casino off Neon District. One shared floor plan at 30x20 tiles:
+// Casino off Neon District. One shared floor plan at 36x24 tiles
+// (30x20 until v1.2.3's SPACE PASS — wider aisles everywhere, and
+// the foyer inside the door is open congregation floor):
 //   - WEST: six Hold'em tables in two columns of three
 //   - NORTH-EAST + EAST: the slots section — ten machines spaced
 //     well away from the tables, every machine with its own stool
@@ -439,10 +469,10 @@ const NEON_CASINO_FLOOR_ALT = '#33153a';
 const NEON_CASINO_WALL = '#180a20';
 
 function buildCasino({ id, name, hostId, hostLabel, hostSpawn, floor, floorAlt, wall, bartender }) {
-  const W = 30, H = 20;
+  const W = 36, H = 24;
   const g = makeGrid(W, H, 'C');
   setBorder(g, W, H, 'W');
-  setRect(g, 2, 17, 7, 1, 'W'); // bar counter (bartender stands behind it)
+  setRect(g, 2, 21, 9, 1, 'W'); // bar counter (bartender stands behind it)
   const chairSet = (x, y) => [
     { dir: 'N', x, y: y - 44 },
     { dir: 'E', x: x + 44, y },
@@ -453,25 +483,25 @@ function buildCasino({ id, name, hostId, hostLabel, hostSpawn, floor, floorAlt, 
     id: `${id}-poker-${n}`, x: cx(tx), y: cy(ty), chairs: chairSet(cx(tx), cy(ty)),
   });
   const tables = [
-    tableAt(1, 5, 4), tableAt(2, 12, 4),
-    tableAt(3, 5, 9), tableAt(4, 12, 9),
-    tableAt(5, 5, 14), tableAt(6, 12, 14),
+    tableAt(1, 5, 5), tableAt(2, 12, 5),
+    tableAt(3, 5, 11), tableAt(4, 12, 11),
+    tableAt(5, 5, 17), tableAt(6, 12, 17),
   ];
   // Slots section: 5 machines along the north wall + 5 down the east
   // wall. (ix, iy) is the stool spot you sit on to play.
   const slots = [];
   for (let i = 0; i < 5; i++) {
-    const tx = 16 + i * 2;
+    const tx = 19 + i * 2;
     slots.push({
       id: `${id}-slot-${i + 1}`, seatId: `${id}-slotseat-${i + 1}`,
       x: cx(tx), y: cy(2) - 10, ix: cx(tx), iy: cy(3),
     });
   }
   for (let i = 0; i < 5; i++) {
-    const ty = 4 + i * 2;
+    const ty = 5 + i * 2;
     slots.push({
       id: `${id}-slot-${i + 6}`, seatId: `${id}-slotseat-${i + 6}`,
-      x: cx(28), y: cy(ty), ix: cx(27), iy: cy(ty),
+      x: cx(34), y: cy(ty), ix: cx(33), iy: cy(ty),
     });
   }
   const seats = [
@@ -479,28 +509,28 @@ function buildCasino({ id, name, hostId, hostLabel, hostSpawn, floor, floorAlt, 
     ...slots.slice(0, 5).map((s, i) => ({ id: s.seatId, x: s.ix, y: s.iy, dir: 'up', kind: 'stool' })),
     ...slots.slice(5).map((s) => ({ id: s.seatId, x: s.ix, y: s.iy, dir: 'right', kind: 'stool' })),
     // bar stools face the counter (south)
-    { id: `${id}-seat-1`, x: cx(3), y: cy(16), dir: 'down', kind: 'stool' },
-    { id: `${id}-seat-2`, x: cx(7), y: cy(16), dir: 'down', kind: 'stool' },
-    // foyer sofas
-    { id: `${id}-seat-3`, x: cx(22), y: cy(17), dir: 'up', kind: 'sofa' },
-    { id: `${id}-seat-4`, x: cx(26), y: cy(17), dir: 'up', kind: 'sofa' },
+    { id: `${id}-seat-1`, x: cx(4), y: cy(20), dir: 'down', kind: 'stool' },
+    { id: `${id}-seat-2`, x: cx(8), y: cy(20), dir: 'down', kind: 'stool' },
+    // foyer sofas — flanking the open congregation floor inside the door
+    { id: `${id}-seat-3`, x: cx(24), y: cy(21), dir: 'up', kind: 'sofa' },
+    { id: `${id}-seat-4`, x: cx(28), y: cy(21), dir: 'up', kind: 'sofa' },
   ];
   return {
     id, name, tiles: gridOf(g), tileSize: TILE,
     floor, floorAlt, wall,
-    spawn: { x: cx(15), y: cy(16) },
+    spawn: { x: cx(17), y: cy(20) },
     gateways: [],
     doors: [
-      door(14, 18, hostId, hostSpawn, hostLabel, 2),
+      door(16, 22, hostId, hostSpawn, hostLabel, 2),
     ],
     // Phase 10: lanterns flank the entryway door inside.
-    props: [prop('lantern', 12, 17), prop('lantern', 17, 17), prop('rug', 15, 15)],
+    props: [prop('lantern', 14, 21), prop('lantern', 19, 21), prop('rug', 17, 19)],
     seats,
     areas: [
-      area('Poker Floor', 1, 1, 14, 17),
-      area('The Slots', 15, 1, 14, 10),
-      area('The Bar', 1, 14, 9, 5),
-      area('The Foyer', 10, 14, 12, 5),
+      area('Poker Floor', 1, 1, 15, 19),
+      area('The Slots', 17, 1, 18, 13),
+      area('The Bar', 1, 18, 11, 5),
+      area('The Foyer', 12, 18, 15, 5),
     ],
     casino: {
       id: `${id}-casino`,
@@ -510,8 +540,8 @@ function buildCasino({ id, name, hostId, hostLabel, hostSpawn, floor, floorAlt, 
       floor, floorAlt, wall,
       tables,
       slots,
-      bar: { x: cx(5), y: cy(16) }, // patron spot in front of the counter
-      bartender: { x: cx(5), y: cy(18), name: bartender.name, look: bartender.look },
+      bar: { x: cx(6), y: cy(20) }, // patron spot in front of the counter
+      bartender: { x: cx(6), y: cy(22), name: bartender.name, look: bartender.look },
     },
   };
 }
@@ -554,20 +584,25 @@ function buildNeonCasino() {
 }
 
 // ------------------------------------------------------------------
-// HOOKAH LOUNGE — a small interior off Cinder Mesa (Phase B
-// amendment). Four hookah stations, two seats each: sit down, then
-// interact to take a puff (5z). The door back is on the south wall.
+// HOOKAH LOUNGE — an interior off Cinder Mesa (Phase B amendment).
+// Four hookah stations, two seats each: sit down, then interact to
+// take a puff (5z). The door back is on the south wall.
+// v1.2.3 (SPACE PASS, Items 5/7/8): enlarged 20x14 -> 26x18. The
+// BIG fireplace (Item 6) anchors the north wall; its arc is
+// SPACED — a clear gap between every seat, set back from the fire
+// with the rug in front, a walkway behind — and every seat aims
+// at the fire. The floor inside the door stays open for a crowd.
 // ------------------------------------------------------------------
 function buildHookahLounge() {
-  const W = 20, H = 14;
+  const W = 26, H = 18;
   const g = makeGrid(W, H, '.');
   setBorder(g, W, H, '#');
   // v1.2.2 (Item 5): the four corner post tiles are GONE — they
   // rendered as stray crate boxes in the lounge's corners and were
   // part of no composition.
-  g[1][10] = '#'; // Phase 10: the hearth niche (north wall, centre)
+  g[1][13] = '#'; // Phase 10: the hearth niche (north wall, centre)
   const id = 'hookah-lounge';
-  const stations = [[5, 4], [14, 4], [5, 10], [14, 10]];
+  const stations = [[6, 6], [19, 6], [6, 13], [19, 13]];
   const seats = [];
   stations.forEach(([tx, ty], i) => {
     seats.push(seat(id, i * 2 + 1, tx - 1, ty, 'right', 'hookah'));
@@ -576,31 +611,32 @@ function buildHookahLounge() {
   return {
     id, name: 'Hookah Lounge', tiles: gridOf(g), tileSize: TILE,
     floor: '#3d2b1f', floorAlt: '#37271c', wall: '#241610',
-    spawn: { x: cx(10), y: cy(11) },
+    spawn: { x: cx(13), y: cy(14) },
     gateways: [],
     doors: [
       // v1.2.2 (Item 8): the Mesa-side landing follows the lounge
       // door to its new front face.
-      door(9, 12, 'cinder-mesa', { x: cx(30), y: cy(39) }, 'Cinder Mesa', 2),
+      door(12, 16, 'cinder-mesa', { x: cx(30), y: cy(39) }, 'Cinder Mesa', 2),
     ],
     props: [
-      prop('hearth', 10, 1),
-      prop('stringlights', 10, 6),
+      prop('hearth', 13, 1),
+      prop('stringlights', 13, 9),
       // v1.2.2 (Item 4): a hearth rug in front of the fire seats.
-      prop('rug', 10, 3),
+      prop('rug', 13, 3),
     ],
     seats: [
       ...seats,
-      // v1.2.2 (Item 4 — cozy hearths): FIVE seats in a shallow arc
-      // facing the (now bigger) fire — sofa at the centre, the end
-      // chairs stepping one tile south to open the arc north.
-      seat(id, 9, 8, 3, 'up', 'chair'),
-      seat(id, 10, 9, 2, 'up', 'chair'),
-      seat(id, 11, 10, 2, 'up', 'sofa'),
-      seat(id, 12, 11, 2, 'up', 'chair'),
-      seat(id, 13, 12, 3, 'up', 'chair'),
+      // v1.2.3 (Item 7 — hearth seating done right): FIVE seats in
+      // a SPACED arc facing the big fire — sofa at the centre, a
+      // clear gap between every pair, the end chairs stepping one
+      // tile south to open the arc toward the hearth.
+      seat(id, 9, 8, 5, 'up', 'chair'),
+      seat(id, 10, 10, 4, 'up', 'chair'),
+      seat(id, 11, 13, 4, 'up', 'sofa'),
+      seat(id, 12, 16, 4, 'up', 'chair'),
+      seat(id, 13, 18, 5, 'up', 'chair'),
     ],
-    areas: [area('The Hearth Corner', 6, 0, 8, 4), area('The Lounge', 1, 1, 18, 12)],
+    areas: [area('The Hearth Corner', 8, 0, 10, 6), area('The Lounge', 1, 1, 24, 16)],
     hookahs: stations.map(([tx, ty]) => ({ x: cx(tx), y: cy(ty) })),
   };
 }
@@ -668,7 +704,7 @@ function buildNeonDistrict() {
       // The SE block (tiles 56..67, 30..37) is the Neon Casino.
       // v1.2.2 (Item 8 — doors front-facing): its door moves from
       // the back (north) face to the FRONT (south) face.
-      door(61, 38, 'neon-casino', { x: cx(15), y: cy(16) }, 'Neon Casino'),
+      door(61, 38, 'neon-casino', { x: cx(17), y: cy(20) }, 'Neon Casino'),
     ],
     props: [
       // v1.2.2 (Item 8): the doorstep lantern moved with the door.
@@ -723,6 +759,9 @@ function buildCinderMesa() {
   const g = cityShell(W, H);
   // Lane C: the rock clusters were box-rects — now scattered 'R'
   // boulders (solid, but they read as rocks, not buildings).
+  // v1.2.3 (Item 9): composition law — rocks stand in CLUSTERS of
+  // 3+ at edges and plaza shoulders, never as lone mounds or bare
+  // pairs dotted mid-plaza (the last pairs grew into clusters).
   for (const [x, y] of [
     [6, 6], [8, 6], [7, 7], [9, 8], [6, 8],
     [20, 4], [22, 5], [24, 4],
@@ -731,10 +770,10 @@ function buildCinderMesa() {
     [8, 20], [10, 21], [12, 22], [9, 22],
     [16, 32], [18, 33], [20, 34], [17, 34],
     [56, 32], [58, 33], [60, 35], [57, 35],
-    [30, 14], [32, 15],
-    [36, 36], [38, 37],
+    [30, 14], [32, 15], [31, 13], [33, 14],
+    [36, 36], [38, 37], [37, 38],
     [10, 36], [12, 37], [11, 38],
-    [24, 20], [24, 21],
+    [24, 20], [24, 21], [23, 19],
   ]) g[y][x] = 'R';
   setRect(g, 24, 17, 9, 12, 's');   // Forge Plaza stone
   setRect(g, 27, 38, 7, 2, 's');    // Hookah Corner doorstep terrace (v1.2.2, Item 8: on the FRONT/south side now)
@@ -757,7 +796,7 @@ function buildCinderMesa() {
     doors: [
       // v1.2.2 (Item 8 — doors front-facing): the lounge door moves
       // from the back (north) face to the FRONT (south) face.
-      door(30, 38, 'hookah-lounge', { x: cx(10), y: cy(11) }, 'Hookah Lounge'),
+      door(30, 38, 'hookah-lounge', { x: cx(13), y: cy(14) }, 'Hookah Lounge'),
     ],
     props: [
       // v1.2.2 (Item 8): the doorstep lantern moved with the door.
@@ -776,10 +815,14 @@ function buildCinderMesa() {
       area('Hookah Corner', 24, 29, 16, 12),
     ],
     seats: [
-      // v1.2 (Item M): the stage-side benches flank the pit mouth
-      // from OUTSIDE the pit rect (they stood in it before).
-      seat(id, 1, 57, 20, 'right', 'bench'),
-      seat(id, 2, 57, 24, 'right', 'bench'),
+      // v1.2.3 (Item 9 — pit-front clear): the stage-side benches
+      // used to sit at (57,20)/(57,24), in the clear band IN FRONT
+      // of the pit between the pit and the audience — the
+      // performer's apron is not seating. They now flank the venue
+      // from outside the band, north and south of the pit mouth,
+      // still facing the stage.
+      seat(id, 1, 57, 15, 'right', 'bench'),
+      seat(id, 2, 57, 28, 'right', 'bench'),
       seat(id, 3, 24, 24, 'down', 'chair'),
       seat(id, 4, 26, 27, 'up', 'cafe'),
       seat(id, 5, 27, 22, 'down', 'sofa'),

@@ -318,7 +318,7 @@ async function main() {
     if (!dm.map.casino || dm.map.casino.tables.length !== 6 || dm.map.casino.slots.length !== 10) {
       throw new Error(`lounge payload tables=${dm.map.casino && dm.map.casino.tables.length} slots=${dm.map.casino && dm.map.casino.slots.length}`);
     }
-    await walkTo(A.client, 528, 112); // slot 1's stool in the slots section
+    await walkTo(A.client, 624, 112); // slot 1's stool in the slots section
     A.client.send({ type: 'interact' }); // sit to spin (Phase B amendment)
     await waitFor(() => {
       const s = lastOf(A.client, 'snapshot');
@@ -352,8 +352,8 @@ async function main() {
     const SET_BUYIN = 100; // the amount A chooses when setting the table
     const preA = await balA(), preB = await balB();
     await travel(B.client, 496, 1200, 'casino-lounge', 'B bay -> casino lounge door');
-    await walkTo(A.client, 176, 144);
-    await walkTo(B.client, 176, 144);
+    await walkTo(A.client, 176, 176);
+    await walkTo(B.client, 176, 176);
     const tbl = (u) => lastOf(u.client, 'poker-state', s => s.id === T1);
     // The offer flow: E at the table snaps you into a chair and pops
     // the buy-in offer. One retry — a first interact can land while
@@ -418,7 +418,7 @@ async function main() {
   // A out cold. v1.1 rule: the WHOLE drunk state (count, haze,
   // pass-out) expires 30s after the last drink — A wakes sober (0).
   try {
-    await walkTo(A.client, 176, 528); // bar patron spot (movement stands A up from the stool)
+    await walkTo(A.client, 208, 656); // bar patron spot (movement stands A up from the stool)
     const b0 = await balA();
     A.client.msgs.length = 0;
     A.client.send({ type: 'buy-drink' });
@@ -552,7 +552,7 @@ async function main() {
       curId = m.map.id;
     }
     if (curId === 'casino-lounge') {
-      await travel(A.client, 480, 592, 'solstice-bay', 'lounge door back to the bay');
+      await travel(A.client, 544, 720, 'solstice-bay', 'lounge door back to the bay');
       curId = 'solstice-bay';
     }
     if (curId === 'solstice-bay') {
@@ -643,7 +643,7 @@ async function main() {
             throw new Error('neon casino payload incomplete');
           }
           if (!nc.map.casino.bartender || nc.map.casino.bartender.name !== 'Vex') throw new Error('neon bartender missing');
-          await travel(A.client, 480, 592, 'neon-district', 'neon casino door back');
+          await travel(A.client, 544, 720, 'neon-district', 'neon casino door back');
           report('travel: Neon District -> Neon Casino -> Neon District (doors both ways)', true, 'second casino: 6 tables, 10 slots, bartender Vex');
         } catch (e) { report('travel: Neon District -> Neon Casino -> Neon District (doors both ways)', false, e.message); }
       }
@@ -672,7 +672,7 @@ async function main() {
     catch (e) { await walkTo(C.client, 1250, 976); }
     const hm = await travel(C.client, 976, 1232, 'hookah-lounge', 'C cinder -> hookah lounge door'); // FRONT (south) face since v1.2.2 Item 8
     if (!hm.map.hookahs || hm.map.hookahs.length !== 4) throw new Error('hookah payload incomplete');
-    await walkTo(C.client, 176, 160, { arrive: 12 }); // station 1's seats
+    await walkTo(C.client, 208, 224, { arrive: 12 }); // station 1's seats
     C.client.send({ type: 'interact' });
     await waitFor(() => {
       const s = lastOf(C.client, 'snapshot');
@@ -722,7 +722,7 @@ async function main() {
       bId = m.map.id;
     }
     if (bId === 'casino-lounge') {
-      await travel(B.client, 480, 592, 'solstice-bay', 'B lounge door back to the bay');
+      await travel(B.client, 544, 720, 'solstice-bay', 'B lounge door back to the bay');
       bId = 'solstice-bay';
     }
     if (bId === 'solstice-bay') {

@@ -71,11 +71,12 @@ const SEASONAL = {
       ['pumpkinstack', 36, 26],
       // Lit pumpkins flanking the fountain basin.
       ['jackolantern', 31, 21], ['jackolantern', 40, 21],
-      // Café Corner (v1.2.2, Items 7/8): the café door moved to
-      // its FRONT (south) face at (62,42) and the pair FLANKS the
-      // whole doorstep composition from outside it — booths at
-      // (60,43)/(64,43), lights at (62,43) — never on its tiles.
-      ['jackolantern', 58, 42], ['pumpkin', 66, 42],
+      // Café Corner (v1.2.2, Items 7/8; v1.2.3, Items 3/4): the
+      // café door sits on its FRONT (south) face at (62,36) and
+      // the pair FLANKS the whole doorstep composition from the
+      // doorstep row's outer tiles — terrace tables at (58,38)/
+      // (66,38), lamps at (56,38)/(68,38) — never on its tiles.
+      ['jackolantern', 57, 36], ['pumpkin', 67, 36],
       // A pair at every gatehouse mouth, flanking the path.
       ['pumpkin', 4, 5], ['jackolantern', 9, 5],
       ['pumpkin', 18, 5], ['jackolantern', 23, 5],
@@ -83,11 +84,11 @@ const SEASONAL = {
       ['pumpkin', 46, 5], ['jackolantern', 51, 5],
       ['pumpkin', 60, 5], ['jackolantern', 65, 5],
       // Cobwebs on the two facade corners.
-      ['cobweb', 58, 34], ['cobweb', 4, 19],
+      ['cobweb', 58, 28], ['cobweb', 4, 19],
     ],
     'gateway-cafe': [
-      ['jackolantern', 24, 13], ['pumpkin', 2, 13],
-      ['cobweb', 24, 2],
+      ['jackolantern', 29, 17], ['pumpkin', 2, 13],
+      ['cobweb', 30, 2],
     ],
     'solstice-bay': [
       // Stage ends, flanking the pit mouth (outside pit + seats).
@@ -98,12 +99,13 @@ const SEASONAL = {
       ['jackolantern', 13, 37], ['cobweb', 4, 34],
     ],
     'casino-lounge': [
-      ['jackolantern', 11, 17], ['jackolantern', 18, 17],
-      ['cobweb', 2, 2], ['cobweb', 27, 2],
+      // v1.2.3: flanking the bigger casino's foyer doorstep.
+      ['jackolantern', 14, 20], ['jackolantern', 19, 20],
+      ['cobweb', 2, 2], ['cobweb', 33, 2],
     ],
     'neon-casino': [
-      ['jackolantern', 11, 17], ['jackolantern', 18, 17],
-      ['cobweb', 2, 2], ['cobweb', 27, 2],
+      ['jackolantern', 14, 20], ['jackolantern', 19, 20],
+      ['cobweb', 2, 2], ['cobweb', 33, 2],
     ],
     'neon-district': [
       // Stage ends (the NEON signs' tiles, one step further out).
@@ -148,13 +150,13 @@ const SEASONAL = {
       // pumpkin stack stood, snowman standing guard west of it.
       ['giftpile', 36, 26], ['snowman', 29, 26],
       // Wreaths on the facades, centred over each door.
-      ['wreath', 62, 41],           // Gateway Café FRONT face (door (62,42), v1.2.2 Item 8)
+      ['wreath', 62, 35],           // Gateway Café FRONT face (door (62,36); face moved north in v1.2.3 Item 3)
       ['wreath', 6, 22],            // Homes face (door (7,22))
       // Holiday lights joining the fountain nook.
       ['holidaylights', 36, 29],
     ],
     'gateway-cafe': [
-      ['wreath', 11, 14],           // beside the door
+      ['wreath', 14, 17],           // beside the door (door (15,18) since v1.2.3)
       ['holidaylights', 6, 3],      // garland along the counter
     ],
     'solstice-bay': [
@@ -163,12 +165,12 @@ const SEASONAL = {
       ['holidaylights', 10, 10], ['holidaylights', 62, 10],
     ],
     'casino-lounge': [
-      ['wreath', 13, 18],           // beside the entry door
-      ['holidaylights', 21, 1],     // garland over the slots wall
+      ['wreath', 15, 22],           // beside the entry door (door (16,22) since v1.2.3)
+      ['holidaylights', 23, 1],     // garland over the slots wall
     ],
     'neon-casino': [
-      ['wreath', 13, 18],
-      ['holidaylights', 21, 1],
+      ['wreath', 15, 22],
+      ['holidaylights', 23, 1],
     ],
     'neon-district': [
       // Stage ends — where the jack-o'-lanterns stood.

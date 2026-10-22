@@ -143,7 +143,7 @@ async function main() {
   await sleep(1800); // portal debounce
   for (const b of slotBots) send(b, { type: 'debug-teleport', x: 496, y: 1200 }); // -> Casino building door
   await sleep(1800); // portal debounce
-  for (const b of slotBots) send(b, { type: 'debug-teleport', x: 528, y: 112 }); // slot machine 1's stool
+  for (const b of slotBots) send(b, { type: 'debug-teleport', x: 624, y: 112 }); // slot machine 1's stool
   await sleep(1700); // let the 3s transfer lock from the door hop expire
   for (const b of slotBots) send(b, { type: 'interact' }); // sit on the stool to spin
   send(studioOwner, { type: 'enter-studio', owner: studioOwner.name });

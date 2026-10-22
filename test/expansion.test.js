@@ -186,7 +186,7 @@ test('map data: ~5x scale, spawns/portals/seats/stage all sane', { timeout: 3000
   // interiors — Phase B amendment: exactly TWO casinos, one layout.
   for (const cid of ['casino-lounge', 'neon-casino']) {
     const cz2 = MAPS[cid];
-    assert.equal(cz2.tiles.w, 30, `${cid} width`); assert.equal(cz2.tiles.h, 20, `${cid} height`);
+    assert.equal(cz2.tiles.w, 36, `${cid} width`); assert.equal(cz2.tiles.h, 24, `${cid} height`);
     assert.ok(cz2.casino, `${cid} carries the casino def`);
     assert.equal(cz2.casino.tables.length, 6, `${cid}: six poker tables`);
     for (const t of cz2.casino.tables) assert.equal(t.chairs.length, 4, `${t.id} has 4 chairs`);
@@ -214,10 +214,10 @@ test('map data: ~5x scale, spawns/portals/seats/stage all sane', { timeout: 3000
     if (id2 !== 'casino-lounge' && id2 !== 'neon-casino') assert.ok(!m2.casino, `${id2} has no casino`);
   }
   const cafe = MAPS['gateway-cafe'];
-  assert.equal(cafe.tiles.w, 26); assert.equal(cafe.tiles.h, 16);
+  assert.equal(cafe.tiles.w, 32); assert.equal(cafe.tiles.h, 20);
   assert.equal(cafe.seats.length, 17, 'café has 17 seats (12 table chairs at three 4-seat tables + a 5-seat hearth arc, v1.2.2 Item 4)');
   const hookah = MAPS['hookah-lounge'];
-  assert.equal(hookah.tiles.w, 20); assert.equal(hookah.tiles.h, 14);
+  assert.equal(hookah.tiles.w, 26); assert.equal(hookah.tiles.h, 18);
   assert.equal(hookah.hookahs.length, 4, 'four hookah stations');
   assert.equal(hookah.seats.filter(s => s.kind === 'hookah').length, 8, 'two seats per hookah station');
   // door graph: bay ⇄ lounge, gateway ⇄ café, neon ⇄ neon casino,
@@ -306,7 +306,7 @@ test('door transfer bay ⇄ lounge with the 3s input lock', { timeout: 60000 }, 
   const t0 = Date.now();
   assert.equal(arrived.transferMs, 1500, 'map message carries the fixed transfer window');
   assert.equal(arrived.map.name, 'Casino Lounge');
-  assert.ok(Math.abs(arrived.you.x - 496) < 2 && Math.abs(arrived.you.y - 528) < 2, 'placed at the lounge entryway');
+  assert.ok(Math.abs(arrived.you.x - 560) < 2 && Math.abs(arrived.you.y - 656) < 2, 'placed at the lounge entryway');
   assert.equal(arrived.map.casino.tables.length, 6, 'client payload lists 6 tables');
   assert.equal(arrived.map.casino.slots.length, 10, 'client payload lists 10 slots');
   assert.ok(arrived.map.casino.bartender && arrived.map.casino.bartender.name, 'client payload names the bartender');
@@ -317,7 +317,7 @@ test('door transfer bay ⇄ lounge with the 3s input lock', { timeout: 60000 }, 
   await sleep(1200);
   const lockedPos = selfIn(u.client, u.id);
   assert.ok(lockedPos, 'snapshots flow during the transfer window');
-  assert.ok(Math.abs(lockedPos.x - 496) < 1 && Math.abs(lockedPos.y - 528) < 1,
+  assert.ok(Math.abs(lockedPos.x - 560) < 1 && Math.abs(lockedPos.y - 656) < 1,
     `no movement while locked (got ${lockedPos.x},${lockedPos.y})`);
 
   // After the window the same held input moves the player.
@@ -331,7 +331,7 @@ test('door transfer bay ⇄ lounge with the 3s input lock', { timeout: 60000 }, 
 
   // Door back to the bay, landing right outside the casino door.
   await sleep(1600);
-  teleport(u, 480, 592); // lounge door-back rect
+  teleport(u, 544, 720); // lounge door-back rect
   const back = await arriveMap(u, 'solstice-bay');
   assert.equal(back.transferMs, 1500);
   assert.ok(Math.abs(back.you.x - 528) < 2 && Math.abs(back.you.y - 1200) < 2, 'lands outside the casino door (off the pad, so it cannot bounce back in)');
@@ -342,15 +342,15 @@ test('door transfer bay ⇄ lounge with the 3s input lock', { timeout: 60000 }, 
 
 test('door transfer gateway ⇄ café round trip', { timeout: 60000 }, async () => {
   const u = await makeUser('cafe_cleo');
-  teleport(u, 2000, 1360); // café door tile on the Gateway (FRONT/south face since v1.2.2 Item 8)
+  teleport(u, 2000, 1168); // café door tile on the Gateway (FRONT/south face since v1.2.2 Item 8)
   const inCafe = await arriveMap(u, 'gateway-cafe');
   assert.equal(inCafe.map.name, 'Gateway Café');
-  assert.ok(Math.abs(inCafe.you.x - 432) < 2 && Math.abs(inCafe.you.y - 400) < 2, 'placed at the café entrance');
+  assert.ok(Math.abs(inCafe.you.x - 528) < 2 && Math.abs(inCafe.you.y - 528) < 2, 'placed at the café entrance');
   assert.equal(inCafe.map.seats.length, 17, 'café seats in the client payload');
   await sleep(1600);
-  teleport(u, 432, 464); // café door-back rect
+  teleport(u, 512, 592); // café door-back rect
   const back = await arriveMap(u, 'the-gateway');
-  assert.ok(Math.abs(back.you.x - 2000) < 2 && Math.abs(back.you.y - 1392) < 2, 'lands outside the café door');
+  assert.ok(Math.abs(back.you.x - 2000) < 2 && Math.abs(back.you.y - 1200) < 2, 'lands outside the café door');
   u.client.ws.close();
 });
 
@@ -502,7 +502,7 @@ test('poker: full hand on NEW table 6, chips conserved', { timeout: 90000 }, asy
 test('slots: a spin on NEW machine 10 (east wall) pays by the ported paytable', { timeout: 60000 }, async () => {
   const u = await makeUser('newslot_ned');
   await toCasino(u);
-  teleport(u, 880, 368); // machine 10's stool (east wall of the slots section)
+  teleport(u, 1072, 432); // machine 10 stool (east wall of the bigger casino, v1.2.3)
   await sleep(300);
   // Standing at the machine is not enough in the new layout — sit.
   u.client.send({ type: 'slots', action: 'spin', bet: 10 });

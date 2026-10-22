@@ -165,13 +165,13 @@ test('neon casino: door transfer works both ways, payload is a full casino', { t
   const arrived = await toNeonCasino(u);
   assert.equal(arrived.transferMs, 1500, 'door transfer uses the 1.5s load screen');
   assert.equal(arrived.map.name, 'Neon Casino');
-  assert.ok(Math.abs(arrived.you.x - 496) < 2 && Math.abs(arrived.you.y - 528) < 2, 'placed at the entryway');
+  assert.ok(Math.abs(arrived.you.x - 560) < 2 && Math.abs(arrived.you.y - 656) < 2, 'placed at the entryway');
   assert.equal(arrived.map.casino.tables.length, 6, 'neon casino has 6 tables');
   assert.equal(arrived.map.casino.slots.length, 10, 'neon casino has 10 slots');
   assert.equal(arrived.map.casino.bartender.name, 'Vex', 'neon bartender on the payload');
   // Door back to Neon District, landing outside the casino door.
   await sleep(1600);
-  teleport(u, 480, 592);
+  teleport(u, 544, 720);
   const back = await arriveMap(u, 'neon-district');
   assert.ok(Math.abs(back.you.x - 1968) < 2 && Math.abs(back.you.y - 1264) < 2, 'lands outside the neon casino door (FRONT/south face since v1.2.2 Item 8)');
   u.client.ws.close();
@@ -197,7 +197,7 @@ test('drinks: exactly 5z a round, count tracked + visible, 10th drink passes you
   g.client.ws.close();
 
   // At the bar: each drink is exactly -5z and +1 on the counter.
-  teleport(u, 176, 528); // patron spot in front of the counter
+  teleport(u, 208, 656); // patron spot in front of the counter
   await sleep(300);
   for (let i = 1; i <= 3; i++) {
     u.client.msgs.length = 0;
@@ -288,7 +288,7 @@ test('hookah lounge: 5z puffs counted, 10th puff turns you hippy for the room', 
 
   // Sit at station 1 (west seat) — interacting again takes a puff.
   await sleep(3400); // outlast the transfer lock from the door hop
-  teleport(u, 176, 160); // between station 1's two seats
+  teleport(u, 208, 224); // between station 1's two seats
   await sleep(300);
   u.client.send({ type: 'interact' });
   const seated = await waitFor(() => {
@@ -349,7 +349,7 @@ test('hookah lounge: 5z puffs counted, 10th puff turns you hippy for the room', 
 test('neon casino slots: sit-to-spin on the second casino floor', { timeout: 60000 }, async () => {
   const u = await makeUser('neon_slot_ned');
   await toNeonCasino(u);
-  teleport(u, 528, 112); // slot 1's stool, neon slots section
+  teleport(u, 624, 112); // slot 1's stool, neon slots section
   await sleep(300);
   u.client.send({ type: 'slots', action: 'spin', bet: 10 });
   const refused = await waitFor(() => u.client.msgs.filter(m => m.type === 'notice' && /Take a seat/.test(m.text)).pop(),
@@ -377,7 +377,7 @@ test('vice windows (v1.1): drink + smoke states begin AND end in-zone, 30s after
   await toBayCasino(u);
   await toBayCasino(watcher);
   await fund(u, 500);
-  teleport(u, 176, 528);
+  teleport(u, 208, 656);
   await sleep(300);
   const mapsBefore = u.client.msgs.filter(m => m.type === 'map').length;
 
@@ -428,7 +428,7 @@ test('vice windows (v1.1): drink + smoke states begin AND end in-zone, 30s after
   await toHookah(sWatch);
   await fund(s, 500);
   await sleep(3400); // outlast the transfer lock from the door hop
-  teleport(s, 176, 160);
+  teleport(s, 208, 224);
   await sleep(300);
   s.client.send({ type: 'interact' });
   await waitFor(() => {

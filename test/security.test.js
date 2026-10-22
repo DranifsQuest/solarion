@@ -404,7 +404,7 @@ test('slots race: 25 rapid spins execute exactly one (cooldown), accounting exac
   await toCasino(u);
   u.client.send({ type: 'debug-casino', op: 'set-balance', zcoins: 1000 });
   await waitFor(() => u.client.msgs.filter(m => m.type === 'zcoins' && m.zcoins === 1000).pop(), 5000, 'balance seeded');
-  u.client.send({ type: 'debug-teleport', x: 528, y: 112 }); // slot machine 1's stool
+  u.client.send({ type: 'debug-teleport', x: 624, y: 112 }); // slot machine 1's stool (slots moved east in v1.2.3)
   await sleep(3400); // outlast the transfer lock from the door hop
   u.client.send({ type: 'interact' }); // sit to spin
   await waitFor(() => u.client.msgs.filter(m => m.type === 'sit-state' && m.seated).pop(), 5000, 'seated at slot 1');
