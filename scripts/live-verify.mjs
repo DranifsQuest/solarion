@@ -735,7 +735,7 @@ async function main() {
   // the day's first pour is on the house), and tips Roxy — the
   // room gets the flourish broadcast and the tip is a pure sink.
   try {
-    const NAME_D = NAME_A.slice(0, -1) + 'd'; // vfy<sfx>a -> vfy<sfx>d
+    const NAME_D = NAME_A.slice(0, -1) + 'e'; // visitor E — 'd' is already registered by the homes leg above
     const rd = await api('/api/register', { username: NAME_D, password: PW });
     if (rd.status !== 200 || !rd.json.token) throw new Error(`register D -> ${rd.status}`);
     const cd2 = await api('/api/create-character', { token: rd.json.token, name: NAME_D, gender: 'F' });
@@ -821,7 +821,7 @@ async function main() {
   try {
     B.client.send({ type: 'navigator' });
     const nav = await waitFor(() => lastOf(B.client, 'navigator'), 6000, 'navigator payload');
-    if (!nav.places || nav.places.length !== 10) throw new Error(`places=${nav.places && nav.places.length}`);
+    if (!nav.places || nav.places.length !== 11) throw new Error(`places=${nav.places && nav.places.length}`);
     const gw = nav.places.find(p => p.id === 'the-gateway');
     if (!gw || gw.count < 2) throw new Error(`gateway count=${gw && gw.count} (A and B are there)`);
     if (!gw.friends.includes(A.name)) throw new Error('navigator does not mark A as a friend in the Gateway');
@@ -833,8 +833,8 @@ async function main() {
     // up the reconnect leg's premise: B respawns in Frosthaven).
     const nm = await travel(B.client, 1568, 48, 'frosthaven', 'B walks the Frosthaven gatehouse');
     if (nm.transferMs !== 1500) throw new Error(`walk transferMs=${nm.transferMs}`);
-    report('navigator: 10 places with live counts + friend markers for everyone; travel owner-only — B walks the gatehouse', true, 'B refused the warp, then walked Gateway -> Frosthaven (1.5s transfer)');
-  } catch (e) { report('navigator: 10 places with live counts + friend markers for everyone; travel owner-only — B walks the gatehouse', false, e.message); }
+    report('navigator: 11 places with live counts + friend markers for everyone; travel owner-only — B walks the gatehouse', true, 'B refused the warp, then walked Gateway -> Frosthaven (1.5s transfer)');
+  } catch (e) { report('navigator: 11 places with live counts + friend markers for everyone; travel owner-only — B walks the gatehouse', false, e.message); }
 
   // ---- abrupt-drop reconnect
   try {
