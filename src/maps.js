@@ -194,15 +194,17 @@ function buildGateway() {
   for (const tx of [6, 20, 34, 48, 62]) setRect(g, tx, 4, 2, 11, 'p');
   setRect(g, 3, 18, 4, 9, '#');   // the Homes building (W) — a facade now
   setRect(g, 33, 20, 6, 3, '%');  // fountain
-  // v1.2 (Item Q): ONE post tile per stall prop — its own tile.
-  // The old scatter of bare post cubes around the south plaza and
-  // café corner read as stray crates; they're gone.
-  g[36][10] = '|';                // market stall post, south plaza
-  // v1.2.3 (Item 3): the café-corner stall's post stood at (57,36),
-  // inside the café's footprint once the building shifted north —
-  // the stall now stands on open stone west of the café at (55,31),
-  // on its own post like every other stall.
-  g[31][55] = '|';
+  // v1.3.1 (Item 12): the South Market patch is a POND now — a
+  // rounded water shape (the old lone stall + confetti specks that
+  // sat pointless in open stone are gone, post tiles included).
+  // Gateway is not a fishable map: the pond is scenery, fishing
+  // rules unchanged. Tree clusters dress its four corners.
+  setRect(g, 11, 34, 11, 5, '%');
+  for (const [wx, wy] of [[10, 35], [10, 36], [10, 37], [22, 35], [22, 36], [22, 37], [13, 39], [19, 39]]) g[wy][wx] = '%';
+  g[34][7] = 'T'; g[33][8] = 'T';   // NW cluster
+  g[34][24] = 'T'; g[33][25] = 'T'; // NE cluster
+  g[39][7] = 'T'; g[40][8] = 'T';   // SW cluster
+  g[39][24] = 'T'; g[40][25] = 'T'; // SE cluster
   // Market terraces: stall posts + trees instead of the old blocks.
   g[6][5] = '|'; g[6][64] = '|';
   g[8][7] = 'T'; g[8][66] = 'T';
@@ -248,9 +250,11 @@ function buildGateway() {
       // The fountain is the plaza's hero now — a real fountain, not
       // just blue tiles.
       prop('fountain', 36, 21),
-      // A fountain-side nook: rug + lamps + a string of warm bulbs.
-      prop('rug', 36, 31), prop('lamp', 34, 31), prop('lamp', 38, 31),
-      prop('stringlights', 36, 30),
+      // v1.3.1 (Items 4/5): the purposeless rug + lamp + string-light
+      // cluster that floated in open ground south of the fountain is
+      // GONE — seasonal/scatter props anchor to features now
+      // (validator-enforced). The fountain keeps its ring of chairs
+      // and the jack-o'-lanterns flanking its south face.
       // Café terrace (v1.2.3, Item 4): ONE composed arrangement
       // set to the SIDES of the door — a round-table set west and
       // east of the doorstep, string lights strung over each table
@@ -258,39 +262,54 @@ function buildGateway() {
       // The doorstep itself — door tile, landing, a tile each
       // side — stays fully clear; the old scatter of pads, discs
       // and lights at the doorway is gone.
-      prop('table', 58, 38), prop('table', 66, 38),
-      prop('stringlights', 58, 38), prop('stringlights', 66, 38),
-      prop('lamp', 56, 38), prop('lamp', 68, 38),
-      // Market stalls on their posts (Lane C).
-      prop('stall', 5, 6), prop('stall', 64, 6), prop('stall', 10, 36), prop('stall', 55, 31),
-      // Flower beds at the plaza's south edge + the south market.
-      prop('flowers', 30, 29), prop('flowers', 42, 29), prop('flowers', 12, 33),
+      prop('table', 57, 38), prop('table', 67, 38),
+      prop('stringlights', 57, 38), prop('stringlights', 67, 38),
+      prop('lamp', 55, 38), prop('lamp', 69, 38),
+      // Market stalls on their posts (Lane C) — only the two
+      // gatehouse-anchored terrace stalls remain; the lone stall in
+      // the open south patch and the café-corner loner are removed
+      // (v1.3.1, Items 4/12).
+      prop('stall', 5, 6), prop('stall', 64, 6),
+      // The pond's dressing (v1.3.1, Item 12): a lamp on each bank
+      // and flower beds at the water's corners.
+      prop('lamp', 16, 33), prop('lamp', 16, 40),
+      prop('flowers', 10, 33), prop('flowers', 22, 33),
+      prop('flowers', 10, 40), prop('flowers', 22, 40),
     ],
     areas: [
       area('The Arches', 2, 0, 68, 4),
       area('Fountain Plaza', 28, 15, 16, 14),
       area('Homes Corner', 0, 16, 13, 12),
       area('Café Corner', 54, 25, 16, 18),
-      area('South Market', 6, 32, 20, 10),
+      area('The Pond', 6, 32, 20, 10),
     ],
     seats: [
-      seat(id, 1, 31, 19, 'right', 'bench'),
-      seat(id, 2, 31, 23, 'right', 'bench'),
-      seat(id, 3, 40, 19, 'left', 'bench'),
-      seat(id, 4, 40, 23, 'left', 'bench'),
-      seat(id, 5, 34, 17, 'down', 'bench'),
-      seat(id, 6, 37, 25, 'up', 'bench'),
-      // v1.2.3 (Item 4): the terrace table sets — four chairs
-      // around each round table, the two sets flanking the door
-      // with the doorstep kept clear between them.
-      seat(id, 7, 58, 37, 'down', 'chair'),
-      seat(id, 8, 58, 39, 'up', 'chair'),
-      seat(id, 9, 57, 38, 'right', 'chair'),
-      seat(id, 10, 59, 38, 'left', 'chair'),
-      seat(id, 11, 66, 37, 'down', 'chair'),
-      seat(id, 12, 66, 39, 'up', 'chair'),
-      seat(id, 13, 65, 38, 'right', 'chair'),
-      seat(id, 14, 67, 38, 'left', 'chair'),
+      // v1.3.1 (Item 11): the fountain ring is CURRENT backed
+      // chairs now, not the old flat brown diamond pads — same
+      // composed ring, same facings (every chair aims at the water).
+      seat(id, 1, 31, 19, 'right', 'chair'),
+      seat(id, 2, 31, 23, 'right', 'chair'),
+      seat(id, 3, 40, 19, 'left', 'chair'),
+      seat(id, 4, 40, 23, 'left', 'chair'),
+      seat(id, 5, 34, 17, 'down', 'chair'),
+      seat(id, 6, 37, 25, 'up', 'chair'),
+      // v1.2.3 (Item 4) + v1.3.1 (Item 1): the terrace table sets —
+      // four chairs around each round table, pulled OUT to a
+      // ~half-tile gap (50px from the table centre, was a full tile
+      // ring crammed into the tabletop). The two sets flank the
+      // door with the doorstep kept clear between them.
+      seat(id, 7, 57, 36.4375, 'down', 'chair'),
+      seat(id, 8, 57, 39.5625, 'up', 'chair'),
+      seat(id, 9, 55.4375, 38, 'right', 'chair'),
+      seat(id, 10, 58.5625, 38, 'left', 'chair'),
+      seat(id, 11, 67, 36.4375, 'down', 'chair'),
+      seat(id, 12, 67, 39.5625, 'up', 'chair'),
+      seat(id, 13, 65.4375, 38, 'right', 'chair'),
+      seat(id, 14, 68.5625, 38, 'left', 'chair'),
+      // v1.3.1 (Item 12): the pond's north-bank seating nook — two
+      // current chairs facing the water over the bank, lamp between.
+      seat(id, 15, 14, 33, 'down', 'chair'),
+      seat(id, 16, 18, 33, 'down', 'chair'),
       // v1.2 (Item Q rider): the two lone mid-plaza chairs are gone —
       // plaza seating exists only as composed nooks (fountain ring,
       // café corner), never as orphan pads.
@@ -323,11 +342,16 @@ function buildCafe() {
   const id = 'gateway-cafe';
   // 4-seat tables at (13,7), (21,7), (20,13): one chair per side.
   // The southern table stands well east of the door's clearing.
+  // v1.3.1 (Item 1): chairs pulled OUT to 50px from the table
+  // centre (fractional tiles) — a visible ~half-tile gap between
+  // chair and table edge; the old full-tile ring left sitters "in
+  // the tables" and the up-facing chair backs blended into the
+  // tabletop. The validator enforces the [46,58]px band.
   const tableChairs = [];
   for (const [tx, ty] of [[13, 7], [21, 7], [20, 13]]) {
     tableChairs.push(
-      [tx, ty - 1, 'down'], [tx, ty + 1, 'up'],
-      [tx - 1, ty, 'right'], [tx + 1, ty, 'left'],
+      [tx, ty - 1.5625, 'down'], [tx, ty + 1.5625, 'up'],
+      [tx - 1.5625, ty, 'right'], [tx + 1.5625, ty, 'left'],
     );
   }
   return {
@@ -358,11 +382,17 @@ function buildCafe() {
       // behind it, and EVERY seat facing the fireplace (west).
       // Sofa at the centre; the end chairs step one tile east,
       // opening the arc toward the fire.
+      // v1.3.1 (Item 2): the arc FANS in SCREEN space — facing is
+      // screen-space since v1.1, and the southern chairs stored as
+      // 'left' actually presented their backs ~90° off the fire in
+      // the render (screen-bearing dot 0 / −0.22). The fan is now
+      // left,left,left,up,up with every seat's screen bearing to
+      // the hearth ≥ 0.89 — validator-enforced.
       seat(id, 13, 5, 5, 'left', 'chair'),
       seat(id, 14, 4, 7, 'left', 'chair'),
       seat(id, 15, 4, 10, 'left', 'sofa'),
-      seat(id, 16, 4, 13, 'left', 'chair'),
-      seat(id, 17, 5, 15, 'left', 'chair'),
+      seat(id, 16, 4, 13, 'up', 'chair'),
+      seat(id, 17, 5, 15, 'up', 'chair'),
     ],
   };
 }
@@ -417,11 +447,16 @@ function buildSolsticeBay() {
       prop('rug', 25, 15), prop('lamp', 24, 14), prop('stringlights', 25, 13),
       // Stalls on the boardwalk posts.
       prop('stall', 6, 12), prop('stall', 64, 12),
-      // Planter colour along the boardwalk's south edge.
-      prop('flowers', 20, 11), prop('flowers', 52, 11),
-      // v1.2 (Item L): beach life — a volleyball net mid-sand and
-      // two umbrella spots on the open beach.
-      prop('volleyball', 36, 30), prop('umbrella', 24, 29), prop('umbrella', 48, 28),
+      // Planter colour beside the two boardwalk stalls.
+      prop('flowers', 8, 11), prop('flowers', 62, 11),
+      // v1.2 (Item L) + v1.3.1 (Item 13): beach life — a volleyball
+      // net mid-sand and FOUR umbrella+towel units in an even row
+      // flanking the court (8-tile spacing, the court is the middle
+      // gap). The umbrellas render BIG now and each towel is a real
+      // seat you can LAY DOWN on.
+      prop('volleyball', 36, 30),
+      prop('umbrella', 19, 32), prop('umbrella', 27, 32),
+      prop('umbrella', 43, 32), prop('umbrella', 51, 32),
     ],
     stage: stageDef(33, 6, 'S'),
     areas: [
@@ -431,17 +466,24 @@ function buildSolsticeBay() {
       area('Casino Corner', 1, 31, 16, 12),
     ],
     seats: [
-      seat(id, 1, 10, 8, 'up', 'chair'),
-      seat(id, 2, 14, 8, 'up', 'chair'),
-      seat(id, 3, 52, 8, 'up', 'chair'),
-      seat(id, 4, 58, 8, 'up', 'chair'),
+      // v1.3.1 (Item 5): the four lone boardwalk chairs and the two
+      // café-booth seats are GONE — seats exist only in registered
+      // arrangements now. The two benches flanking the venue stay
+      // (venue-flank pair, registered in the validator).
       seat(id, 5, 28, 10, 'up', 'bench'),
       seat(id, 6, 44, 10, 'up', 'bench'),
-      seat(id, 7, 56, 14, 'left', 'cafe'),
-      seat(id, 8, 60, 14, 'left', 'cafe'),
+      // v1.3.1 (Item 13): the beach towels — lying seats, one per
+      // umbrella unit, just south of their umbrella poles.
+      seat(id, 7, 20, 33, 'down', 'towel'),
+      seat(id, 8, 28, 33, 'down', 'towel'),
+      seat(id, 9, 44, 33, 'down', 'towel'),
+      seat(id, 10, 52, 33, 'down', 'towel'),
       // v1.1: stage audience — pit rows 9-11, then 5 rows of 4 chairs.
-      // v1.2 (Item P): audiences never aim up — profile rows (right).
-      ...audienceSeats(id, 101, [33, 36, 39, 42], [13, 15, 17, 19, 21], 'right'),
+      // v1.3.1 (Item 3 — UNIFORM VENUE GEOMETRY): every venue's stage
+      // stands against its back wall with the audience facing
+      // straight at it ('up', toward the north stage) — the old
+      // per-venue profile-row exceptions are abolished.
+      ...audienceSeats(id, 101, [33, 36, 39, 42], [13, 15, 17, 19, 21], 'up'),
     ],
   };
 }
@@ -473,11 +515,14 @@ function buildCasino({ id, name, hostId, hostLabel, hostSpawn, floor, floorAlt, 
   const g = makeGrid(W, H, 'C');
   setBorder(g, W, H, 'W');
   setRect(g, 2, 21, 9, 1, 'W'); // bar counter (bartender stands behind it)
+  // v1.3.1 (Item 7): poker chairs pulled OUT to 60px from the
+  // table centre — the old 44px ring tucked the cushions half
+  // under the felt edge. Validator band: [55,66]px.
   const chairSet = (x, y) => [
-    { dir: 'N', x, y: y - 44 },
-    { dir: 'E', x: x + 44, y },
-    { dir: 'S', x, y: y + 44 },
-    { dir: 'W', x: x - 44, y },
+    { dir: 'N', x, y: y - 60 },
+    { dir: 'E', x: x + 60, y },
+    { dir: 'S', x, y: y + 60 },
+    { dir: 'W', x: x - 60, y },
   ];
   const tableAt = (n, tx, ty) => ({
     id: `${id}-poker-${n}`, x: cx(tx), y: cy(ty), chairs: chairSet(cx(tx), cy(ty)),
@@ -501,7 +546,10 @@ function buildCasino({ id, name, hostId, hostLabel, hostSpawn, floor, floorAlt, 
     const ty = 5 + i * 2;
     slots.push({
       id: `${id}-slot-${i + 6}`, seatId: `${id}-slotseat-${i + 6}`,
-      x: cx(34), y: cy(ty), ix: cx(33), iy: cy(ty),
+      // v1.3.1 (Item 8): the east-row stool sits 52px west of the
+      // cabinet centre (was 32 — the cushion touched the cabinet
+      // and read as a wooden slab / little table, not a chair).
+      x: cx(34), y: cy(ty), ix: cx(34) - 52, iy: cy(ty),
     });
   }
   const seats = [
@@ -630,9 +678,14 @@ function buildHookahLounge() {
       // a SPACED arc facing the big fire — sofa at the centre, a
       // clear gap between every pair, the end chairs stepping one
       // tile south to open the arc toward the hearth.
-      seat(id, 9, 8, 5, 'up', 'chair'),
-      seat(id, 10, 10, 4, 'up', 'chair'),
-      seat(id, 11, 13, 4, 'up', 'sofa'),
+      // v1.3.1 (Item 2): the arc FANS in SCREEN space — the west
+      // seats stored 'up' presented ~90° off the fire in the render
+      // (screen-bearing dots −0.06 / 0 / 0.45); they now face
+      // 'right' (dots 0.97 / 1.0 / 0.89) and the fan reads
+      // right,right,right,up,up — validator-enforced.
+      seat(id, 9, 8, 5, 'right', 'chair'),
+      seat(id, 10, 10, 4, 'right', 'chair'),
+      seat(id, 11, 13, 4, 'right', 'sofa'),
       seat(id, 12, 16, 4, 'up', 'chair'),
       seat(id, 13, 18, 5, 'up', 'chair'),
     ],
@@ -682,11 +735,11 @@ function buildNeonDistrict() {
   for (const [x, y] of [[30, 18], [41, 26]]) g[y][x] = '|'; // market stalls
   // Dressing on the old footprints: trees, planters, stall posts.
   g[6][6] = 'T'; g[9][12] = 'T'; g[5][8] = 'P';
-  g[7][24] = '|'; g[7][46] = 'T';
+  g[7][46] = 'T'; // v1.3.1: the (24,7) stall post went with its loner stall (Item 14)
   g[9][20] = 'T'; g[5][50] = 'T';
   g[20][6] = 'P'; g[23][6] = 'P'; g[24][12] = 'T';
   g[18][58] = 'T'; g[22][64] = 'T'; g[20][66] = 'P';
-  g[33][10] = '|'; g[34][28] = 'T'; g[33][44] = 'P';
+  g[34][28] = 'T'; g[33][44] = 'P'; // v1.3.1: the (10,33) stall post went with its loner stall (Item 14)
   // v1.2 (Item I): the great NEON sign leaves the seating block —
   // twin signs now flank the stage ends, each on its own post.
   g[4][32] = '|'; g[4][45] = '|';
@@ -718,8 +771,11 @@ function buildNeonDistrict() {
       // inside the venue); the string lights keep their 2-north
       // offset over the rug.
       prop('rug', 36, 25), prop('lamp', 32, 25), prop('stringlights', 36, 23),
-      // Stalls on their posts (Lane C).
-      prop('stall', 30, 18), prop('stall', 41, 26), prop('stall', 24, 7), prop('stall', 10, 33),
+      // Stalls on their posts (Lane C) — only the two market-square
+      // stalls remain. v1.3.1 (Item 14 — Neon cleanup): the loner
+      // stalls at (24,7) and (10,33) sat alone in open ground and
+      // are REMOVED, posts included.
+      prop('stall', 30, 18), prop('stall', 41, 26),
       prop('flowers', 30, 15), prop('flowers', 42, 28),
     ],
     // v1.2 (Item B): stage + pit span exactly the seating block
@@ -746,14 +802,19 @@ function buildNeonDistrict() {
       // (the old [10,13,...] split put a 3-gap at the street and
       // the rows read scattered). The street now reads as the
       // aisle between the pit and the seats.
-      // v1.2 (Item P): audiences never aim up — profile rows (right).
-      ...audienceSeats(id, 101, [34, 37, 40, 43], [13, 15, 17, 19, 21], 'right'),
+      // v1.3.1 (Item 3 — UNIFORM VENUE GEOMETRY): the audience
+      // faces straight at the stage ('up') — Zan's annotated
+      // screenshot showed the old 'right' profile rows aiming
+      // screen-SE, ~90° off the stage. The per-venue profile
+      // exceptions are abolished in all five cities.
+      ...audienceSeats(id, 101, [34, 37, 40, 43], [13, 15, 17, 19, 21], 'up'),
     ],
   };
 }
 
 // CINDER MESA — ember forge country: scattered rock clusters, a
-// forge plaza west-center, stage on the east rim, arch south-west.
+// forge plaza west-center, stage on the north rim (v1.3.1 uniform
+// venue geometry), arch south-west.
 function buildCinderMesa() {
   const W = 72, H = 45;
   const g = cityShell(W, H);
@@ -770,15 +831,16 @@ function buildCinderMesa() {
     [8, 20], [10, 21], [12, 22], [9, 22],
     [16, 32], [18, 33], [20, 34], [17, 34],
     [56, 32], [58, 33], [60, 35], [57, 35],
-    [30, 14], [32, 15], [31, 13], [33, 14],
+    [28, 14], [30, 15], [29, 13], [31, 14], // v1.3.1: shifted west, clear of the rebuilt north venue
     [36, 36], [38, 37], [37, 38],
     [10, 36], [12, 37], [11, 38],
     [24, 20], [24, 21], [23, 19],
   ]) g[y][x] = 'R';
   setRect(g, 24, 17, 9, 12, 's');   // Forge Plaza stone
+  setRect(g, 31, 2, 16, 12, 's');   // Stage Grounds stone (v1.3.1: the venue moved north — see stage below)
   setRect(g, 27, 38, 7, 2, 's');    // Hookah Corner doorstep terrace (v1.2.2, Item 8: on the FRONT/south side now)
   setRect(g, 4, 40, 24, 1, 'p');    // south path from the gatehouse
-  g[17][60] = '|'; g[26][60] = '|'; // stage speakers (v1.2: front corners of the widened west-face stage)
+  g[5][32] = '|'; g[5][43] = '|';   // stage speakers (v1.3.1: front corners of the north stage)
   g[18][28] = '|'; g[24][28] = '|'; // forge posts
   g[21][28] = 'R';                  // the forge monument's stone base (hero)
   g[20][24] = 'R'; g[21][24] = 'R'; // plaza-edge boulders (after the stone fill)
@@ -806,36 +868,31 @@ function buildCinderMesa() {
       // A forge-plaza nook: rug + lamp to sit by.
       prop('rug', 28, 22), prop('lamp', 26, 21),
     ],
-    // v1.2 (Item B): the west-face complex is 10 wide on the
-    // audience axis (y17..26, matching the seat lines) and 3 deep.
-    stage: stageDef(61, 17, 'W'),
+    // v1.3.1 (Item 3 — UNIFORM VENUE GEOMETRY): the stage stands
+    // against the NORTH rim now, pit in front, audience behind —
+    // the old west-face 'W' complex on the east rim is retired in
+    // every city. Item 10: the two flat bench remnants at the old
+    // stage's ends ((57,15)/(57,28)) are DELETED with it, along
+    // with the lone forge-plaza chair (24,24) and café booth
+    // (26,27) (Item 5). The forge nook sofa now faces the forge.
+    stage: stageDef(33, 3, 'S'),
     areas: [
       area('Forge Plaza', 20, 15, 16, 14),
-      area('Stage Rim', 58, 17, 13, 10),
+      area('Stage Grounds', 31, 1, 16, 12),
       area('Hookah Corner', 24, 29, 16, 12),
     ],
     seats: [
-      // v1.2.3 (Item 9 — pit-front clear): the stage-side benches
-      // used to sit at (57,20)/(57,24), in the clear band IN FRONT
-      // of the pit between the pit and the audience — the
-      // performer's apron is not seating. They now flank the venue
-      // from outside the band, north and south of the pit mouth,
-      // still facing the stage.
-      seat(id, 1, 57, 15, 'right', 'bench'),
-      seat(id, 2, 57, 28, 'right', 'bench'),
-      seat(id, 3, 24, 24, 'down', 'chair'),
-      seat(id, 4, 26, 27, 'up', 'cafe'),
-      seat(id, 5, 27, 22, 'down', 'sofa'),
-      // v1.1: stage audience (stage faces west) — pit cols 58-60,
-      // then 5 chair lines of 4 running north-south.
-      ...audienceSeats(id, 101, [55, 52, 49, 46, 43], [17, 20, 23, 26], 'right'),
+      seat(id, 5, 28, 25, 'up', 'sofa'),
+      // v1.3.1: stage audience — pit rows 6-8, then 5 rows of 4
+      // chairs facing straight at the stage ('up').
+      ...audienceSeats(id, 101, [33, 36, 39, 42], [10, 12, 14, 16, 18], 'up'),
     ],
   };
 }
 
 // FROSTHAVEN — aurora ice: a frozen pond north-west, ice blocks,
-// pines; stage on the south side, return arch on the north edge
-// (you arrive facing the stage).
+// pines; stage on the north-west rim (v1.3.1 uniform venue
+// geometry), return arch on the north edge.
 function buildFrosthaven() {
   const W = 72, H = 45;
   const g = cityShell(W, H);
@@ -849,13 +906,12 @@ function buildFrosthaven() {
     [8, 30], [10, 31], [12, 32],
     [20, 20], [22, 21],
   ]) g[y][x] = 'R';
-  setRect(g, 29, 33, 14, 10, 's');  // Stage Grounds stone
+  setRect(g, 19, 2, 17, 17, 's');   // Stage Grounds stone (v1.3.1: the venue moved to the north-west rim)
   setRect(g, 35, 5, 2, 15, 'p');    // path south from the gatehouse
-  setRect(g, 25, 13, 10, 1, 'p');   // path west to the pond-shore nook
-  // v1.2 (Item M): the pine at (34,26) grew IN the chair rows —
-  // it moves to the venue's west perimeter (31,26).
-  for (const [x, y] of [[30, 12], [44, 14], [52, 30], [24, 32], [16, 26], [66, 12], [31, 26]]) g[y][x] = 'T'; // pines
-  g[37][32] = '|'; g[37][43] = '|'; // stage speakers (v1.1: front corners, north face)
+  // v1.3.1: the path west to the old pond-shore nook is gone with
+  // the nook (Item 15 — the cluster was trash, not an arrangement).
+  for (const [x, y] of [[34, 13], [44, 14], [52, 30], [24, 32], [16, 26], [66, 12], [31, 26]]) g[y][x] = 'T'; // pines ((30,12) moved east, clear of the rebuilt venue's apron)
+  g[4][21] = '|'; g[4][32] = '|';   // stage speakers (v1.3.1: front corners of the north stage)
   g[7][47] = '#';                   // the ice sculpture's plinth (hero)
   gatehouseWalls(g, 35, 1, 'N');
   const id = 'frosthaven';
@@ -868,32 +924,33 @@ function buildFrosthaven() {
     props: [
       // The hero: a great ice sculpture on its plinth, NE grounds.
       prop('icesculpt', 47, 7),
-      // A pond-shore nook: rug, lamp, and string lights in the cold.
-      prop('rug', 24, 13), prop('lamp', 23, 13), prop('stringlights', 24, 12),
-      // v1.2 (Item M): the venue lantern stood in the back seat
-      // row — it now lights the pit's west corner (perimeter).
-      prop('lantern', 31, 34),
+      // v1.3.1 (Items 15/16 — TRASH, deleted whole, NOT reorganized):
+      // the frozen-pond cluster (rug + lamp + string lights hanging
+      // to nothing) and the old venue's remnants (the pit-corner
+      // lantern, the café booth's round table top, the dumped rug
+      // pads past the rows) are all GONE. The snow mounds stay —
+      // they're natural dressing.
     ],
-    stage: stageDef(33, 37, 'N'),
+    // v1.3.1 (Item 3 — UNIFORM VENUE GEOMETRY): the stage stands
+    // against the north-west rim (the gatehouse holds the north
+    // centre), pit in front, audience behind facing it ('up').
+    // The old south-rim 'N' complex is retired.
+    stage: stageDef(22, 2, 'S'),
     // v1.2 (Items N/O): ICE fishing — cast from the frozen pond's
     // edge; the drill hole renders at the landing point on the ice.
     fishable: true,
     frozen: true,
     areas: [
       area('The Frozen Pond', 2, 2, 20, 10),
-      area('Stage Grounds', 29, 33, 14, 10),
+      area('Stage Grounds', 19, 2, 17, 17),
     ],
     seats: [
-      seat(id, 1, 30, 34, 'down', 'bench'),
-      seat(id, 2, 45, 33, 'down', 'bench'),
-      // v1.2 (Item M): the lone pond-edge chair joins the pond
-      // nook as its second seat (it read as displaced junk alone).
-      seat(id, 3, 26, 13, 'left', 'chair'),
-      seat(id, 4, 48, 34, 'down', 'cafe'),
-      seat(id, 5, 24, 14, 'up', 'sofa'),
-      // v1.1: stage audience (stage on the south rim, facing north) —
-      // pit rows 34-36 on the apron, then 5 rows of 4 chairs.
-      ...audienceSeats(id, 101, [33, 36, 39, 42], [24, 26, 28, 30, 32], 'down'),
+      // v1.3.1 (Items 5/15/16): Frosthaven's ONLY seats are the
+      // audience grid now — the pond-nook chair + sofa, the two
+      // venue benches and the café booth were all remnants and are
+      // deleted. Stage audience: pit rows 5-7, then 5 rows of 4
+      // chairs facing straight at the stage ('up').
+      ...audienceSeats(id, 101, [22, 25, 28, 31], [9, 11, 13, 15, 17], 'up'),
     ],
   };
 }
@@ -929,7 +986,7 @@ function buildVerdantHollow() {
   // 3 clear tiles (37-39) behind the back row — and it's a proper
   // fishing pond now (proximity fishing all along its banks).
   setRect(g, 26, 40, 18, 4, '%');
-  g[23][32] = '|'; g[23][43] = '|'; // stage speakers (v1.1: front corners)
+  g[5][32] = '|'; g[5][43] = '|';   // stage speakers (v1.3.1: front corners of the north stage)
   g[15][28] = 'P';                  // the Great Tree's root planter (hero)
   gatehouseWalls(g, 66, 43, 'S');
   const id = 'verdant-hollow';
@@ -942,32 +999,38 @@ function buildVerdantHollow() {
     props: [
       // The hero: the Great Tree at the clearing's NW shoulder.
       prop('greattree', 28, 15),
-      // A grove nook at the clearing's WEST edge (v1.2 Items M/O:
-      // it used to sit ON the front seat row). The string lights
-      // stay at the stage's back edge — stage-end dressing.
-      prop('rug', 27, 30), prop('lamp', 26, 29), prop('stringlights', 36, 19),
-      // Flower drifts around the clearing and the pond shore
-      // (v1.2: out of the pit and the seat rows).
-      prop('flowers', 31, 24), prop('flowers', 46, 24), prop('flowers', 28, 32), prop('flowers', 60, 38),
+      // A grove nook south of the clearing (v1.3.1: recomposed —
+      // rug + lamp + two seats facing each other over the rug).
+      // The string lights moved behind the rebuilt north stage —
+      // stage-end dressing.
+      prop('rug', 28, 29), prop('lamp', 26, 28), prop('stringlights', 36, 2),
+      // Flower drifts: one beside the Great Tree, one at the
+      // clearing's south edge. (The drifts that sat inside the old
+      // audience grid and alone in open ground east of the pond
+      // are gone — the anchor law fails open-ground loners now.)
+      prop('flowers', 30, 17), prop('flowers', 28, 32),
     ],
     // v1.2 (Item O): proximity fishing — anywhere along the pond's
     // bank; the static rod stands are gone (they looked dead).
     fishable: true,
-    stage: stageDef(33, 21, 'S'),
+    // v1.3.1 (Item 3 — UNIFORM VENUE GEOMETRY): the stage stands at
+    // the clearing's NORTH edge now (it sat mid-map), pit in
+    // front, audience behind facing it ('up').
+    stage: stageDef(33, 4, 'S'),
     areas: [
-      area('The Clearing', 29, 17, 14, 12),
+      area('The Clearing', 28, 1, 18, 21),
       area('The Pond Shore', 24, 37, 20, 8),
     ],
     seats: [
-      seat(id, 1, 28, 25, 'up', 'bench'),
-      seat(id, 2, 44, 25, 'up', 'bench'),
-      seat(id, 3, 12, 12, 'down', 'chair'),
-      seat(id, 4, 58, 12, 'down', 'chair'),
-      seat(id, 5, 44, 26, 'up', 'cafe'),
-      seat(id, 6, 30, 27, 'up', 'sofa'),
-      // v1.1: stage audience — pit rows 24-26, then 5 rows of 4 chairs.
-      // v1.2 (Item P): audiences never aim up — profile rows (right).
-      ...audienceSeats(id, 101, [33, 36, 39, 42], [28, 30, 32, 34, 36], 'right'),
+      // v1.3.1 (Item 5): the two venue benches, the café booth and
+      // the two tree-cluster LAWN CHAIRS (12,12)/(58,12) are
+      // deleted — the lawn pair's pending veto is exercised. The
+      // grove nook keeps two seats facing each other over the rug.
+      seat(id, 6, 28, 27, 'down', 'sofa'),
+      seat(id, 7, 28, 31, 'up', 'chair'),
+      // v1.3.1: stage audience — pit rows 7-9, then 5 rows of 4
+      // chairs facing straight at the stage ('up').
+      ...audienceSeats(id, 101, [33, 36, 39, 42], [11, 13, 15, 17, 19], 'up'),
     ],
   };
 }

@@ -178,9 +178,13 @@ test('door conversion: every door is labelled, resolvable, and interiors have th
   const hookah = clientMap(MAPS['hookah-lounge']);
   assert.ok(hookah.props.some(p => p.kind === 'hearth'), 'hookah lounge payload carries its hearth');
   const gwProps = gw.props.map(p => p.kind);
-  for (const kind of ['lantern', 'lamp', 'stringlights', 'rug']) {
+  for (const kind of ['lantern', 'lamp', 'stringlights']) {
     assert.ok(gwProps.includes(kind), `gateway dressing includes ${kind}`);
   }
+  // v1.3.1: the Gateway's only rug was the purposeless fountain-
+  // south cluster Zan ordered deleted (Item 4) — the composed
+  // hearth rug in the café carries the rug check now.
+  assert.ok(cafe.props.some(p => p.kind === 'rug'), 'café payload carries its hearth rug');
 });
 
 // ------------------------------------------------------------------ b

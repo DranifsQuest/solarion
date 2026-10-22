@@ -66,7 +66,11 @@ function startServer(port, dbPath, wipe = true) {
   }
   const child = spawn('node', ['src/server.js'], {
     cwd: ROOT,
-    env: { ...process.env, SOLARION_PORT: String(port), SOLARION_DB_PATH: dbPath, SOLARION_TEST: '1' },
+    // SOLARION_REGISTER_LIMIT: this suite legitimately creates
+    // >20 synthetic accounts from localhost (the production cap
+    // of 20/hour/IP is pinned by security.test.js on its own
+    // server; the v1.3.1 seat-release test tipped this file over).
+    env: { ...process.env, SOLARION_PORT: String(port), SOLARION_DB_PATH: dbPath, SOLARION_TEST: '1', SOLARION_REGISTER_LIMIT: '100' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   children.push(child);
@@ -685,6 +689,82 @@ test('poker join flow: sit -> offer -> watch (no chips) -> buy in (atomic)', { t
   b.client.ws.close();
 });
 
+// ---------------------------------------------------------------- v1.3.1
+// Item 6 regression (Zan, live, Neon Casino 2026-10-22): a poker
+// spectator's chair reservation was never released when they stood
+// via MOVEMENT input — the tick cleared p.seated directly and the
+// casino never heard about it. Four sit/stand cycles leaked all
+// four chairs; every re-sit answered "Every chair at this table is
+// taken". These tests pin every release path.
+
+test('seat release (item 6): spectator chairs free on movement-stand, tray stand, and zone transfer; chips seats veto movement', { timeout: 180000 }, async () => {
+  const a = await makeUser('sr_alice');
+  const b = await makeUser('sr_bob');
+  await toCasino(a);
+  await sleep(1700); // outlast arrival locks
+  const offersOf = (u) => u.client.msgs.filter(m => m.type === 'poker-offer').length;
+  const stoodUp = (u) => {
+    const s = u.client.msgs.filter(m => m.type === 'sit-state').pop();
+    return s && s.seated === false ? true : null;
+  };
+  // Sit as spectator, stand via MOVEMENT input — five cycles. With
+  // the leak, the fifth sit finds every chair "taken".
+  for (let i = 0; i < 5; i++) {
+    a.client.send({ type: 'debug-teleport', x: T1.x, y: T1.y });
+    await sleep(250);
+    a.client.send({ type: 'interact' });
+    await waitFor(() => offersOf(a) >= i + 1 ? true : null, 5000, `sit #${i + 1} re-offers the buy-in`);
+    a.client.send({ type: 'input', keys: { left: true } });
+    await sleep(150);
+    a.client.send({ type: 'input', keys: {} });
+    await waitFor(() => stoodUp(a), 5000, `movement stand #${i + 1} releases the chair`);
+  }
+  // The tray's Stand releases a spectator hold too (was a silent no-op).
+  a.client.send({ type: 'debug-teleport', x: T1.x, y: T1.y });
+  await sleep(250);
+  a.client.send({ type: 'interact' });
+  await waitFor(() => offersOf(a) >= 6 ? true : null, 5000, 'sixth sit offers');
+  a.client.send({ type: 'poker', action: 'stand', table: T1.id });
+  await waitFor(() => stoodUp(a), 5000, 'tray stand releases the spectator chair');
+  // Transferring out of the zone frees the chair for ANOTHER player.
+  a.client.send({ type: 'debug-teleport', x: T1.x, y: T1.y });
+  await sleep(250);
+  a.client.send({ type: 'interact' });
+  await waitFor(() => offersOf(a) >= 7 ? true : null, 5000, 'seventh sit offers');
+  a.client.send({ type: 'debug-teleport', x: 544, y: 720 }); // lounge exit door -> the bay
+  await waitFor(
+    () => a.client.msgs.filter(m => m.type === 'map' && m.map.id === 'solstice-bay').pop(),
+    5000, 'a leaves the lounge');
+  await toCasino(b);
+  await sleep(1700);
+  b.client.send({ type: 'debug-teleport', x: T1.x, y: T1.y });
+  await sleep(250);
+  b.client.send({ type: 'interact' });
+  await waitFor(() => offersOf(b) >= 1 ? true : null, 5000, 'b can take the chair a left by transfer');
+  // A bought-in seat VETOES movement-stand (chips stay put); the tray
+  // stand cashes out and the chair is free again afterwards.
+  b.client.send({ type: 'poker', action: 'buyin', amount: 50 });
+  await waitFor(() => {
+    const s = latestTable(b, T1.id);
+    return s && s.chairs.some(c => c.name === b.name) ? true : null;
+  }, 5000, 'b buys in');
+  b.client.send({ type: 'input', keys: { left: true } });
+  await sleep(400);
+  b.client.send({ type: 'input', keys: {} });
+  assert.ok(latestTable(b, T1.id).chairs.some(c => c.name === b.name), 'movement does NOT eject a chips seat');
+  b.client.send({ type: 'poker', action: 'stand', table: T1.id });
+  await waitFor(() => {
+    const s = latestTable(b, T1.id);
+    return s && !s.chairs.some(c => c.name === b.name) ? true : null;
+  }, 5000, 'tray stand cashes b out');
+  b.client.send({ type: 'debug-teleport', x: T1.x, y: T1.y });
+  await sleep(250);
+  b.client.send({ type: 'interact' });
+  await waitFor(() => offersOf(b) >= 2 ? true : null, 5000, 'b can sit again after cashing out');
+  a.client.ws.close();
+  b.client.ws.close();
+});
+
 // ---------------------------------------------------------------- v1.1.2
 // Per-table buy-ins: the TABLE owns the amount. The first accepted
 // buy-in SETS it from the presets; joiners pay exactly that (never
@@ -867,7 +947,7 @@ test('slot stools: seated player faces the machine in BOTH casinos (Item G)', { 
   await toCasino(u);
   await sleep(3400); // transfer lock
   await sitAndCheck(u, { x: 624, y: 112 }, 'up', 'lounge north-row slot');
-  await sitAndCheck(u, { x: 1072, y: 176 }, 'right', 'lounge east-wall slot');
+  await sitAndCheck(u, { x: 1052, y: 176 }, 'right', 'lounge east-wall slot'); // v1.3.1: stool pulled out to a 52px gap (Item 8)
   u.client.ws.close();
 
   // Neon Casino: the east-wall row from Zan's screenshot.
@@ -878,7 +958,7 @@ test('slot stools: seated player faces the machine in BOTH casinos (Item G)', { 
   v.client.send({ type: 'debug-teleport', x: 1968, y: 1232 }); // casino door (FRONT/south face since v1.2.2 Item 8)
   await waitFor(() => v.client.msgs.filter(m => m.type === 'map' && m.map.id === 'neon-casino').pop(), 5000, 'vic in neon-casino');
   await sleep(3400); // transfer lock
-  await sitAndCheck(v, { x: 1072, y: 176 }, 'right', 'neon east-wall slot');
+  await sitAndCheck(v, { x: 1052, y: 176 }, 'right', 'neon east-wall slot');
   await sitAndCheck(v, { x: 624, y: 112 }, 'up', 'neon north-row slot');
   v.client.ws.close();
 });
