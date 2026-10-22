@@ -423,7 +423,7 @@ test('invites: decline, accept via the transfer, kick-block override', { timeout
   const arrived = await waitFor(
     () => guest.client.msgs.filter(m => m.type === 'map' && m.map.id === `studio:${owner.id}`).pop(),
     5000, 'guest transported into the host studio');
-  assert.equal(arrived.transferMs, 3000, 'invite transport uses the standard 3s load-screen transfer');
+  assert.equal(arrived.transferMs, 1500, 'invite transport uses the standard 1.5s load-screen transfer');
   const gState = await waitFor(
     () => guest.client.msgs.filter(m => m.type === 'studio-state').pop(),
     5000, 'guest studio-state');

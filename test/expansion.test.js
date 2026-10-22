@@ -304,7 +304,7 @@ test('door transfer bay ⇄ lounge with the 3s input lock', { timeout: 60000 }, 
   teleport(u, 496, 1200); // the casino door tile in the bay
   const arrived = await arriveMap(u, 'casino-lounge');
   const t0 = Date.now();
-  assert.equal(arrived.transferMs, 3000, 'map message carries the fixed transfer window');
+  assert.equal(arrived.transferMs, 1500, 'map message carries the fixed transfer window');
   assert.equal(arrived.map.name, 'Casino Lounge');
   assert.ok(Math.abs(arrived.you.x - 496) < 2 && Math.abs(arrived.you.y - 528) < 2, 'placed at the lounge entryway');
   assert.equal(arrived.map.casino.tables.length, 6, 'client payload lists 6 tables');
@@ -333,7 +333,7 @@ test('door transfer bay ⇄ lounge with the 3s input lock', { timeout: 60000 }, 
   await sleep(1600);
   teleport(u, 480, 592); // lounge door-back rect
   const back = await arriveMap(u, 'solstice-bay');
-  assert.equal(back.transferMs, 3000);
+  assert.equal(back.transferMs, 1500);
   assert.ok(Math.abs(back.you.x - 528) < 2 && Math.abs(back.you.y - 1200) < 2, 'lands outside the casino door (off the pad, so it cannot bounce back in)');
   u.client.ws.close();
 });

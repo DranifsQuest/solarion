@@ -49,7 +49,7 @@ const CHAT_WINDOW_MS = 10e3;    // ... per window
 const CHAT_MAX_LEN = 240;
 const CHAT_HISTORY = 40;        // messages kept per map for joiners
 const POSITION_SAVE_MS = 15e3;  // periodic crash-safe position flush
-const TRANSFER_MS = 3000;       // Phase B: fixed load-screen window on every scene transfer
+const TRANSFER_MS = 1500;       // load-screen window on every transfer (Phase B: 3000; v1.2 Item T: 1500, Zan's ruling)
 const SIT_RADIUS = 52;          // px: how close to a seat `interact` must be
 
 // Phase B amendment — vices (bar drinks + hookah puffs). All state
