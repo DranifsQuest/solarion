@@ -240,7 +240,7 @@ test('bartender daily: first drink free + 10z tip, once per day across BOTH bars
       await hop(u, 480, 592, 'solstice-bay');
       await hop(u, 1152, 1392, 'the-gateway');
       await hop(u, 224, 48, 'neon-district');
-      await hop(u, 1968, 944, 'neon-casino');
+      await hop(u, 1968, 1232, 'neon-casino'); // casino door (FRONT/south face since v1.2.2 Item 8)
     }
     u.client.send({ type: 'debug-teleport', x: 176, y: 528 }); // patron spot, both bars
     await sleep(350);

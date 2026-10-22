@@ -190,29 +190,44 @@ function drawDoor(d, open) {
 
 // ------------------------------------------------------------------ warm props (Phase 10)
 function drawHearthAt(x, y, seed) {
+  // Hearth v2 (v1.2.2, Item 4 — Zan: "bigger fireplaces"): a real
+  // fireplace, about two tiles across — a wide stone hearth floor,
+  // a glow pool spilling onto the boards in front, a brick body
+  // with a mantel shelf, and a firebox half again the old size
+  // with taller flames. (The night pass adds its own wide glow:
+  // see the hearth entry in the glow loop below.)
   const t = Date.now();
-  diamond(x, y + 2, 40, 15, '#5a4636'); // stone base
+  diamond(x, y + 4, 58, 21, '#4c3a2c'); // stone hearth floor (outer)
+  diamond(x, y + 2, 52, 18, '#5a4636'); // stone hearth floor (inner)
+  // warm glow pool on the floor in front of the fire
+  const grd = ctx.createRadialGradient(x, y + 8, 6, x, y + 8, 76);
+  grd.addColorStop(0, 'rgba(255,150,50,.20)');
+  grd.addColorStop(1, 'rgba(255,150,50,0)');
+  ctx.fillStyle = grd;
+  ctx.beginPath(); ctx.ellipse(x, y + 8, 76, 31, 0, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = '#6e4a3a';
-  ctx.fillRect(x - 18, y - 32, 36, 30); // brick body
+  ctx.fillRect(x - 27, y - 46, 54, 44); // brick body
+  ctx.fillStyle = 'rgba(0,0,0,.18)';    // brick courses
+  for (let i = 0; i < 4; i++) ctx.fillRect(x - 27, y - 37 + i * 10, 54, 1.6);
   ctx.fillStyle = '#54382a';
-  ctx.fillRect(x - 18, y - 32, 36, 5);  // mantel
+  ctx.fillRect(x - 31, y - 51, 62, 7);  // mantel shelf
   ctx.fillStyle = '#ffd9a0';
-  ctx.fillRect(x - 18, y - 27, 36, 2);
+  ctx.fillRect(x - 31, y - 45, 62, 2);  // mantel's warm trim line
   ctx.fillStyle = '#160b06';
-  ctx.fillRect(x - 10, y - 22, 20, 20); // firebox
+  ctx.fillRect(x - 16, y - 35, 32, 33); // firebox
   ctx.fillStyle = '#3a2415';
-  ctx.fillRect(x - 8, y - 6, 16, 3);    // logs
-  ctx.fillRect(x - 6, y - 9, 13, 3);
+  ctx.fillRect(x - 12, y - 9, 24, 4);   // logs
+  ctx.fillRect(x - 9, y - 14, 19, 4);
   const tongue = (i, w, h, col) => {
     const fx = x + Math.sin(t / 130 + seed * 3 + i * 2.2) * 1.6;
     const fh = h * (0.85 + 0.3 * Math.abs(Math.sin(t / 170 + seed + i * 1.7)));
     ctx.beginPath();
-    ctx.ellipse(fx, y - 4 - fh / 2, w, fh / 2, 0, 0, Math.PI * 2);
+    ctx.ellipse(fx, y - 5 - fh / 2, w, fh / 2, 0, 0, Math.PI * 2);
     ctx.fillStyle = col; ctx.fill();
   };
-  tongue(0, 7.5, 17, 'rgba(255,110,26,.9)');
-  tongue(1, 5, 13, 'rgba(255,176,66,.95)');
-  tongue(2, 2.8, 9, 'rgba(255,233,163,1)');
+  tongue(0, 11, 26, 'rgba(255,110,26,.9)');
+  tongue(1, 7.5, 20, 'rgba(255,176,66,.95)');
+  tongue(2, 4.2, 14, 'rgba(255,233,163,1)');
 }
 
 function drawStringLights(x, y, seed, cols) {
@@ -1957,86 +1972,147 @@ function drawTvScene(channelId, x, y, w, h, t) {
 // CHARACTER scale. A chair is a silhouette — legs, a seat cushion,
 // and a slatted BACKREST on the side away from its facing — never
 // the old 12px diamond "dot". Warm wood throughout (Phase 10).
-function drawChairAt(x, y, dir) {
-  // Chair art v3 (v1.2, Items E/K/P): EVERY facing visibly has a
-  // BACK — drawn in iso-correct order per facing so no facing can
-  // collapse to a bare seat pad (the v2 bug: 'up' backs were drawn
-  // first and swallowed by the cushion drawn over them):
+const CHAIR_FRAME = '#8a5a2b', CHAIR_DARK = '#5a3d1f', CHAIR_SLAT = '#a5713a';
+const CHAIR_CUSH = '#c96f4a', CHAIR_CUSH_D = '#9c4f30', CHAIR_CUSH_L = '#e08a5f';
+
+// A ladder back whose BASE sits at baseY, rising `rise` px. With
+// panel=true the slat field gets a warm translucent fill first so
+// the back reads as one solid piece, not floating lines. Shared by
+// drawChairAt and the deferred near-back pass (v1.2.2 Item 3).
+function chairLadderBack(x, baseY, rise, panel) {
+  if (panel) {
+    ctx.beginPath();
+    ctx.moveTo(x - 13, baseY); ctx.lineTo(x - 14, baseY - rise);
+    ctx.lineTo(x + 14, baseY - rise); ctx.lineTo(x + 13, baseY);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(138,90,43,.38)'; ctx.fill();
+  }
+  ctx.strokeStyle = CHAIR_FRAME; ctx.lineWidth = 3.6;
+  ctx.beginPath();
+  ctx.moveTo(x - 12, baseY); ctx.lineTo(x - 13, baseY - rise + 5);
+  ctx.moveTo(x + 12, baseY); ctx.lineTo(x + 13, baseY - rise + 5);
+  ctx.stroke();
+  ctx.strokeStyle = CHAIR_SLAT; ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(x - 12.6, baseY - rise * 0.45); ctx.lineTo(x + 12.6, baseY - rise * 0.45);
+  ctx.moveTo(x - 12.9, baseY - rise * 0.72); ctx.lineTo(x + 12.9, baseY - rise * 0.72);
+  ctx.stroke();
+  ctx.fillStyle = CHAIR_FRAME;
+  ctx.fillRect(x - 15, baseY - rise, 30, 6); // top rail
+  ctx.fillStyle = 'rgba(255,220,150,.35)';
+  ctx.fillRect(x - 15, baseY - rise, 30, 2);
+}
+
+// The near-side back of an 'up'-facing chair, drawn ALONE — the
+// entity pass replays it OVER a seated player (v1.2.2 Item 3: the
+// seat pass runs before players, so a sitter's sprite swallowed
+// this panel whole and occupied slot seats read backless).
+function drawChairBackNear(x, y) {
+  chairLadderBack(x, y + 8, 28, true);
+}
+
+// v1.2.2 (Item 3): the projected [x, y] of the deferred near-side
+// back for the seat player `p` occupies — or null when that seat
+// has no near-side back to replay (far-side/side backs are drawn
+// in the seat pass and peek out from behind the sitter as-is).
+// Covers all three seat families: baked map seats, casino poker
+// chairs (id poker:<tableId>:<NESW>), and placed studio seating
+// (id furn:<instanceId>).
+function deferredSeatBackPos(p) {
+  if (!p.seatId || !mapDef) return null;
+  const id = p.seatId;
+  if (id.startsWith('poker:')) {
+    const parts = id.split(':');
+    const cz = mapDef.casino;
+    const t = cz && cz.tables.find(t2 => t2.id === parts[1]);
+    const ch = t && t.chairs.find(c => c.dir === parts[2]);
+    if (!ch) return null;
+    const [tx2, ty2] = proj(t.x, t.y);
+    const [chx, chy] = proj(ch.x, ch.y);
+    const face = Math.abs(chx - tx2) > Math.abs(chy - ty2)
+      ? (chx > tx2 ? 'left' : 'right') : (chy > ty2 ? 'up' : 'down');
+    return face === 'up' ? [chx, chy] : null;
+  }
+  if (id.startsWith('furn:')) {
+    const f = sceneFurniture.find(f2 => `furn:${f2.instanceId}` === id);
+    if (!f || f.type !== 'seating') return null;
+    const dir = ['down', 'left', 'up', 'right'][f.rot & 3] || 'down';
+    if (dir !== 'up') return null;
+    const TS3 = mapDef.tileSize;
+    const [fx, fy] = proj((f.x + 0.5) * TS3, (f.y + 0.5) * TS3);
+    return [fx, fy + 2];
+  }
+  const s = (mapDef.seats || []).find(s2 => s2.id === id);
+  if (!s || (s.kind !== 'chair' && s.kind !== 'stool') || s.dir !== 'up') return null;
+  return proj(s.x, s.y);
+}
+
+function drawChairAt(x, y, dir, opts) {
+  // Chair art v4 (v1.2.2, Items 1/3): EVERY facing visibly has a
+  // BACK, and the cushion has THICKNESS (a skirt under the pad) so
+  // a chair reads as furniture, never a floor decal with a stick.
   //   down (back on the far side): back first, cushion over its base.
   //   up   (back on the near side): cushion first, then a SOLID
-  //        back panel over the cushion's near edge — the panel you
-  //        see from behind a chair, posts + slats + top rail.
-  //   left/right: a filled ladder panel on the far side, thick
-  //        enough to read at play zoom (v2's hairlines vanished).
-  // Same footprint/anchor as v2 (seat centre at x,y) — seats and
-  // sitters aligned to v2 keep their spots.
-  ctx.beginPath(); ctx.ellipse(x, y + 9, 16, 6, 0, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(0,0,0,.28)'; ctx.fill();
-  const FRAME = '#8a5a2b', DARK = '#5a3d1f', SLAT = '#a5713a';
-  const CUSH = '#c96f4a', CUSH_D = '#9c4f30';
+  //        back panel over the cushion's near edge — UNLESS
+  //        opts.deferNearBack (an occupied seat: the entity pass
+  //        redraws the panel over the sitter via drawChairBackNear,
+  //        or the sitter's sprite buries it — the v3 hole).
+  //   left/right: an ISO-TRUE panel now — its base follows the
+  //        seat diamond's back diagonal (N corner -> side corner)
+  //        and it rises vertically from that edge. v3 drew a thin
+  //        vertical ladder mid-cushion, which at play zoom read as
+  //        a stray peg next to a floor pad (the "jumble of chairs").
+  // Same footprint/anchor as v2/v3 (seat centre at x,y) — seats and
+  // sitters keep their spots.
+  const deferNearBack = Boolean(opts && opts.deferNearBack);
+  ctx.beginPath(); ctx.ellipse(x, y + 10, 20, 7, 0, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0,0,0,.30)'; ctx.fill();
   const legs = () => {
-    ctx.strokeStyle = DARK; ctx.lineWidth = 3;
+    ctx.strokeStyle = CHAIR_DARK; ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.moveTo(x - 11, y + 2); ctx.lineTo(x - 12, y + 10);
     ctx.moveTo(x + 11, y + 2); ctx.lineTo(x + 12, y + 10);
     ctx.stroke();
   };
   const cushion = () => {
-    diamond(x, y, 32, 13, CUSH_D);
-    diamond(x, y - 2.5, 28, 10.5, CUSH);
-  };
-  // A ladder back whose BASE sits at baseY, rising `rise` px. With
-  // panel=true the slat field gets a warm translucent fill first
-  // so the back reads as one solid piece, not floating lines.
-  const ladderBack = (baseY, rise, panel) => {
-    if (panel) {
-      ctx.beginPath();
-      ctx.moveTo(x - 13, baseY); ctx.lineTo(x - 14, baseY - rise);
-      ctx.lineTo(x + 14, baseY - rise); ctx.lineTo(x + 13, baseY);
-      ctx.closePath();
-      ctx.fillStyle = 'rgba(138,90,43,.38)'; ctx.fill();
-    }
-    ctx.strokeStyle = FRAME; ctx.lineWidth = 3.6;
-    ctx.beginPath();
-    ctx.moveTo(x - 12, baseY); ctx.lineTo(x - 13, baseY - rise + 5);
-    ctx.moveTo(x + 12, baseY); ctx.lineTo(x + 13, baseY - rise + 5);
-    ctx.stroke();
-    ctx.strokeStyle = SLAT; ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(x - 12.6, baseY - rise * 0.45); ctx.lineTo(x + 12.6, baseY - rise * 0.45);
-    ctx.moveTo(x - 12.9, baseY - rise * 0.72); ctx.lineTo(x + 12.9, baseY - rise * 0.72);
-    ctx.stroke();
-    ctx.fillStyle = FRAME;
-    ctx.fillRect(x - 15, baseY - rise, 30, 6); // top rail
-    ctx.fillStyle = 'rgba(255,220,150,.35)';
-    ctx.fillRect(x - 15, baseY - rise, 30, 2);
+    diamond(x, y + 3.5, 30, 12, CHAIR_CUSH_D); // skirt: the pad's thickness
+    diamond(x, y, 30, 12, CHAIR_CUSH);         // the pad itself
+    diamond(x, y - 2, 23, 8.5, CHAIR_CUSH_L);  // padded top catching light
   };
   if (dir === 'left' || dir === 'right') {
-    const s = dir === 'left' ? 1 : -1; // facing left -> back on the east side
+    const s = dir === 'left' ? 1 : -1; // facing left -> back on the east edge
     legs();
     cushion();
-    // filled side panel: a quad behind the ladder lines
-    const bx = x + s * 13;
+    // Iso panel: base edge along the cushion's back diagonal, from
+    // near the N corner (ax, ay) to near the side corner (bx, by),
+    // extruded straight up. Posts at both ends, two slats parallel
+    // to the base edge, a thick top rail along the top edge.
+    const ax = x + s * 4, ay = y - 11;
+    const bx = x + s * 27, by = y - 1;
+    const RISE = 27;
     ctx.beginPath();
-    ctx.moveTo(bx - s * 4, y + 1); ctx.lineTo(bx - s * 2, y - 27);
-    ctx.lineTo(bx + s * 6, y - 23); ctx.lineTo(bx + s * 5, y + 2);
+    ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
+    ctx.lineTo(bx, by - RISE); ctx.lineTo(ax, ay - RISE);
     ctx.closePath();
     ctx.fillStyle = 'rgba(138,90,43,.42)'; ctx.fill();
-    ctx.strokeStyle = FRAME; ctx.lineWidth = 3.6;
+    ctx.strokeStyle = CHAIR_FRAME; ctx.lineWidth = 3.6;
     ctx.beginPath();
-    ctx.moveTo(bx - s * 3, y - 2); ctx.lineTo(bx - s * 1, y - 29);
-    ctx.moveTo(bx + s * 4, y + 1); ctx.lineTo(bx + s * 5, y - 25);
+    ctx.moveTo(ax, ay + 1); ctx.lineTo(ax, ay - RISE + 4);
+    ctx.moveTo(bx, by + 1); ctx.lineTo(bx, by - RISE + 4);
     ctx.stroke();
-    ctx.strokeStyle = SLAT; ctx.lineWidth = 3;
-    for (const t of [0.4, 0.68]) {
+    ctx.strokeStyle = CHAIR_SLAT; ctx.lineWidth = 3;
+    for (const t of [0.45, 0.72]) {
       ctx.beginPath();
-      ctx.moveTo(bx - s * 3 + s * 2 * t, y - 2 - 27 * t);
-      ctx.lineTo(bx + s * 4 + s * 1 * t, y + 1 - 26 * t);
+      ctx.moveTo(ax, ay - RISE * t); ctx.lineTo(bx, by - RISE * t);
       ctx.stroke();
     }
-    ctx.strokeStyle = FRAME; ctx.lineWidth = 4.6;
+    ctx.strokeStyle = CHAIR_FRAME; ctx.lineWidth = 5;
     ctx.beginPath();
-    ctx.moveTo(bx - s * 2, y - 30); ctx.lineTo(bx + s * 6, y - 26);
+    ctx.moveTo(ax, ay - RISE); ctx.lineTo(bx, by - RISE);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,220,150,.35)'; ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(ax, ay - RISE - 2.5); ctx.lineTo(bx, by - RISE - 2.5);
     ctx.stroke();
     return;
   }
@@ -2044,11 +2120,11 @@ function drawChairAt(x, y, dir) {
     // Back on the NEAR side: cushion first, panel over its edge.
     legs();
     cushion();
-    ladderBack(y + 7, 26, true);
+    if (!deferNearBack) chairLadderBack(x, y + 8, 28, true);
     return;
   }
   // 'down' (and default): back on the far side, cushion over base.
-  ladderBack(y - 6, 26, true);
+  chairLadderBack(x, y - 6, 27, true);
   legs();
   cushion();
 }
@@ -2239,6 +2315,12 @@ function draw() {
   }
   const camX = camState.x, camY = camState.y;
 
+  // v1.2.2 (Item 3): which seats are occupied this frame — an
+  // occupied 'up' chair/stool defers its near-side back to the
+  // entity pass (drawn over its sitter); see drawChairAt.
+  const occupiedSeatIds = new Set();
+  for (const p of players) if (p.seated && p.seatId) occupiedSeatIds.add(p.seatId);
+
   ctx.save();
   ctx.translate(-camX, -camY);
 
@@ -2414,7 +2496,9 @@ function draw() {
         const face = Math.abs(chx - tx2) > Math.abs(chy - ty2)
           ? (chx > tx2 ? 'left' : 'right')
           : (chy > ty2 ? 'up' : 'down');
-        drawChairAt(chx, chy, face);
+        drawChairAt(chx, chy, face, {
+          deferNearBack: face === 'up' && occupiedSeatIds.has(`poker:${t.id}:${ch2.dir}`),
+        });
       }
       ctx.beginPath(); ctx.ellipse(tx2, ty2, 44, 23, 0, 0, Math.PI * 2);
       ctx.fillStyle = '#7a5a2b'; ctx.fill();
@@ -2519,7 +2603,10 @@ function draw() {
     // catalog's chair and table pieces) instead of the generic block,
     // facing from the piece's rotation (same rot→dir map as the sim).
     if (f.type === 'seating') {
-      drawChairAt(fx, fy + 2, ['down', 'left', 'up', 'right'][f.rot & 3] || 'down');
+      const fdir = ['down', 'left', 'up', 'right'][f.rot & 3] || 'down';
+      drawChairAt(fx, fy + 2, fdir, {
+        deferNearBack: fdir === 'up' && occupiedSeatIds.has(`furn:${f.instanceId}`),
+      });
       ctx.restore();
       continue;
     }
@@ -2598,7 +2685,9 @@ function draw() {
       diamond(sx3, sy3, 30, 10, '#5d3450');
       diamond(sx3, sy3 - 4, 30, 7, '#7a4666');
     } else { // chair — v1.1: a real chair (legs, cushion, backrest)
-      drawChairAt(sx3, sy3, s.dir);
+      drawChairAt(sx3, sy3, s.dir, {
+        deferNearBack: s.dir === 'up' && occupiedSeatIds.has(s.id),
+      });
     }
   }
 
@@ -2667,6 +2756,16 @@ function draw() {
       ctx.drawImage(spr, -dw / 2, -dh + 4, dw, dh);
     }
     ctx.restore();
+
+    // v1.2.2 (Item 3): an occupied 'up' chair's near-side back is
+    // replayed OVER its sitter — from behind, the backrest is what
+    // the camera sees against the sitter's back. Without this pass
+    // the sprite (drawn after the seat) buried the back entirely
+    // and slot seats read backless while occupied.
+    if (p.seated && !p.fallen) {
+      const bp = deferredSeatBackPos(p);
+      if (bp) drawChairBackNear(bp[0], bp[1]);
+    }
 
     // performer holds the mic (soul doc §9.3)
     if (p.performing) {
@@ -2842,7 +2941,7 @@ function draw() {
     // map dressing, in placed home furniture, and beside a home's
     // own door — all punch warm holes in the night.
     for (const pr of mapDef.props || []) {
-      if (pr.kind === 'hearth') glow(pr.x, pr.y - 12, 95, 0.30);
+      if (pr.kind === 'hearth') glow(pr.x, pr.y - 14, 130, 0.34); // v1.2.2: the bigger hearth throws a wider pool
       else if (pr.kind === 'lamp' || pr.kind === 'lantern' || pr.kind === 'stringlights') glow(pr.x, pr.y - 14, 62, 0.24);
       // Lane C heroes that burn at night: the lighthouse lamp, the
       // great NEON sign, the forge's embers. (Equal x/y offsets
@@ -2869,7 +2968,7 @@ function draw() {
     }
     const TSg = mapDef.tileSize || 32;
     for (const f of sceneFurniture) {
-      if (f.type === 'hearth') glow((f.x + 0.5) * TSg, (f.y + 0.5) * TSg - 10, 90, 0.30);
+      if (f.type === 'hearth') glow((f.x + 0.5) * TSg, (f.y + 0.5) * TSg - 12, 120, 0.34);
       else if (f.type === 'lamp' || f.type === 'lantern' || f.type === 'lights') {
         glow((f.x + 0.5) * TSg, (f.y + 0.5) * TSg - 12, 60, 0.22);
       }

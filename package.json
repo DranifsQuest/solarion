@@ -18,6 +18,6 @@
     "gate:release": "node scripts/gate.mjs release",
     "preview": "node scripts/preview.mjs",
     "validate:maps": "node scripts/validate-dressing.mjs",
-    "test": "node --test test/test.js test/music.test.js test/casino.test.js test/studios.test.js test/security.test.js test/creation.test.js test/sprites.test.js test/expansion.test.js test/vice.test.js test/input-guard.test.js test/homes.test.js test/audibility.test.js test/phase9.test.js test/phase10.test.js test/seasons.test.js"
+    "test": "node --test test/test.js test/music.test.js test/casino.test.js test/studios.test.js test/security.test.js test/creation.test.js test/sprites.test.js test/expansion.test.js test/vice.test.js test/input-guard.test.js test/homes.test.js test/audibility.test.js test/phase9.test.js test/phase10.test.js test/seasons.test.js test/glyphs.test.js"
   }
 }

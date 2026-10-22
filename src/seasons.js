@@ -24,6 +24,15 @@
  * arrangements at door aprons, gatehouse mouths, stage ends and
  * existing nooks — never scatter, never inside a venue's seat
  * block / pit / platform.
+ *
+ * DOORSTEP LAW (v1.2.2, Item 7): a doorstep is a finished
+ * composition in the base layer — seasonal pieces FLANK it from
+ * clear tiles beside it, never ON it. No seasonal prop may share
+ * a tile with a base prop, and none may sit inside a doorstep
+ * apron (the door/gateway rect and its landing, framed by one
+ * tile) — the one exception is the wreath, which hangs ON the
+ * door's facade by design. The Bake Shop validator enforces all
+ * of this; a placement that fails it does not ship.
  */
 
 const { TILE } = require('./maps');
@@ -62,8 +71,11 @@ const SEASONAL = {
       ['pumpkinstack', 36, 26],
       // Lit pumpkins flanking the fountain basin.
       ['jackolantern', 31, 21], ['jackolantern', 40, 21],
-      // Café Corner door apron (café door at (62,32)).
-      ['jackolantern', 60, 31], ['pumpkin', 64, 31],
+      // Café Corner (v1.2.2, Items 7/8): the café door moved to
+      // its FRONT (south) face at (62,42) and the pair FLANKS the
+      // whole doorstep composition from outside it — booths at
+      // (60,43)/(64,43), lights at (62,43) — never on its tiles.
+      ['jackolantern', 58, 42], ['pumpkin', 66, 42],
       // A pair at every gatehouse mouth, flanking the path.
       ['pumpkin', 4, 5], ['jackolantern', 9, 5],
       ['pumpkin', 18, 5], ['jackolantern', 23, 5],
@@ -96,8 +108,10 @@ const SEASONAL = {
     'neon-district': [
       // Stage ends (the NEON signs' tiles, one step further out).
       ['jackolantern', 31, 5], ['jackolantern', 46, 5],
-      // Casino door apron (door at (61,29), lantern at (60,28)).
-      ['pumpkin', 59, 28], ['jackolantern', 63, 28],
+      // Casino doorstep (v1.2.2, Items 7/8): the casino door moved
+      // to its FRONT (south) face at (61,38), lantern at (60,39) —
+      // the pair flanks the new doorstep from its outer tiles.
+      ['pumpkin', 59, 39], ['jackolantern', 63, 39],
       ['cobweb', 57, 31],
     ],
     'cinder-mesa': [
@@ -134,7 +148,7 @@ const SEASONAL = {
       // pumpkin stack stood, snowman standing guard west of it.
       ['giftpile', 36, 26], ['snowman', 29, 26],
       // Wreaths on the facades, centred over each door.
-      ['wreath', 62, 33],           // Gateway Café face (door (62,32))
+      ['wreath', 62, 41],           // Gateway Café FRONT face (door (62,42), v1.2.2 Item 8)
       ['wreath', 6, 22],            // Homes face (door (7,22))
       // Holiday lights joining the fountain nook.
       ['holidaylights', 36, 29],
@@ -159,12 +173,12 @@ const SEASONAL = {
     'neon-district': [
       // Stage ends — where the jack-o'-lanterns stood.
       ['holidaylights', 31, 5], ['holidaylights', 46, 5],
-      ['wreath', 62, 30],           // casino face, beside the door
-      ['giftpile', 36, 23],         // by the market-square nook
+      ['wreath', 62, 37],           // casino FRONT face, beside the door (door (61,38), v1.2.2 Item 8)
+      ['giftpile', 36, 26],         // by the market-square nook (nook moved south in v1.2.2)
     ],
     'cinder-mesa': [
-      ['wreath', 29, 32],           // hookah face, beside the door
-      ['holidaylights', 32, 29],    // the doorstep terrace
+      ['wreath', 29, 37],           // hookah FRONT face, beside the door (door (30,38), v1.2.2 Item 8)
+      ['holidaylights', 32, 38],    // the (new, south) doorstep terrace
     ],
     'hookah-lounge': [
       ['wreath', 8, 12],            // beside the door

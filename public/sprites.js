@@ -488,66 +488,72 @@ const SIDE_LEGS = [
   '.....OOOOO..........',
 ];
 
-// Seated legs (Phase B — sitting). Front/back view: thighs reach
-// forward (wide row), knees bend, shins drop, shoes land apart in
-// front. Keyed by bottom style; both genders share the shapes (the
-// torso/head carry the gender read, as with SIDE_LEGS).
+// Seated legs (Phase B — sitting; v1.2.2 legs-together pass).
+// Front/back view: the hips sit ON the cushion (wide top rows),
+// then the legs come TOGETHER — thighs side by side, knees
+// together, shins dropping as one column, shoes adjacent at the
+// centre. The pre-v1.2.2 art splayed the legs apart around the
+// furniture (the "straddle" Zan kept flagging): thighs split,
+// shins at the outer edges, shoes wide. Keyed by bottom style;
+// both genders share the shapes (the torso/head carry the gender
+// read, as with SIDE_LEGS). test/sprites.test.js pins the
+// together invariant: rows 2-4 have no gap between the legs.
 const SEATED_LEGS = {
   pants: [
     '....PPPPPPPPPPPP....',
-    '...PPPPPPPPPPPPPP...',
-    '...PPPPP....PPPPP...',
-    '...PPPP......PPPP...',
-    '...PPP........PPP...',
-    '..OOOO........OOOO..',
+    '....PPPPPPPPPPPP....',
+    '.....PPPPPPPPPP.....',
+    '......PPPPPPPP......',
+    '......PPPPPPPP......',
+    '.....OOOO..OOOO.....',
   ],
   jeans: [
     '....PPPPPPPPPPPP....',
-    '...PPPPPPPPPPPPPP...',
-    '...PPdPP....PPdPP...',
-    '...PPPP......PPPP...',
-    '...dddd......dddd...',
-    '..OOOO........OOOO..',
+    '....PPdPPPPPPdPP....',
+    '.....PPPPPPPPPP.....',
+    '......dddddddd......',
+    '......dddddddd......',
+    '.....OOOO..OOOO.....',
   ],
   cargo: [
     '....PPPPPPPPPPPP....',
-    '...PPPPPPPPPPPPPP...',
-    '...ddPPP....PPPdd...',
-    '...PPPP......PPPP...',
-    '...PPP........PPP...',
-    '..OOOO........OOOO..',
+    '....PPPPPPPPPPPP....',
+    '.....ddPPPPPPdd.....',
+    '......PPPPPPPP......',
+    '......PPPPPPPP......',
+    '.....OOOO..OOOO.....',
   ],
   joggers: [
     '....PPPPPPPPPPPP....',
-    '...PPPPPPPPPPPPPP...',
-    '...PPPPP....PPPPP...',
-    '...PPPP......PPPP...',
-    '...dddd......dddd...',
-    '..OOOO........OOOO..',
+    '.....PPPPPPPPPP.....',
+    '.....PPPPPPPPPP.....',
+    '......PPPPPPPP......',
+    '......dddddddd......',
+    '.....OOOO..OOOO.....',
   ],
   leggings: [
     '....PPPPPPPPPPPP....',
-    '...PPPPPPPPPPPPPP...',
-    '....PPPP....PPPP....',
-    '....PPP......PPP....',
-    '....PPP......PPP....',
-    '..OOOO........OOOO..',
+    '.....PPPPPPPPPP.....',
+    '.....PPPPPPPPPP.....',
+    '......PPPPPPPP......',
+    '......PPPPPPPP......',
+    '.....OOOO..OOOO.....',
   ],
   shorts: [
     '....PPPPPPPPPPPP....',
-    '...PPPPPPPPPPPPPP...',
-    '...SSSSS....SSSSS...',
-    '...SSSS......SSSS...',
-    '...SSS........SSS...',
-    '..OOOO........OOOO..',
+    '....PPPPPPPPPPPP....',
+    '.....SSSSSSSSSS.....',
+    '......SSSSSSSS......',
+    '......SSSSSSSS......',
+    '.....OOOO..OOOO.....',
   ],
   skirt: [
     '...PPPPPPPPPPPPPP...',
     '..PPPPPPPPPPPPPPPP..',
-    '....SSSS....SSSS....',
-    '....SSS......SSS....',
-    '....SSS......SSS....',
-    '..OOOO........OOOO..',
+    '.....SSSSSSSSSS.....',
+    '......SSSSSSSS......',
+    '......SSSSSSSS......',
+    '.....OOOO..OOOO.....',
   ],
 };
 // Seated side view: the sprite faces left, so the thigh reaches

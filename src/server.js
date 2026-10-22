@@ -261,10 +261,11 @@ if (TEST_MODE) {
     return { x: map.spawn.x, y: map.spawn.y };
   }
 
-  function fakePub(id, name, look, x, y, dir) {
+  function fakePub(id, name, look, x, y, dir, seat) {
     return {
       id, name, x, y, dir,
-      seated: false, drinks: 0, puffs: 0, fallen: false,
+      seated: Boolean(seat), seatId: seat ? seat.id : null,
+      drinks: 0, puffs: 0, fallen: false,
       performing: false, emote: null, ...look,
     };
   }
@@ -293,12 +294,30 @@ if (TEST_MODE) {
     const lookM = { ...appearance.defaultsFor('M'), hair_color: '#111111', body_color: '#22242c', top_style: 'button-up' };
     const lookF = { ...appearance.defaultsFor('F'), hair_style: 'ponytail', hair_color: '#ff2e88', body_color: '#17102b', accessory: 'sunglasses' };
     const lookM2 = { ...appearance.defaultsFor('M'), hair_color: '#ffd23f', body_color: '#3aa7e0', accessory: 'cap' };
-    const you = fakePub(900001, 'Preview', lookM, v.x, v.y, 'down');
-    const players = [
+    let you = fakePub(900001, 'Preview', lookM, v.x, v.y, 'down');
+    let players = [
       you,
       fakePub(900002, 'Pip', lookF, s1.x, s1.y, 'left'),
       fakePub(900003, 'Juno', lookM2, s2.x, s2.y, 'right'),
     ];
+    // Bake Shop scene override (tooling only): ?scene=sit parks the
+    // sample players IN seats — occupied-seat rendering (the v1.2.2
+    // deferred chair backs, the seated pose) can only be judged
+    // with sitters in frame. "You" take the first seat so the
+    // camera centres on an occupied seat. Casino maps use their
+    // slot stools (a north-row 'up' seat + an east-row 'right'
+    // seat); other maps use their first three baked seats.
+    if (req.query.scene === 'sit' && (map.seats || []).length) {
+      const seats = map.seats;
+      const picks = map.casino
+        ? [seats[0], seats[5], seats[1]].filter(Boolean)
+        : seats.slice(0, 3);
+      const folks = [
+        [900001, 'Preview', lookM], [900002, 'Pip', lookF], [900003, 'Juno', lookM2],
+      ];
+      players = picks.map((s, i) => fakePub(folks[i][0], folks[i][1], folks[i][2], s.x, s.y, s.dir, s));
+      you = players[0];
+    }
     res.json({
       type: 'hello', you, map: clientMap(map, season), players, season,
       chat: [], zcoins: 0, bonusGranted: false, bonusAmount: 0, dayCycle,

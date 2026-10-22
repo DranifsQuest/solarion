@@ -34,7 +34,8 @@
     try {
       const base = cfg.apiBase || '';
       const seasonQ = cfg.season ? `&season=${encodeURIComponent(cfg.season)}` : '';
-      const r = await fetch(`${base}/preview-data/${encodeURIComponent(cfg.mapId)}?phase=${encodeURIComponent(cfg.phase)}${seasonQ}`);
+      const sceneQ = cfg.scene ? `&scene=${encodeURIComponent(cfg.scene)}` : '';
+      const r = await fetch(`${base}/preview-data/${encodeURIComponent(cfg.mapId)}?phase=${encodeURIComponent(cfg.phase)}${seasonQ}${sceneQ}`);
       const hello = await r.json();
       // The client's real handlers: hello places us + the map,
       // snapshot registers the sample companions' render positions.

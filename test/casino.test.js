@@ -875,7 +875,7 @@ test('slot stools: seated player faces the machine in BOTH casinos (Item G)', { 
   v.client.send({ type: 'debug-teleport', x: 224, y: 48 });
   await waitFor(() => v.client.msgs.filter(m => m.type === 'map' && m.map.id === 'neon-district').pop(), 5000, 'vic in neon-district');
   await sleep(1600); // portal debounce
-  v.client.send({ type: 'debug-teleport', x: 1968, y: 944 }); // casino door
+  v.client.send({ type: 'debug-teleport', x: 1968, y: 1232 }); // casino door (FRONT/south face since v1.2.2 Item 8)
   await waitFor(() => v.client.msgs.filter(m => m.type === 'map' && m.map.id === 'neon-casino').pop(), 5000, 'vic in neon-casino');
   await sleep(3400); // transfer lock
   await sitAndCheck(v, { x: 880, y: 144 }, 'right', 'neon east-wall slot');

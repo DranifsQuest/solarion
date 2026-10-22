@@ -64,6 +64,7 @@ const TEST_FILES = [
   ['test/slotgui.test.js',   null,  0,     0,     0],   // no server (v1.2 Item H)
   ['test/audio.test.js',     null,  0,     0,     0],   // no server (v1.2 Items D/S)
   ['test/seasons.test.js',   null,  0,     0,     0],   // no server (seasonal themes)
+  ['test/glyphs.test.js',    null,  0,     0,     0],   // no server (v1.2.2 Item 6: raw-escape UI scan)
 ].map(([file, base, stride, extra, run]) => ({ file, base, stride, extra, run }));
 
 const ALL_TESTS = TEST_FILES.map(t => t.file);

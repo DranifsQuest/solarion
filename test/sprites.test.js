@@ -140,6 +140,28 @@ test('seated variant (Phase B): renders for both genders and differs from standi
   }
 });
 
+test('seated legs stay TOGETHER (v1.2.2 Item 2: the straddle fix)', () => {
+  // The pre-v1.2.2 seated art splayed the legs around the
+  // furniture: split thighs, shins at the outer edges, shoes wide
+  // apart. The invariant that kills the read, for every bottom
+  // style: below the hip rows, the leg mass is ONE contiguous
+  // column (no empty gap between the legs in rows 2-4), and the
+  // shoes land adjacent at the centre (row 5 spans <= 10 cols).
+  for (const [style, rows] of Object.entries(S.SEATED_LEGS)) {
+    assert.equal(rows.length, 6, `${style}: six seated leg rows`);
+    for (let r = 2; r <= 4; r++) {
+      const filled = [...rows[r]].map((c, i) => (c === '.' ? -1 : i)).filter(i => i >= 0);
+      assert.ok(filled.length > 0, `${style} row ${r} has leg pixels`);
+      const span = filled[filled.length - 1] - filled[0] + 1;
+      assert.equal(span, filled.length, `${style} row ${r} has a gap between the legs (straddle): "${rows[r]}"`);
+    }
+    const shoeCols = [...rows[5]].map((c, i) => (c === 'O' ? i : -1)).filter(i => i >= 0);
+    assert.ok(shoeCols.length > 0, `${style}: shoes present`);
+    const shoeSpan = shoeCols[shoeCols.length - 1] - shoeCols[0] + 1;
+    assert.ok(shoeSpan <= 10, `${style}: shoes span ${shoeSpan} cols — they must land together at the centre`);
+  }
+});
+
 test('male and female are genuinely different sprites, not palette swaps', () => {
   // Same nominal choices, both genders: renders must differ in the
   // down AND side views (silhouette + hair anchors + fit).

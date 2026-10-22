@@ -30,6 +30,9 @@
  *   npm run preview -- --season halloween  # force a seasonal layer
  *                             (halloween | christmas | none; output
  *                             files gain a -<season> suffix)
+ *   npm run preview -- --scene sit         # sample players seated
+ *                             (occupied-seat rendering; output
+ *                             files gain a -sit suffix)
  *   npm run preview -- --factory     # also the factory demo scene
  *
  * Chrome binary: $SOLARION_CHROME, else the first of the known
@@ -149,12 +152,13 @@ async function shootOverCdp(cdp, fileUrl, out, expectTitle) {
 
 /** Build a preview page (the real index.html + injected config) in
  *  dir; its assets resolve against public/ via a file:// <base>. */
-function writePreviewPage(dir, apiBase, mapId, phase, season) {
+function writePreviewPage(dir, apiBase, mapId, phase, season, scene) {
   const pub = path.join(ROOT, 'public');
   let html = fs.readFileSync(path.join(pub, 'index.html'), 'utf8');
   html = html.replace('<head>', `<head>\n<base href="file://${pub}/">`);
   const cfg = { mapId, phase, apiBase };
   if (season) cfg.season = season;
+  if (scene) cfg.scene = scene;
   const inject = `<script>window.__PREVIEW_CFG__ = ${JSON.stringify(cfg)};</script>\n<script src="preview.js"></script>\n</body>`;
   const file = path.join(dir, `${mapId}-${phase}.html`);
   fs.writeFileSync(file, html.replace('</body>', inject));
@@ -180,10 +184,16 @@ async function main() {
     console.error(`unknown season: ${season} (halloween | christmas | none)`);
     process.exit(1);
   }
+  const sceneIdx = argv.indexOf('--scene');
+  const scene = sceneIdx >= 0 ? argv[sceneIdx + 1] : null;
+  if (scene && !['sit'].includes(scene)) {
+    console.error(`unknown scene: ${scene} (sit)`);
+    process.exit(1);
+  }
   const wantFactory = argv.includes('--factory');
   const named = [];
   for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === '--phase' || argv[i] === '--season') { i++; continue; }
+    if (argv[i] === '--phase' || argv[i] === '--season' || argv[i] === '--scene') { i++; continue; }
     if (argv[i].startsWith('--')) continue;
     named.push(argv[i]);
   }
@@ -240,10 +250,10 @@ async function main() {
     const rows = [];
     for (const m of maps) {
       for (const ph of phases) {
-        const suffix = season ? `-${season}` : '';
+        const suffix = (season ? `-${season}` : '') + (scene ? `-${scene}` : '');
         const out = path.join(OUT_DIR, `${m}-${ph}${suffix}.png`);
-        const sz = await shootOverCdp(cdp, writePreviewPage(pageDir, apiBase, m, ph, season), out, `preview:${m}:${ph}`);
-        rows.push(`  ${m} (${ph}${season ? `, ${season}` : ''}) -> previews/${m}-${ph}${suffix}.png (${Math.round(sz / 1024)} KB)`);
+        const sz = await shootOverCdp(cdp, writePreviewPage(pageDir, apiBase, m, ph, season, scene), out, `preview:${m}:${ph}`);
+        rows.push(`  ${m} (${ph}${season ? `, ${season}` : ''}${scene ? `, scene=${scene}` : ''}) -> previews/${m}-${ph}${suffix}.png (${Math.round(sz / 1024)} KB)`);
       }
     }
     if (wantFactory) {

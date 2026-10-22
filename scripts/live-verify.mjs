@@ -617,7 +617,7 @@ async function main() {
       if (c.id === 'neon-district') {
         // Phase B amendment: the second casino, through its door.
         try {
-          const nc = await travel(A.client, 1968, 944, 'neon-casino', 'neon -> neon casino door');
+          const nc = await travel(A.client, 1968, 1232, 'neon-casino', 'neon -> neon casino door'); // FRONT (south) face since v1.2.2 Item 8
           if (!nc.map.casino || nc.map.casino.tables.length !== 6 || nc.map.casino.slots.length !== 10) {
             throw new Error('neon casino payload incomplete');
           }
@@ -649,7 +649,7 @@ async function main() {
     // bot's strafe for a whole walk window; a player just re-paths.
     try { await walkTo(C.client, 1250, 976); }
     catch (e) { await walkTo(C.client, 1250, 976); }
-    const hm = await travel(C.client, 976, 1008, 'hookah-lounge', 'C cinder -> hookah lounge door');
+    const hm = await travel(C.client, 976, 1232, 'hookah-lounge', 'C cinder -> hookah lounge door'); // FRONT (south) face since v1.2.2 Item 8
     if (!hm.map.hookahs || hm.map.hookahs.length !== 4) throw new Error('hookah payload incomplete');
     await walkTo(C.client, 176, 160, { arrive: 12 }); // station 1's seats
     C.client.send({ type: 'interact' });

@@ -140,7 +140,7 @@ async function toNeon(user) { teleport(user, 224, 48); await arriveMap(user, 'ne
 async function toNeonCasino(user) {
   await toNeon(user);
   await sleep(1600); // portal debounce
-  teleport(user, 1968, 944); // casino door, north face of the SE block
+  teleport(user, 1968, 1232); // casino door, FRONT (south) face of the SE block (v1.2.2 Item 8)
   return arriveMap(user, 'neon-casino');
 }
 async function toBayCasino(user) {
@@ -154,7 +154,7 @@ async function toHookah(user) {
   teleport(user, 672, 48); // Cinder arch
   await arriveMap(user, 'cinder-mesa');
   await sleep(1600);
-  teleport(user, 976, 1008); // hookah lounge door
+  teleport(user, 976, 1232); // hookah lounge door (FRONT/south face since v1.2.2 Item 8)
   return arriveMap(user, 'hookah-lounge');
 }
 
@@ -173,7 +173,7 @@ test('neon casino: door transfer works both ways, payload is a full casino', { t
   await sleep(1600);
   teleport(u, 480, 592);
   const back = await arriveMap(u, 'neon-district');
-  assert.ok(Math.abs(back.you.x - 1968) < 2 && Math.abs(back.you.y - 912) < 2, 'lands outside the neon casino door');
+  assert.ok(Math.abs(back.you.x - 1968) < 2 && Math.abs(back.you.y - 1264) < 2, 'lands outside the neon casino door (FRONT/south face since v1.2.2 Item 8)');
   u.client.ws.close();
 });
 

@@ -215,7 +215,7 @@ test('map data: ~5x scale, spawns/portals/seats/stage all sane', { timeout: 3000
   }
   const cafe = MAPS['gateway-cafe'];
   assert.equal(cafe.tiles.w, 26); assert.equal(cafe.tiles.h, 16);
-  assert.equal(cafe.seats.length, 15, 'café has 15 seats (12 table chairs at three 4-seat tables + 3 hearth-side, Phase 10/v1.1.1)');
+  assert.equal(cafe.seats.length, 17, 'café has 17 seats (12 table chairs at three 4-seat tables + a 5-seat hearth arc, v1.2.2 Item 4)');
   const hookah = MAPS['hookah-lounge'];
   assert.equal(hookah.tiles.w, 20); assert.equal(hookah.tiles.h, 14);
   assert.equal(hookah.hookahs.length, 4, 'four hookah stations');
@@ -342,15 +342,15 @@ test('door transfer bay ⇄ lounge with the 3s input lock', { timeout: 60000 }, 
 
 test('door transfer gateway ⇄ café round trip', { timeout: 60000 }, async () => {
   const u = await makeUser('cafe_cleo');
-  teleport(u, 2000, 1040); // café door tile on the Gateway
+  teleport(u, 2000, 1360); // café door tile on the Gateway (FRONT/south face since v1.2.2 Item 8)
   const inCafe = await arriveMap(u, 'gateway-cafe');
   assert.equal(inCafe.map.name, 'Gateway Café');
   assert.ok(Math.abs(inCafe.you.x - 432) < 2 && Math.abs(inCafe.you.y - 400) < 2, 'placed at the café entrance');
-  assert.equal(inCafe.map.seats.length, 15, 'café seats in the client payload');
+  assert.equal(inCafe.map.seats.length, 17, 'café seats in the client payload');
   await sleep(1600);
   teleport(u, 432, 464); // café door-back rect
   const back = await arriveMap(u, 'the-gateway');
-  assert.ok(Math.abs(back.you.x - 2000) < 2 && Math.abs(back.you.y - 1008) < 2, 'lands outside the café door');
+  assert.ok(Math.abs(back.you.x - 2000) < 2 && Math.abs(back.you.y - 1392) < 2, 'lands outside the café door');
   u.client.ws.close();
 });
 

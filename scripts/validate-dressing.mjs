@@ -25,6 +25,18 @@
  *     rules as the base dressing: no prop on a door/gateway tile,
  *     none inside a venue's seat block / pit / platform, none on
  *     top of a seat, only known seasonal kinds, in-bounds only
+ *   - VENUE APRON (v1.2.2, Item 1c): no prop (any layer) and no
+ *     non-audience seat within one tile of a venue's audience
+ *     seat block — "technically outside" the block still reads
+ *     as junk inside the venue at play zoom
+ *   - DOORSTEP LAW (v1.2.2, Item 7): no seasonal prop shares a
+ *     tile with a base prop, and none sits inside a doorstep
+ *     apron (every door/gateway rect and gateway landing, framed
+ *     by one tile) — seasonal pieces flank doorsteps, never pile
+ *     onto them. Wreaths are exempt: they hang on the facade.
+ *   - FRONT-DOOR LAW (v1.2.2, Item 8): a door adjacent to a
+ *     building facade must sit on a FRONT (south or east) face —
+ *     a door on a back (north/west) wall fails
  *
  *   WARNINGS (Zan's standing rules, as far as the data supports)
  *   - an interior map with != 1 inbound door (one facade entrance)
@@ -129,6 +141,36 @@ for (const map of Object.values(MAPS)) {
     for (const [tx, ty] of rectTiles(p)) portalTiles.add(`${tx},${ty}`);
   }
 
+  // v1.2.2 (Item 7): doorstep aprons — every door/gateway rect and
+  // every gateway landing tile, framed by one tile on all sides.
+  const doorstepTiles = new Set();
+  const inflateInto = (tiles, set) => {
+    for (const [tx, ty] of tiles) {
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) set.add(`${tx + dx},${ty + dy}`);
+    }
+  };
+  for (const d of map.doors || []) inflateInto(rectTiles(d), doorstepTiles);
+  for (const g of map.gateways || []) {
+    inflateInto(rectTiles(g), doorstepTiles);
+    inflateInto([[tileOfPx(g.spawnOut.x), tileOfPx(g.spawnOut.y)]], doorstepTiles);
+  }
+  const basePropTiles = new Set((map.props || []).map(p => `${tileOfPx(p.x)},${tileOfPx(p.y)}`));
+
+  // v1.2.2 (Item 8): FRONT-DOOR LAW — a door touching a building
+  // facade must sit on a front (south/east) face. (Which side of
+  // the door tile the building is on names the face the door
+  // pierces: building north of the tile = the building's SOUTH
+  // face; building south of it = its NORTH/back face.)
+  for (const d of map.doors || []) {
+    for (const b of map.buildings || []) {
+      const inB = (x, y) => x >= b.tx && x < b.tx + b.tw && y >= b.ty && y < b.ty + b.th;
+      for (const [tx, ty] of rectTiles(d)) {
+        if (inB(tx, ty + 1)) err(map.id, `front-door law: door "${d.label}" sits on the BACK (north) wall of building "${b.name}" — doors face front (south/east)`);
+        if (inB(tx + 1, ty)) err(map.id, `front-door law: door "${d.label}" sits on the BACK (west) wall of building "${b.name}" — doors face front (south/east)`);
+      }
+    }
+  }
+
   // -- doors
   for (const d of map.doors || []) {
     checkPortalRect(map, reach, 'door', d);
@@ -187,6 +229,12 @@ for (const map of Object.values(MAPS)) {
         if (!SEASONAL_KINDS.has(pr.kind)) err(map.id, `[${layer.label}] unknown seasonal prop kind "${pr.kind}" (${k})`);
         if (tx < 0 || ty < 0 || tx >= map.tiles.w || ty >= map.tiles.h) err(map.id, `[${layer.label}] prop "${pr.kind}" is out of bounds (${k})`);
         if (seatTiles.has(k)) err(map.id, `[${layer.label}] prop "${pr.kind}" sits on a seat tile (${k})`);
+        // v1.2.2 (Item 7): DOORSTEP LAW — seasonal pieces flank a
+        // doorstep composition, never pile onto it: no sharing a
+        // tile with a base prop, no sitting inside a doorstep
+        // apron. Wreaths hang on the facade by design (exempt).
+        if (basePropTiles.has(k)) err(map.id, `doorstep law: [${layer.label}] prop "${pr.kind}" shares a tile with a base prop (${k}) — seasonal dressing composes WITH the base, never on top of it`);
+        if (pr.kind !== 'wreath' && doorstepTiles.has(k)) err(map.id, `doorstep law: [${layer.label}] prop "${pr.kind}" sits inside a doorstep apron (${k}) — flank the doorstep, keep the apron clear`);
       }
     }
   }
@@ -226,12 +274,21 @@ for (const map of Object.values(MAPS)) {
         y0 = Math.min(y0, tileOfPx(s.y)); y1 = Math.max(y1, tileOfPx(s.y));
       }
       const inBox = (tx, ty) => tx >= x0 && tx <= x1 && ty >= y0 && ty <= y1;
+      // v1.2.2 (Item 1c): the APRON — one tile around the seat
+      // block. Dressing that is merely "technically outside" the
+      // block still reads as junk inside the venue at play zoom,
+      // so the apron is held clear too (the pit/platform keep
+      // their own stricter rules above).
+      const inApron = (tx, ty) => tx >= x0 - 1 && tx <= x1 + 1 && ty >= y0 - 1 && ty <= y1 + 1;
       for (const layer of layers) {
         for (const pr of layer.props) {
           const tx = tileOfPx(pr.x), ty = tileOfPx(pr.y), k = `${tx},${ty}`;
           if (inBox(tx, ty)) err(map.id, `venue purity: [${layer.label}] prop "${pr.kind}" intrudes into the audience seat block (${k})`);
           if (pitTiles.has(k)) err(map.id, `venue purity: [${layer.label}] prop "${pr.kind}" intrudes into the stage pit (${k})`);
           if (stageTiles.has(k)) err(map.id, `venue purity: [${layer.label}] prop "${pr.kind}" intrudes onto the stage platform (${k})`);
+          if (!inBox(tx, ty) && !pitTiles.has(k) && !stageTiles.has(k) && inApron(tx, ty)) {
+            err(map.id, `venue apron: [${layer.label}] prop "${pr.kind}" crowds the audience seat block (${k}) — keep one clear tile around the venue`);
+          }
         }
       }
       for (const s of map.seats || []) {
@@ -240,6 +297,9 @@ for (const map of Object.values(MAPS)) {
         if (!isAud && inBox(tx, ty)) err(map.id, `venue purity: non-audience seat ${s.id} inside the audience seat block (${k})`);
         if (pitTiles.has(k)) err(map.id, `venue purity: seat ${s.id} stands in the stage pit (${k})`);
         if (stageTiles.has(k)) err(map.id, `venue purity: seat ${s.id} stands on the stage platform (${k})`);
+        if (!isAud && !pitTiles.has(k) && !stageTiles.has(k) && inApron(tx, ty)) {
+          err(map.id, `venue apron: non-audience seat ${s.id} crowds the audience seat block (${k}) — keep one clear tile around the venue`);
+        }
         if (isAud && s.dir === 'up') err(map.id, `venue facing: audience seat ${s.id} aims 'up' — audiences present left/right/down only`);
       }
       for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {

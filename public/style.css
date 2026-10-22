@@ -210,7 +210,7 @@ html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; ba
   background: #3a2817; color: #eef; cursor: pointer; }
 #lookPanel #lookApply { background: #ffd23f; color: #2b1d12; font-weight: 700; border-color: #ffd23f; }
 /* ------------------------------------------------ Phase 3: casino */
-/* v1.1.1: the docked casino sidebar is GONE \u2014 poker plays on the
+/* v1.1.1: the docked casino sidebar is GONE — poker plays on the
    felt, slots on the cabinet. What remains is a compact control
    tray anchored bottom-centre, plus the centred buy-in offer. */
 #casinoTray { position: absolute; left: 50%; transform: translateX(-50%); bottom: 12px;

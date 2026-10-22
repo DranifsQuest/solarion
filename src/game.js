@@ -290,6 +290,9 @@ class Game {
       // While seated the avatar faces the seat's way and snapshots say so.
       dir: p.seated ? p.seated.dir : p.dir,
       seated: Boolean(p.seated),
+      // v1.2.2 (Item 3): WHICH seat — the client needs it to replay
+      // an occupied 'up' chair's near-side back over the sitter.
+      seatId: p.seated ? p.seated.id : null,
       // Phase B amendment — vice state, visible to everyone in scene.
       drinks: this.viceCount(p, 'drinks', now),
       puffs: this.viceCount(p, 'puffs', now),
