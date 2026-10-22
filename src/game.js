@@ -480,7 +480,7 @@ class Game {
         if (now >= p.casting.until) {
           p.casting = null;
           this.resolveCast(p, now);
-        } else if (Math.hypot(p.x - p.casting.spot.x, p.y - p.casting.spot.y) > 80) {
+        } else if (Math.hypot(p.x - p.casting.x, p.y - p.casting.y) > 80) {
           p.casting = null;
           this.send(p, { type: 'notice', text: 'You wander off — the line comes with you. Cast cancelled.' });
         }
@@ -837,31 +837,74 @@ class Game {
   }
 
   // ---------------------------------------------------------- fishing
-  // v1.1.1 (Zan): pond fishing. State, RNG and money all live here on
-  // the server; src/fishing.js carries the shared math + species.
+  // v1.1.1 (Zan): pond fishing. v1.2 (Items N/O): PROXIMITY fishing
+  // — no fixed spots, no rod stands. Anywhere along the bank of a
+  // fishable pond (map def `fishable: true`; `frozen: true` = ice
+  // fishing on a frozen pond), E casts. State, RNG and money all
+  // live here on the server; src/fishing.js carries the math.
 
-  /** Nearest fishing spot within reach of the player, or null. */
-  fishingSpotNear(p) {
+  /**
+   * The water context at the player's feet, or null. Scans the
+   * tiles around the player for water/ice ('%'): if one is within
+   * reach, returns { fishable, frozen, landX, landY, dirName } —
+   * the landing point being ~2–3 tiles OUT into the water from the
+   * bank (stepped tile-by-tile while the water lasts). Non-fishable
+   * water (the Bay's open sea, the Gateway fountain) still returns
+   * a context with fishable=false so interact can answer with one
+   * clear notice instead of the generic sit error.
+   */
+  fishingContext(p) {
     const map = this.sceneFor(p.mapId);
-    const spots = (map && map.fishing) || [];
+    if (!map || !map.tiles) return null;
+    const TS = map.tileSize || TILE;
+    const ptx = Math.floor(p.x / TS), pty = Math.floor(p.y / TS);
     let best = null, bestD = Infinity;
-    for (const s of spots) {
-      const d = Math.hypot(s.x - p.x, s.y - p.y);
-      if (d < bestD) { bestD = d; best = s; }
+    for (let ty = pty - 2; ty <= pty + 2; ty++) {
+      for (let tx = ptx - 2; tx <= ptx + 2; tx++) {
+        if (tx < 0 || ty < 0 || tx >= map.tiles.w || ty >= map.tiles.h) continue;
+        if (map.tiles.rows[ty][tx] !== '%') continue;
+        const wx = tx * TS + TS / 2, wy = ty * TS + TS / 2;
+        const d = Math.hypot(wx - p.x, wy - p.y);
+        if (d < bestD) { bestD = d; best = { x: wx, y: wy }; }
+      }
     }
-    return bestD <= SIT_RADIUS ? best : null;
+    if (!best || bestD > TS * 1.9) return null;
+    // Landing: from the nearest water point, keep going AWAY from
+    // the player while the water lasts — up to ~2.5 tiles out.
+    const dx = best.x - p.x, dy = best.y - p.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    let landX = best.x, landY = best.y;
+    for (let step = 1; step <= 5; step++) {
+      const qx = best.x + ux * step * (TS / 2), qy = best.y + uy * step * (TS / 2);
+      const tx = Math.floor(qx / TS), ty = Math.floor(qy / TS);
+      if (tx < 0 || ty < 0 || tx >= map.tiles.w || ty >= map.tiles.h) break;
+      if (map.tiles.rows[ty][tx] !== '%') break;
+      landX = qx; landY = qy;
+    }
+    return {
+      fishable: Boolean(map.fishable),
+      frozen: Boolean(map.frozen),
+      landX, landY,
+      dirName: screenFacing(landX - p.x, landY - p.y),
+    };
   }
 
-  /** Cast a line from a shore spot: face the water, wait it out. */
-  handleFish(p, spot) {
+  /** Cast a line from the bank: face the water, wait it out. */
+  handleFish(p, ctx) {
     const now = Date.now();
     if (p.casting) {
       this.send(p, { type: 'notice', text: 'Your line is already in the water…' });
       return;
     }
-    p.dir = spot.dir;
-    p.casting = { until: now + FISHING.CAST_MS, spot };
-    this.send(p, { type: 'notice', text: '🎣 You cast your line…' });
+    p.dir = ctx.dirName;
+    p.casting = { until: now + FISHING.CAST_MS, x: p.x, y: p.y, landX: ctx.landX, landY: ctx.landY, ice: ctx.frozen };
+    // The room sees the cast: rod swing + line arcing out to the
+    // landing point (clients animate from this one event).
+    this.broadcastToMap(p.mapId, {
+      type: 'fish-cast', playerId: p.userId, landX: ctx.landX, landY: ctx.landY, ice: ctx.frozen,
+    });
+    this.send(p, { type: 'notice', text: ctx.frozen ? '🎣 You drill a hole and drop your line…' : '🎣 You cast your line…' });
   }
 
   /** Settle a finished cast: roll; on a catch, pay 1z + hold it up. */
@@ -903,10 +946,25 @@ class Game {
       this.send(p, { type: 'sit-state', seated: false });
       return;
     }
-    // v1.1.1 fishing: at a pond spot, interact casts a line — spots
-    // win over seats (a shore is for fishing, not sitting).
-    const fishSpot = this.fishingSpotNear(p);
-    if (fishSpot) { this.handleFish(p, fishSpot); return; }
+    // v1.2 fishing (Items N/O): at ANY fishable bank, interact
+    // casts — water wins over seats (a shore is for fishing, not
+    // sitting, and never earns the sit error). At water that isn't
+    // fishable (open sea, the fountain), one clear notice instead.
+    const fctx = this.fishingContext(p);
+    if (fctx) {
+      if (fctx.fishable) { this.handleFish(p, fctx); return; }
+      const now = Date.now();
+      if (!p.waterNoticeAt || now - p.waterNoticeAt > 3000) {
+        p.waterNoticeAt = now;
+        const text = p.mapId === 'the-gateway'
+          ? '🚫🎣 No fishing in the fountain!'
+          : p.mapId === 'solstice-bay'
+            ? '🌊 The open sea is too rough to fish — try the pond in Verdant Hollow.'
+            : 'No fishing here.';
+        this.send(p, { type: 'notice', text });
+      }
+      return;
+    }
     const taken = new Set();
     for (const q2 of this.players.values()) {
       if (q2 !== p && q2.mapId === p.mapId && q2.seated) taken.add(q2.seated.id);

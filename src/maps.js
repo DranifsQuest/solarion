@@ -149,14 +149,13 @@ function seat(mapId, n, tx, ty, dir, kind) {
   return { id: `${mapId}-seat-${n}`, x: cx(tx), y: cy(ty), dir, kind };
 }
 /**
- * A fishing spot (v1.1.1): a shore tile with a built-in rod stand.
- * Stand on it and interact (E) to cast; `dir` faces the water (the
- * avatar turns that way while the line is out). Fishing data lives
- * in src/fishing.js; this is only the geography.
+ * Fishing geography (v1.2, Item O): there are NO fixed spots and
+ * no rod stands anymore. A map opts in with `fishable: true` on
+ * its def (plus `frozen: true` for ice fishing), and the server
+ * validates casts by WATER ADJACENCY — the player stands next to
+ * a '%' water/ice tile, anywhere along the bank. See
+ * game.fishingContext.
  */
-function fishSpot(tx, ty, dir) {
-  return { x: cx(tx), y: cy(ty), dir };
-}
 /**
  * A static dressing prop (Phase 10, the Warm Home pass): hearths,
  * lamps, lanterns, string lights and rugs baked into public maps.
@@ -790,6 +789,10 @@ function buildFrosthaven() {
       prop('lantern', 31, 34),
     ],
     stage: stageDef(33, 37, 'N'),
+    // v1.2 (Items N/O): ICE fishing — cast from the frozen pond's
+    // edge; the drill hole renders at the landing point on the ice.
+    fishable: true,
+    frozen: true,
     areas: [
       area('The Frozen Pond', 2, 2, 20, 10),
       area('Stage Grounds', 29, 33, 14, 10),
@@ -838,7 +841,7 @@ function buildVerdantHollow() {
   // sat one tile above the old waterline and rendered as sitting in
   // the shallows. Water now spans x26-43, y40-43 (72 tiles), leaving
   // 3 clear tiles (37-39) behind the back row — and it's a proper
-  // fishing pond now (see the fishing spots on its shores below).
+  // fishing pond now (proximity fishing all along its banks).
   setRect(g, 26, 40, 18, 4, '%');
   g[23][32] = '|'; g[23][43] = '|'; // stage speakers (v1.1: front corners)
   g[15][28] = 'P';                  // the Great Tree's root planter (hero)
@@ -860,16 +863,10 @@ function buildVerdantHollow() {
       // Flower drifts around the clearing and the pond shore
       // (v1.2: out of the pit and the seat rows).
       prop('flowers', 31, 24), prop('flowers', 46, 24), prop('flowers', 28, 32), prop('flowers', 60, 38),
-      // v1.1.1: rod stands at the fishing spots (pond shores).
-      prop('fishingpole', 28, 39), prop('fishingpole', 33, 39), prop('fishingpole', 38, 39), prop('fishingpole', 42, 39),
-      prop('fishingpole', 25, 41), prop('fishingpole', 44, 41),
     ],
-    // v1.1.1: six fishing spots — four on the north shore facing the
-    // water, one each on the west and east shores.
-    fishing: [
-      fishSpot(28, 39, 'down'), fishSpot(33, 39, 'down'), fishSpot(38, 39, 'down'), fishSpot(42, 39, 'down'),
-      fishSpot(25, 41, 'right'), fishSpot(44, 41, 'left'),
-    ],
+    // v1.2 (Item O): proximity fishing — anywhere along the pond's
+    // bank; the static rod stands are gone (they looked dead).
+    fishable: true,
     stage: stageDef(33, 21, 'S'),
     areas: [
       area('The Clearing', 29, 17, 14, 12),
@@ -971,7 +968,8 @@ function clientMap(map) {
     seats: (map.seats || []).map(s => ({ id: s.id, x: s.x, y: s.y, dir: s.dir, kind: s.kind })),
     areas: (map.areas || []).map(a => ({ ...a })),
     hookahs: (map.hookahs || []).map(h => ({ x: h.x, y: h.y })),
-    fishing: (map.fishing || []).map(f => ({ x: f.x, y: f.y, dir: f.dir })),
+    fishable: Boolean(map.fishable),
+    frozen: Boolean(map.frozen),
     stage: map.stage ? {
       x: map.stage.x, y: map.stage.y, w: map.stage.w, h: map.stage.h,
       pit: map.stage.pit || null,

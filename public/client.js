@@ -24,6 +24,7 @@ let sceneFurniture = []; // Phase 4: placed studio furniture in this scene
 let sceneDevices = {};   // Phase 8: instanceId -> TV/radio state in this scene
 const renderPos = new Map(); // id -> { x, y, moving }
 const bubbles = new Map();   // id -> { text, until }
+const castFx = new Map();    // v1.2: playerId -> { landX, landY, ice, at } for cast animation
 let keys = { up: false, down: false, left: false, right: false };
 let lastSentKeys = '';
 let coins = 0;
@@ -271,7 +272,6 @@ function drawProp(pr) {
     case 'icesculpt': drawIceSculptAt(px2, py2); break;
     case 'greattree': drawGreatTreeAt(px2, py2); break;
     case 'table': drawTableAt(px2, py2); break;
-    case 'fishingpole': drawFishingPoleAt(px2, py2); break;
     case 'volleyball': drawVolleyballAt(px2, py2); break;
     case 'umbrella': drawUmbrellaAt(px2, py2); break;
     case 'stall': drawStallAt(px2, py2, (pr.x + pr.y) % 5); break;
@@ -1143,6 +1143,12 @@ function handle(m) {
       if (me.puffs > 0) myViceAt.puffs = Date.now();
       break;
     }
+    case 'fish-cast': {
+      // v1.2 (Item O): a cast just started somewhere in the room —
+      // clients animate the rod + line arcing out to the landing.
+      castFx.set(m.playerId, { landX: m.landX, landY: m.landY, ice: !!m.ice, at: Date.now() });
+      break;
+    }
     case 'snapshot': {
       players = m.players;
       // v1.1 (Items 11/12 — the in-zone haze bug): `me` used to be
@@ -1272,6 +1278,7 @@ setInterval(() => {
 }, 50);
 
 $('sitBtn').onclick = () => { if (!transfer) send({ type: 'interact' }); };
+$('fishHint').onclick = () => { if (!transfer) send({ type: 'interact' }); };
 
 // ------------------------------------------------------------------
 // Phase 9 — click/tap-to-move + run toggle. A click (or phone tap)
@@ -1842,24 +1849,8 @@ function drawChairAt(x, y, dir) {
   cushion();
 }
 
-/** A built-in fishing-pole stand at a pond edge: crossed sticks, a
- *  leaning rod, a reel dot, and a faint line dropping to the water. */
-function drawFishingPoleAt(x, y) {
-  ctx.beginPath(); ctx.ellipse(x, y + 3, 10, 3.6, 0, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fill();
-  ctx.strokeStyle = '#6d4c26'; ctx.lineWidth = 2.4;
-  ctx.beginPath();
-  ctx.moveTo(x - 6, y + 2); ctx.lineTo(x + 4, y - 10);
-  ctx.moveTo(x + 6, y + 2); ctx.lineTo(x - 4, y - 10);
-  ctx.stroke();
-  // the rod: leans out over the water (screen-down = toward the pond)
-  ctx.strokeStyle = '#8a5a2b'; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.moveTo(x - 3, y - 9); ctx.quadraticCurveTo(x + 3, y - 20, x + 9, y - 27); ctx.stroke();
-  ctx.beginPath(); ctx.arc(x + 1, y - 13, 2, 0, Math.PI * 2); ctx.fillStyle = '#c99700'; ctx.fill();
-  ctx.strokeStyle = 'rgba(240,248,255,.75)'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(x + 9, y - 27); ctx.lineTo(x + 10, y - 12); ctx.stroke();
-  ctx.beginPath(); ctx.arc(x + 10, y - 11, 1.6, 0, Math.PI * 2); ctx.fillStyle = '#e2543e'; ctx.fill();
-}
+// (v1.2 Item O: the static pole-stand art retired with the stands
+// themselves — the rod now appears in the caster's hand instead.)
 
 // ------------------------------------------------------------------ fish (v1.1.1)
 // Ten species, one shared little-fish silhouette; colour + markings
@@ -1922,7 +1913,9 @@ function drawFishShape(x, y, id, s = 1, wiggle = 0) {
 const pondLeaps = [];
 let leapState = { mapId: null, tiles: [], nextAt: 0 };
 function tickPondLeaps(now) {
-  if (!mapDef || !mapDef.fishing || !mapDef.fishing.length || !mapDef.rows) return;
+  // v1.2: leaps belong to OPEN fishable water — a frozen pond's
+  // fish stay under the ice.
+  if (!mapDef || !mapDef.fishable || mapDef.frozen || !mapDef.rows) return;
   if (leapState.mapId !== mapDef.id) {
     const tiles = [];
     mapDef.rows.forEach((row, ty) => {
@@ -2243,6 +2236,21 @@ function draw() {
     // (the way out is drawn by the generic doors pass below)
     // tell the casino tray whether we are inside the lounge
     if (window.SolarionCasino && myRp) window.SolarionCasino.updatePresence(myRp.x, myRp.y, mapDef);
+    // v1.2 (Item O): the fishing proximity prompt — visible only
+    // while I stand at a fishable bank, unseated, line not out.
+    {
+      const hint = $('fishHint');
+      let show = false;
+      if (mapDef && mapDef.fishable && mapDef.rows && myRp && me && !me.seated && !me.casting) {
+        const ts = mapDef.tileSize || 32;
+        const mtx = Math.floor(myRp.x / ts), mty = Math.floor(myRp.y / ts);
+        for (let ty = mty - 2; ty <= mty + 2 && !show; ty++) {
+          const row = mapDef.rows[ty]; if (!row) continue;
+          for (let tx = mtx - 2; tx <= mtx + 2; tx++) if (row[tx] === '%') { show = true; break; }
+        }
+      }
+      hint.classList.toggle('hidden', !show);
+    }
   }
 
   // hookah stations (Phase B amendment): a brass hookah on a low
@@ -2501,21 +2509,49 @@ function draw() {
     ctx.strokeText(p.name, sx, sy - dh - 6 - bob);
     ctx.fillText(p.name, sx, sy - dh - 6 - bob);
 
-    // v1.1.1 fishing: cast line + bobber over the water while a
-    // cast is live (the server drives p.casting and p.dir).
+    // Fishing cast (v1.2 Item O): the fish-cast event carries the
+    // real landing point ~2–3 tiles out. First ~450ms: the bobber
+    // ARCS out along a curve while the rod (a line from the hand)
+    // swings with it; then the bobber sits on the water with
+    // ripples — or, on ice, a dark drill hole at the landing.
     if (p.casting) {
-      const off = { down: [44, 44], up: [-44, -44], right: [22, -22], left: [-22, 22] }[p.dir] || [44, 44];
-      const [bx2, by2] = proj(rp.x + off[0], rp.y + off[1]);
-      ctx.strokeStyle = 'rgba(240,248,255,.8)'; ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(sx + (p.dir === 'left' ? -12 : 12), sy - 52 - bob);
-      ctx.quadraticCurveTo((sx + bx2) / 2, Math.min(sy - 52 - bob, by2) - 14, bx2, by2);
-      ctx.stroke();
-      const rip = 3 + ((now / 320) % 1) * 6;
-      ctx.beginPath(); ctx.ellipse(bx2, by2, rip, rip * 0.45, 0, 0, Math.PI * 2);
-      ctx.strokeStyle = 'rgba(210,240,255,.55)'; ctx.stroke();
-      ctx.beginPath(); ctx.arc(bx2, by2 - 2, 2.6, 0, Math.PI * 2); ctx.fillStyle = '#e2543e'; ctx.fill();
-      ctx.beginPath(); ctx.arc(bx2, by2 - 0.4, 2.6, Math.PI, Math.PI * 2); ctx.fillStyle = '#fff6e6'; ctx.fill();
+      const fx = castFx.get(p.id);
+      const handX = sx + (p.dir === 'left' ? -12 : 12), handY = sy - 52 - bob;
+      let lx, ly, landed = true, ice = false;
+      if (fx && now - fx.at < 3400) {
+        const [tx2, ty2] = proj(fx.landX, fx.landY);
+        ice = fx.ice;
+        const t = Math.min(1, (now - fx.at) / 450);
+        landed = t >= 1;
+        const mx = (handX + tx2) / 2, my = Math.min(handY, ty2) - 34;
+        lx = (1 - t) * (1 - t) * handX + 2 * (1 - t) * t * mx + t * t * tx2;
+        ly = (1 - t) * (1 - t) * handY + 2 * (1 - t) * t * my + t * t * ty2;
+        // the rod: hand to a tip that leads the bobber's arc.
+        const tipX = handX + (lx - handX) * 0.42, tipY = handY - 16 + (ly - handY) * 0.3;
+        ctx.strokeStyle = '#6b4a26'; ctx.lineWidth = 2.4;
+        ctx.beginPath(); ctx.moveTo(handX, handY + 6); ctx.lineTo(tipX, tipY); ctx.stroke();
+        ctx.strokeStyle = 'rgba(240,248,255,.8)'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(tipX, tipY); ctx.quadraticCurveTo(mx, my, lx, ly); ctx.stroke();
+      } else {
+        const off = { down: [44, 44], up: [-44, -44], right: [22, -22], left: [-22, 22] }[p.dir] || [44, 44];
+        [lx, ly] = proj(rp.x + off[0], rp.y + off[1]);
+        ctx.strokeStyle = 'rgba(240,248,255,.8)'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(handX, handY);
+        ctx.quadraticCurveTo((handX + lx) / 2, Math.min(handY, ly) - 14, lx, ly); ctx.stroke();
+      }
+      if (landed && ice) {
+        // the drill hole on the ice + the line dropping into it
+        ctx.beginPath(); ctx.ellipse(lx, ly, 7, 3.4, 0, 0, Math.PI * 2);
+        ctx.fillStyle = '#16222e'; ctx.fill();
+        ctx.beginPath(); ctx.ellipse(lx, ly, 9.5, 4.6, 0, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(230,244,255,.5)'; ctx.lineWidth = 1; ctx.stroke();
+      } else if (landed) {
+        const rip = 3 + ((now / 320) % 1) * 6;
+        ctx.beginPath(); ctx.ellipse(lx, ly, rip, rip * 0.45, 0, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(210,240,255,.55)'; ctx.lineWidth = 1.2; ctx.stroke();
+        ctx.beginPath(); ctx.arc(lx, ly - 2, 2.6, 0, Math.PI * 2); ctx.fillStyle = '#e2543e'; ctx.fill();
+        ctx.beginPath(); ctx.arc(lx, ly - 0.4, 2.6, Math.PI, Math.PI * 2); ctx.fillStyle = '#fff6e6'; ctx.fill();
+      }
     }
     // v1.1.1: the catch hold-up — the fish, overhead, for its second.
     if (p.heldFish) {

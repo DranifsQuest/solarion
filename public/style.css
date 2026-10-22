@@ -386,3 +386,12 @@ html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; ba
 #cdBox button, #chartBtn { padding: 3px 8px; border-radius: 6px; border: 1px solid #8a6a45;
   background: #3a2a18; color: #eef; cursor: pointer; font-size: 11px; margin-left: 6px; }
 #cdBox button:hover, #chartBtn:hover { border-color: #ffd23f; color: #ffd23f; }
+
+/* Fishing proximity prompt (v1.2 Item O): a warm pill floating
+   bottom-center, shown only at a fishable bank. Sibling of #hud,
+   so it takes pointer events directly (no opt-in needed). */
+#fishHint { position: absolute; left: 50%; bottom: 92px; transform: translateX(-50%); z-index: 30;
+  background: linear-gradient(180deg, #8a5a2b, #6f4520); color: #ffe9c4; border: 2px solid #3d2712;
+  border-radius: 999px; padding: 9px 20px; font: 600 15px system-ui; cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0,0,0,.45); }
+#fishHint:hover { filter: brightness(1.12); }
