@@ -213,14 +213,25 @@
             <button id="homeLock">🔓 Lock home</button>
           </div>
         </div>
-        <div class="spTitle">🛋️ CATALOG</div>
-        <div id="catalogList"></div>
-        <div class="spTitle">🎒 MY ITEMS — click Place, then click a tile</div>
+        <div class="spRow">
+          <button id="storeOpen">🛒 Furniture Store — browse &amp; buy</button>
+        </div>
+        <div class="spTitle">🎒 MY ITEMS — drag one into the room to place it (or Place, then click a tile)</div>
         <div id="inventoryList"></div>
         <div class="spRow">
           <select id="kickSel"></select>
           <button id="kickBtn">Kick visitor</button>
         </div>
+      </div>
+    </div>
+    <!-- furniture store window (v1.2 Item C): a real shop popup —
+         full catalog grid, Buy lands the item in your inventory.
+         Opens from the home panel, closes cleanly, re-opens anytime. -->
+    <div id="storeModal" class="hidden">
+      <div class="storeCard">
+        <div class="storeHead"><span>🛒 FURNITURE STORE</span><button id="storeClose">✕ Close</button></div>
+        <div class="pkDim">Bought items land in your 🎒 inventory — drag them into your home to place them.</div>
+        <div id="storeGrid"></div>
       </div>
     </div>
     <!-- look panel (Phase 4 editor, rebuilt in Phase 6 on the shared
