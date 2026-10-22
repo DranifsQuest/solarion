@@ -44,8 +44,15 @@
  *                     — measured: unoccupied windows read
  *                     0.50–0.66, occupied 0.0–0.11 — so they are
  *                     verified by the reference pass, not faked
- *                     with a lower bar. Hookah booths have no
- *                     backrest BY DESIGN and are excluded.
+ *                     with a lower bar. Profile backs (chair
+ *                     'left'/'right') are edge-on: their window
+ *                     is the panel's outboard post strip, with
+ *                     its own measured bands (see TH), and an
+ *                     occupied observation a NEIGHBOUR's sprite
+ *                     covers (poker-ring geometry) is covered
+ *                     by the reference pass the same way.
+ *                     Hookah booths have no backrest BY DESIGN
+ *                     and are excluded.
  *   LEGS UNDER TABLES — posed sitters wear neon-green pants
  *                     (accent_color marker set by the playtest
  *                     scene); each posed table's tabletop-
@@ -109,15 +116,33 @@ export const TH = {
   alignMaxDevPx: 2.5,        // seat anchor off its row's iso line
   alignGapTolPx: 3,          // row spacing non-uniformity
   anchorCentroidTolPx: 7,    // image cushion centroid vs computed anchor
-  // Chair-family bar, calibrated on measured renders (2026-10-22
-  // baseline): a HIDDEN back reads <= 0.9%; a correctly drawn
-  // near-side panel over dark poker felt tops out at ~13.3%
-  // (the panel is translucent — over the sitter's marker pants
-  // and the felt it blends off-palette; only the solid posts
-  // match), while the same panel over a light café floor reads
-  // ~55%. 10% sits inside the empty band between hidden and
-  // drawn on every surface measured.
-  backFrac: { chair: 0.10, bench: 0.08, sofa: 0.18, cafe: 0.18 },
+  // Chair-family bars, calibrated on measured renders.
+  // UP/DOWN facings (chair 0.10, 2026-10-22 baseline): a HIDDEN
+  // back reads <= 0.9%; a correctly drawn near-side panel over
+  // dark poker felt tops out at ~13.3% (the panel is translucent
+  // — over the sitter's marker pants and the felt it blends
+  // off-palette; only the solid posts match), while the same
+  // panel over a light café floor reads ~55%. 10% sits inside
+  // the empty band between hidden and drawn.
+  // PROFILE facings (left/right, profile 0.10, recalibrated
+  // 2026-10-22 on main 8ade950): the profile panel is EDGE-ON —
+  // a 20px-wide strip on the cushion's back diagonal — and the
+  // first calibration's windows still pointed at the pre-v1.3.1
+  // panel position (~11px outboard, over bare floor), reading
+  // 0.6–8.5% on backs that zoomed crops show fully drawn. With
+  // the window on the panel's outboard post strip (backWindow),
+  // the measured bands are: HIDDEN = 0.0% (in-situ controls:
+  // the strip painted over with floor/felt on real captures,
+  // occupied and unoccupied — the sitter's sprite contributes
+  // zero wood-palette pixels to the strip); DRAWN unoccupied
+  // >= 55% (per-seat best; per-observation p10 61%); DRAWN
+  // occupied, no neighbour over the strip >= 46%. 10% sits in
+  // the empty band with >4x margin to the weakest drawn case.
+  // The one sub-band configuration — a poker W seat whose S
+  // neighbour sits 43px screen-north and whose sprite covers
+  // the strip (reads ~8%) — is handled by the occupied pass's
+  // neighbour rule, not by lowering this bar.
+  backFrac: { chair: 0.10, profile: 0.10, bench: 0.08, sofa: 0.18, cafe: 0.18 },
   legsMaxGreenFrac: 0.02,    // marker-green allowed ON a tabletop (legs over the table = defect)
   legsMinTableFrac: 0.55,    // tabletop share the table window must actually show
   crowdTableTiles: 5,        // table-group centres (the validator's own table law)
@@ -473,8 +498,16 @@ export function backWindow(kind, dir, [sx, sy]) {
   if (kind === 'chair' || kind === 'stool' || kind === 'poker') {
     if (dir === 'down') return R([[9, -34, 16, -10], [-16, -34, -9, -10]], 'wood', TH.backFrac.chair);
     if (dir === 'up') return R([[10, -20, 16, 8], [-16, -20, -10, 8]], 'wood', TH.backFrac.chair);
-    if (dir === 'left') return R([[17, -30, 28, -4]], 'wood', TH.backFrac.chair);
-    return R([[-28, -30, -17, -4]], 'wood', TH.backFrac.chair); // right
+    // Profile: the v1.3.1 panel stands ON the cushion's back
+    // diagonal — posts at anchor x-1 and x+15 (facing left),
+    // rising 28px from y-7. The window is the panel's OUTBOARD
+    // post strip: the part that peeks beside a sitter (the
+    // inboard half sits behind the sprite). The pre-v1.3.1
+    // windows ([±17..±28]) pointed at the OLD floating panel's
+    // position and sampled bare floor beside the real panel —
+    // see the profile calibration note in TH.
+    if (dir === 'left') return R([[8, -34, 17, -2]], 'wood', TH.backFrac.profile);
+    return R([[-17, -34, -8, -2]], 'wood', TH.backFrac.profile); // right
   }
   if (kind === 'bench') {
     // The bench back is two 3px slats (#a5713a) spanning bk.x±12
@@ -583,7 +616,7 @@ function checkBackVisibility(ctx) {
   lines.push(`reference pass: ${refChecked} backed seats verified unoccupied (${refUnverifiable} never cleanly observable in any capture)`);
   if (refWorst) lines.push(`weakest rendered back: ${refWorst.map} ${refWorst.id} at ${(refWorst.frac * 100).toFixed(1)}%`);
   // -- Occupied pass: facings designed to read with a sitter.
-  let occChecked = 0, occCovered = 0, occWorst = null;
+  let occChecked = 0, occCovered = 0, occNbrCovered = 0, occWorst = null;
   for (const entry of ctx.entries) {
     if (entry.phase !== 'day') continue;
     const img = ctx.images.get(entry.file);
@@ -599,6 +632,27 @@ function checkBackVisibility(ctx) {
         : { x: actor.x, y: actor.y, kind: actor.seatKind, dir: actor.dir }; // poker pseudo-seat
       const r = windowFracFor(img, entry, sl);
       if (!r) continue;
+      if (!r.ok) {
+        // NEIGHBOUR RULE: a low reading is only evidence about
+        // THIS seat's back when nothing else paints over the
+        // window. At a poker ring the S chair sits 43px
+        // screen-north of the W chair, and its sprite hangs
+        // over the W panel's peek strip (measured: the same
+        // seat reads ~8% crowded, >= 46% uncrowded, 0.0% with
+        // the panel erased). A neighbour within 48px of the
+        // seat anchor therefore covers the observation — the
+        // seat's back is still verified by the reference pass,
+        // and the same art is verified occupied at uncrowded
+        // seats. A neighbour can only excuse, never pass: an
+        // uncrowded low reading still fails below.
+        const S = seatAnchor(entry, sl);
+        const crowded = entry.actors.some(a => {
+          if (a === actor) return false;
+          const A = actorAnchor(entry, a);
+          return Math.hypot(A[0] - S[0], A[1] - S[1]) < 48;
+        });
+        if (crowded) { occNbrCovered++; continue; }
+      }
       occChecked++;
       if (!occWorst || r.frac < occWorst.frac) occWorst = { ...r, map: entry.map, shot: entry.shot, id: actor.seatId };
       if (!r.ok) {
@@ -606,7 +660,7 @@ function checkBackVisibility(ctx) {
       }
     }
   }
-  lines.push(`occupied pass: ${occChecked} sitters in visible-back facings checked; ${occCovered} far-side sitters covered by the reference pass (occluded by design)`);
+  lines.push(`occupied pass: ${occChecked} sitters in visible-back facings checked; ${occCovered} far-side sitters covered by the reference pass (occluded by design); ${occNbrCovered} sitters covered by the reference pass (a neighbour's sprite covers the back window)`);
   if (occWorst) lines.push(`worst occupied back: ${occWorst.map}/${occWorst.shot} ${occWorst.id} at ${(occWorst.frac * 100).toFixed(1)}%`);
   return { name: 'BACK VISIBILITY', ok: failures.length === 0, failures, lines };
 }
@@ -929,6 +983,46 @@ export function runSelftest() {
     for (const r of win.rects) paint(good, r, WOOD_RGB);
     const withBack = windowFracFor(good, e, seat);
     expect('BACK VISIBILITY passes when the back is drawn', withBack.ok === true, `frac=${(withBack.frac || 0).toFixed(3)}`);
+  }
+  // BACK VISIBILITY (profile): a genuinely backless PROFILE
+  // render must fail by name too — the profile window is the
+  // panel's outboard post strip, so bare floor there fails and
+  // the painted strip passes, for BOTH profile facings.
+  for (const dir of ['left', 'right']) {
+    const seat = { x: 0, y: 0, kind: 'chair', dir };
+    const e = entryStub([]);
+    const bare = windowFracFor(blankImg(400, 400, FLOOR), e, seat);
+    expect(`BACK VISIBILITY fails on a backless profile render (${dir})`, bare && bare.ok === false, `frac=${(bare.frac || 0).toFixed(3)}`);
+    const good = blankImg(400, 400, FLOOR);
+    const win = backWindow('chair', dir, seatAnchor(e, seat));
+    for (const r of win.rects) paint(good, r, WOOD_RGB);
+    const withBack = windowFracFor(good, e, seat);
+    expect(`BACK VISIBILITY passes when the profile back is drawn (${dir})`, withBack.ok === true, `frac=${(withBack.frac || 0).toFixed(3)}`);
+  }
+  // BACK VISIBILITY (neighbour rule): on a bare-floor render
+  // (NO backs drawn anywhere), an occupied profile seat whose
+  // window a neighbour's sprite covers is covered by the
+  // reference pass — but the identical backless seat with NO
+  // neighbour must still fail by name. Guards the excuse from
+  // ever becoming a pass.
+  {
+    const seatA = { id: 'stub-seat-A', x: 0, y: 0, kind: 'chair', dir: 'left' };
+    const seatB = { id: 'stub-seat-B', x: 150, y: 150, kind: 'chair', dir: 'left' };
+    const map = { id: 'stub', seats: [seatA, seatB], props: [], doors: [], gateways: [] };
+    const sitterA = { pid: 1, name: 'A', x: 0, y: 0, dir: 'left', seated: true, seatId: 'stub-seat-A', seatKind: 'chair' };
+    // 43px screen-north of A = world (-60,-60): the poker-ring
+    // S-chair position relative to the W chair.
+    const neighbour = { pid: 2, name: 'N', x: -60, y: -60, dir: 'up', seated: false };
+    const sitterB = { pid: 3, name: 'B', x: 150, y: 150, dir: 'left', seated: true, seatId: 'stub-seat-B', seatKind: 'chair' };
+    const e = { ...entryStub([sitterA, neighbour, sitterB]), file: 'stub.png', map: 'stub' };
+    const img = blankImg(400, 400, FLOOR);
+    const ctxStub = { maps: { stub: map }, entries: [e], images: new Map([['stub.png', img]]), manifest: { entries: [e] } };
+    const bv = runChecks(ctxStub).results.find(r => r.name === 'BACK VISIBILITY');
+    const failsOnB = bv.failures.filter(f => f.includes('stub-seat-B'));
+    const failsOnA = bv.failures.filter(f => f.includes('stub-seat-A'));
+    expect('BACK VISIBILITY neighbour rule covers the crowded seat, never excuses the isolated backless seat',
+      bv.ok === false && failsOnB.length >= 1 && failsOnA.length === 0,
+      `failures on isolated B=${failsOnB.length}, on neighbour-covered A=${failsOnA.length}`);
   }
   // LEGS UNDER TABLES: marker green painted onto the tabletop
   // interior must fail; a clean tabletop passes.
