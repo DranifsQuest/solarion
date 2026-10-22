@@ -262,7 +262,7 @@ test('gatehouses: every gateway is a structure — dir, solid flanks, walkable p
 test('facades + zone character: one building per enterable place, heroes, textured ground', { timeout: 30000 }, () => {
   // exactly one quality facade per enterable place; the tiles under
   // a facade are solid, and its door stands just outside the rect.
-  const built = { 'the-gateway': 2, 'solstice-bay': 1, 'neon-district': 1, 'cinder-mesa': 1 };
+  const built = { 'the-gateway': 2, 'solstice-bay': 1, 'neon-district': 2, 'cinder-mesa': 1 };
   for (const [id, n] of Object.entries(built)) {
     assert.equal((MAPS[id].buildings || []).length, n, `${id} has ${n} facade(s)`);
   }

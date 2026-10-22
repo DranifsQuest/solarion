@@ -679,6 +679,7 @@ const BUILDING_STYLES = {
   cafe:   { wall: '#e6cf9f', wallDark: '#c9ad76', roof: '#9c4a2f', trim: '#6e3423', chimney: true },
   casino: { wall: '#4b3573', wallDark: '#392659', roof: '#2c1b47', trim: '#ffd23f' },
   neon:   { wall: '#3d1545', wallDark: '#2c0f33', roof: '#1c0a24', trim: '#ff2e88' },
+  club:   { wall: '#5a2547', wallDark: '#46203a', roof: '#2c1030', trim: '#ff5da2' },
   hookah: { wall: '#d9a86c', wallDark: '#bb874c', roof: '#7a3b1e', trim: '#5d2c14', chimney: true },
   home:   { wall: '#e0cba3', wallDark: '#c2a678', roof: '#7a4030', trim: '#54382a', chimney: true },
 };
@@ -718,7 +719,7 @@ function drawBuilding(b) {
   const TS = mapDef.tileSize || 32;
   const st = BUILDING_STYLES[b.style] || BUILDING_STYLES.home;
   const x0 = b.tx * TS, y0 = b.ty * TS, x1 = (b.tx + b.tw) * TS, y1 = (b.ty + b.th) * TS;
-  const H = (b.style === 'casino' || b.style === 'neon') ? 54 : 44;
+  const H = (b.style === 'casino' || b.style === 'neon' || b.style === 'club') ? 54 : 44;
   const NW = proj(x0, y0), NE = proj(x1, y0), SE = proj(x1, y1), SW = proj(x0, y1);
   const up = (p, h) => [p[0], p[1] - h];
   const mid = (p, q) => [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2];
@@ -764,6 +765,52 @@ function drawBuilding(b) {
       ctx.strokeStyle = 'rgba(244,249,255,.8)'; ctx.lineWidth = 2.4;
       ctx.beginPath(); ctx.moveTo(...rN); ctx.lineTo(...rS); ctx.stroke();
     }
+  }
+  // Club Mirage (v1.4): the neon sign — a marquee ABOVE the front
+  // door (centred on the door, its board clear of the 47px leaf):
+  // a dark board, a buzzing pink border, the name in pink/cyan.
+  if (b.style === 'club') {
+    let scx = (SW[0] + SE[0]) / 2, scy = (SW[1] + SE[1]) / 2 - H * 0.58;
+    const dr = (mapDef.doors || []).find(d2 => d2.target === 'club-mirage');
+    if (dr) {
+      const [dcx, dcy] = proj(dr.x + dr.w / 2, dr.y + dr.h / 2);
+      scx = dcx; scy = dcy - 47 - 6 - 17; // leaf top, a breath, half the board
+    }
+    const flick = Math.sin(Date.now() / 90 + b.tx) > -0.92 ? 1 : 0.35;
+    if (darknessNow() > 0.03) { // the sign throws a warm pink pool after dark
+      const grd = ctx.createRadialGradient(scx, scy, 6, scx, scy, 130);
+      grd.addColorStop(0, 'rgba(255,93,162,.20)');
+      grd.addColorStop(1, 'rgba(255,93,162,0)');
+      ctx.fillStyle = grd;
+      ctx.beginPath(); ctx.arc(scx, scy, 130, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.fillStyle = '#160a24';
+    ctx.beginPath(); ctx.roundRect(scx - 86, scy - 17, 172, 34, 8); ctx.fill();
+    ctx.strokeStyle = '#ff2e88'; ctx.lineWidth = 2;
+    ctx.globalAlpha = flick;
+    ctx.beginPath(); ctx.roundRect(scx - 83, scy - 14, 166, 28, 7); ctx.stroke();
+    ctx.globalAlpha = 1;
+    const chase = Math.floor(Date.now() / 280);
+    for (let i = 0; i < 9; i++) {
+      const bx2 = scx - 72 + i * 18;
+      for (const by2 of [scy - 12, scy + 12]) {
+        ctx.beginPath(); ctx.arc(bx2, by2, 1.8, 0, Math.PI * 2);
+        ctx.fillStyle = (i + chase) % 2 ? '#ff2e88' : '#37e0ff';
+        ctx.globalAlpha = flick; ctx.fill(); ctx.globalAlpha = 1;
+      }
+    }
+    ctx.font = 'bold 17px system-ui';
+    ctx.textAlign = 'center';
+    ctx.globalAlpha = flick;
+    const word = 'CLUB MIRAGE';
+    const widths = [...word].map(chL => ctx.measureText(chL).width);
+    let lx = scx - widths.reduce((a, w) => a + w, 0) / 2;
+    [...word].forEach((chL, i) => {
+      ctx.fillStyle = i % 2 ? '#37e0ff' : '#ff5da2';
+      ctx.fillText(chL, lx + widths[i] / 2, scy + 6);
+      lx += widths[i];
+    });
+    ctx.globalAlpha = 1;
   }
 }
 
@@ -1320,6 +1367,11 @@ function handle(m) {
       sceneDevices = {};
       showGame();
       setMap(m.map, m.you, m.chat);
+      // Playtest Gate (test-mode payloads only): pose a dancer's
+      // flourish so the club's ringside capture catches it.
+      if (m.playtest && m.playtest.clubFlourish) {
+        clubFlourishFx.set(m.playtest.clubFlourish.dancer, { at: Date.now(), amount: 25, from: 'Playtest' });
+      }
       chatLine(`<span class="sys">Welcome to ${esc(m.map.name)}.</span>`);
       if (m.bonusGranted) {
         toast(m.bonusAmount >= 5000
@@ -1328,6 +1380,27 @@ function handle(m) {
       }
       if (me.drinks > 0) myViceAt.drinks = Date.now();
       if (me.puffs > 0) myViceAt.puffs = Date.now();
+      break;
+    }
+    case 'dancer-flourish': {
+      // v1.4 (Club Mirage): a tip landed — the dancer twirls (the
+      // draw pass animates her from this state) and the room hears.
+      clubFlourishFx.set(m.dancer, { at: Date.now(), amount: m.amount, from: m.from });
+      chatLine(`<span class="sys">💃 ${esc(m.from)} tipped ${esc(m.name)} ${esc(String(m.amount))}z!</span>`);
+      break;
+    }
+    case 'vice-state': {
+      // The club tray's drink tally (the casino tray has its own,
+      // fed through SolarionCasino.handle above).
+      const cvi = $('clubViceInfo');
+      if (cvi) {
+        const bits = [];
+        if (m.drinks) bits.push(`🍸 × ${m.drinks}${m.passedOut ? ' — OUT COLD' : ''}`);
+        if (m.puffs) bits.push(`💨 × ${m.puffs}${m.hippy ? ' — 🌈 HIPPY' : ''}`);
+        cvi.textContent = bits.length
+          ? bits.join(' · ')
+          : 'Mira pours at the bar — first drink of the day is on the house.';
+      }
       break;
     }
     case 'fish-cast': {
@@ -1466,6 +1539,15 @@ setInterval(() => {
 
 $('sitBtn').onclick = () => { if (!transfer) send({ type: 'interact' }); };
 $('fishHint').onclick = () => { if (!transfer) send({ type: 'interact' }); };
+// v1.4 (Club Mirage): the club tray — drinks ride the shared bar
+// message; dancer tips go to the nearest stage (server resolves).
+{
+  const cdb = $('clubDrinkBtn');
+  if (cdb) cdb.onclick = () => send({ type: 'buy-drink' });
+  for (const b of document.querySelectorAll('.clubTipBtn')) {
+    b.onclick = () => send({ type: 'tip-dancer', amount: Number(b.dataset.amt) });
+  }
+}
 
 // ------------------------------------------------------------------
 // Phase 9 — click/tap-to-move + run toggle. A click (or phone tap)
@@ -1655,7 +1737,9 @@ function drawTile(ch, tx, ty) {
     return;
   }
   if (ch === 'C') { // Casino Lounge indoor floor — dark club checkerboard
-    const cz = mapDef.casino || { floor: '#3a2350', floorAlt: '#432a5c' };
+    // v1.4: Club Mirage's dance floor uses the same checker in the
+    // club's own warm plum (its floor colors ride the map payload).
+    const cz = mapDef.casino || (mapDef.club ? { floor: mapDef.floor, floorAlt: mapDef.floorAlt } : { floor: '#3a2350', floorAlt: '#432a5c' });
     diamond(cx, cy, hw, hh, (tx + ty) % 2 ? cz.floor : cz.floorAlt);
     return;
   }
@@ -2352,9 +2436,128 @@ function spawnPyro(wx, wy) {
   }
 }
 
+// ------------------------------------------------------------------
+// Club Mirage (v1.4): the go-go bar's fixtures — three little
+// stages with poles, the dancers (NPC fixtures dancing on loop,
+// like the bartenders they are data, never players), sweeping
+// spotlights, and Mira at the bar. A tip lands as a
+// 'dancer-flourish' broadcast; the flourish (twirl + hearts) is
+// animated here from that one event.
+const clubFlourishFx = new Map(); // dancerId -> { at, amount, from }
+const FLOURISH_MS = 2600;
+
+function drawClubPass(now) {
+  const cl = mapDef.club;
+  const TS = mapDef.tileSize || 32;
+  const dark = darknessNow();
+  cl.stages.forEach((stg, i) => {
+    // the platform: raised warm-wood diamonds with a pink lip
+    for (let ty = Math.floor(stg.y / TS); ty < Math.ceil((stg.y + stg.h) / TS); ty++) {
+      for (let tx = Math.floor(stg.x / TS); tx < Math.ceil((stg.x + stg.w) / TS); tx++) {
+        const [px2, py2] = proj((tx + 0.5) * TS, (ty + 0.5) * TS);
+        diamond(px2, py2 - 5, TS * ZOOM, TS * ZOOM * 0.5, (tx + ty) % 2 ? '#6e3a2e' : '#774233');
+      }
+    }
+    const lipA = proj(stg.x + 2, stg.y + stg.h - 2), lipB = proj(stg.x + stg.w - 2, stg.y + stg.h - 2);
+    ctx.strokeStyle = 'rgba(255,93,162,.6)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(lipA[0], lipA[1] - 4); ctx.lineTo(lipB[0], lipB[1] - 4); ctx.stroke();
+    // sweeping spotlights: two warm beams (amber + pink) crossing
+    // the platform, in the stage washes' 'lighter' language
+    const [ccx, ccy] = proj(stg.x + stg.w / 2, stg.y + stg.h / 2);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const boost = 0.5 + dark;
+    for (let beam = 0; beam < 2; beam++) {
+      const srcX = ccx + (beam ? 70 : -70), srcY = ccy - 120;
+      const tgtX = ccx + Math.sin(now / 1050 + i * 2.1 + beam * 2.6) * 62;
+      const tgtY = ccy + 6;
+      const col = beam ? '255,190,90' : '255,110,170';
+      const a = 0.13 * boost;
+      const grd = ctx.createLinearGradient(srcX, srcY, tgtX, tgtY);
+      grd.addColorStop(0, `rgba(${col},${(a * 0.4).toFixed(3)})`);
+      grd.addColorStop(1, `rgba(${col},${a.toFixed(3)})`);
+      ctx.fillStyle = grd;
+      ctx.beginPath();
+      ctx.moveTo(srcX, srcY);
+      ctx.lineTo(tgtX - 30, tgtY);
+      ctx.lineTo(tgtX + 30, tgtY);
+      ctx.closePath(); ctx.fill();
+      const wash = ctx.createRadialGradient(tgtX, tgtY, 4, tgtX, tgtY, 74);
+      wash.addColorStop(0, `rgba(${col},${(a * 0.9).toFixed(3)})`);
+      wash.addColorStop(1, `rgba(${col},0)`);
+      ctx.fillStyle = wash;
+      ctx.beginPath(); ctx.arc(tgtX, tgtY, 74, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+    // the pole: brass with a bright edge, behind the dancer
+    const [plx, ply] = proj(stg.pole.x, stg.pole.y);
+    ctx.strokeStyle = '#8a6a1f'; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(plx, ply - 2); ctx.lineTo(plx, ply - 62); ctx.stroke();
+    ctx.strokeStyle = '#ffd76a'; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.moveTo(plx - 0.8, ply - 2); ctx.lineTo(plx - 0.8, ply - 62); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(plx, ply, 7, 3, 0, 0, Math.PI * 2); ctx.fillStyle = '#c99700'; ctx.fill();
+    // the dancer, dancing on loop (the dance emote's bounce
+    // rhythm + a slow sway); a tip makes her twirl
+    const d = stg.dancer;
+    const fx = clubFlourishFx.get(d.id);
+    const ft = fx ? (now - fx.at) / FLOURISH_MS : 1;
+    const flourishing = ft >= 0 && ft < 1;
+    if (fx && !flourishing) clubFlourishFx.delete(d.id);
+    const bob = Math.abs(Math.sin(now / (flourishing ? 90 : 165) + i * 1.7)) * (flourishing ? 6 : 3.5);
+    const sway = Math.sin(now / 430 + i * 2.3) * 2.5;
+    const [dx, dy] = proj(d.x, d.y);
+    const spr = Sprites.makeSprite(d.look, 'down');
+    ctx.save();
+    ctx.translate(dx + sway, dy - bob);
+    if (flourishing) {
+      const sx = Math.cos(ft * Math.PI * 6);
+      ctx.scale(Math.sign(sx) * Math.max(0.25, Math.abs(sx)) || 1, 1);
+    }
+    ctx.drawImage(spr, -spr.width / 2, -spr.height + 4);
+    ctx.restore();
+    ctx.font = 'bold 11px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = flourishing ? '#ffd76a' : '#ffc7de';
+    ctx.strokeStyle = 'rgba(0,0,0,.65)';
+    ctx.lineWidth = 3;
+    const label = `💃 ${d.name}`;
+    ctx.strokeText(label, dx, dy - spr.height - 8 - bob);
+    ctx.fillText(label, dx, dy - spr.height - 8 - bob);
+    if (flourishing) {
+      ctx.font = '13px system-ui';
+      for (let hI = 0; hI < 5; hI++) {
+        const ph = (ft * 1.4 + hI * 0.19) % 1;
+        const hx = dx + Math.sin(ph * 5 + hI * 2.4) * 14;
+        const hy = dy - 46 - ph * 34;
+        ctx.globalAlpha = 0.9 * (1 - ph);
+        ctx.fillText(hI % 2 ? '💖' : '✨', hx, hy);
+      }
+      ctx.globalAlpha = 1;
+    }
+  });
+  // the bar: Mira behind the counter (drawn like the casino
+  // bartenders — a fixed-look layered sprite + name)
+  if (cl.bartender) {
+    const bt = cl.bartender;
+    const [bx, by] = proj(bt.x, bt.y);
+    const bspr = Sprites.makeSprite(bt.look, 'down');
+    ctx.drawImage(bspr, bx - bspr.width / 2, by - bspr.height + 4);
+    ctx.font = 'bold 11px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#ffd9a0';
+    ctx.strokeStyle = 'rgba(0,0,0,.65)';
+    ctx.lineWidth = 3;
+    ctx.strokeText(`🍸 ${bt.name}`, bx, by - bspr.height - 4);
+    ctx.fillText(`🍸 ${bt.name}`, bx, by - bspr.height - 4);
+  }
+}
+
 function draw() {
   requestAnimationFrame(draw);
   if (!mapDef) return;
+  // v1.4: the club tray lives only inside Club Mirage.
+  const clubTrayEl = $('clubTray');
+  if (clubTrayEl) clubTrayEl.classList.toggle('hidden', !mapDef.club);
   const W = cv.width, H = cv.height;
   ctx.fillStyle = '#0b0e18';
   ctx.fillRect(0, 0, W, H);
@@ -2640,6 +2843,9 @@ function draw() {
       hint.classList.toggle('hidden', !show);
     }
   }
+
+  // Club Mirage (v1.4): stages, dancers, spotlights, the bar.
+  if (mapDef.club) drawClubPass(Date.now());
 
   // hookah stations (Phase B amendment): a brass hookah on a low
   // table with lazy smoke curls, one per station.

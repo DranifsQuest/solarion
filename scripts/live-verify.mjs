@@ -138,7 +138,7 @@ async function main() {
     try { const r = await fetch(`${BASE}/health`); if (r.ok) { health = await r.json(); break; } } catch (e) {}
     await sleep(3000);
   }
-  report('health: service answers, phase 10, ten maps', !!(health && health.ok && health.phase === 10 && Object.keys(health.maps).length === 10),
+  report('health: service answers, phase 10, eleven maps', !!(health && health.ok && health.phase === 10 && Object.keys(health.maps).length === 11),
     health ? `uptime ${health.uptime_s}s, phase ${health.phase}` : 'no response in 150s');
   if (!health) return finish();
 
@@ -729,6 +729,46 @@ async function main() {
     report('hookah lounge: 10 puffs at 5z turn C hippy (broadcast); hippy holds in the window and reverts 30s after the last puff', true, `puffs reset, balance ${cStart} -> ${cAfter}, headband inside window -> real look after 30s`);
     C.client.ws.close();
   } catch (e) { report('hookah lounge: 10 puffs at 5z turn C hippy (broadcast); hippy holds in the window and reverts 30s after the last puff', false, e.message); }
+
+  // ---- club mirage (v1.4): a fresh visitor D walks Neon -> the
+  // club's front door, drinks at Mira's bar (the shared vice path:
+  // the day's first pour is on the house), and tips Roxy — the
+  // room gets the flourish broadcast and the tip is a pure sink.
+  try {
+    const NAME_D = NAME_A.slice(0, -1) + 'd'; // vfy<sfx>a -> vfy<sfx>d
+    const rd = await api('/api/register', { username: NAME_D, password: PW });
+    if (rd.status !== 200 || !rd.json.token) throw new Error(`register D -> ${rd.status}`);
+    const cd2 = await api('/api/create-character', { token: rd.json.token, name: NAME_D, gender: 'F' });
+    if (cd2.status !== 200) throw new Error(`create D -> ${cd2.status}`);
+    const D = { name: NAME_D, token: rd.json.token, client: await connectClient(rd.json.token) };
+    D.id = D.client.hello.you.id;
+    const balD = async () => (await api('/api/me', { token: D.token })).json.avatar.zcoins;
+    const dStart = D.client.hello.zcoins;
+    await walkTo(D.client, 224, 176, { arrive: 16 }); // the terrace lane, like the city legs
+    await travel(D.client, 224, 48, 'neon-district', 'D gateway -> neon');
+    const cm = await travel(D.client, 304, 1232, 'club-mirage', 'D neon -> club mirage door'); // FRONT (south) face
+    if (!cm.map.club || cm.map.club.stages.length !== 3) throw new Error('club payload incomplete');
+    const dancerNames = cm.map.club.stages.map(s => s.dancer && s.dancer.name).join(',');
+    if (dancerNames !== 'Roxy,Vega,Lola') throw new Error(`dancers ${dancerNames}`);
+    if (!cm.map.club.bartender || cm.map.club.bartender.name !== 'Mira') throw new Error('club bartender missing');
+    // a drink at the bar: the day's first is on the house (+10z tip)
+    await walkTo(D.client, cm.map.club.bar.x, cm.map.club.bar.y, { arrive: 12 });
+    D.client.send({ type: 'buy-drink' });
+    await waitFor(() => D.client.msgs.filter(m => m.type === 'notice' && /on the house/.test(m.text)).pop(), 8000, 'D free drink at the club');
+    const dAfterDrink = await balD();
+    if (dAfterDrink !== dStart + 10) throw new Error(`D balance after free drink = ${dAfterDrink} (want hello ${dStart} + 10)`);
+    // tip Roxy 25 from her stage front: guarded debit + flourish
+    const stg = cm.map.club.stages[0];
+    await walkTo(D.client, stg.x + stg.w / 2, stg.y + stg.h + 40, { arrive: 12 });
+    D.client.send({ type: 'tip-dancer', dancer: stg.dancer.id, amount: 25 });
+    await waitFor(() => D.client.msgs.filter(m => m.type === 'dancer-flourish' && m.dancer === stg.dancer.id && m.amount === 25).pop(), 8000, 'D sees Roxy flourish');
+    const dAfterTip = await balD();
+    if (dAfterTip !== dStart + 10 - 25) throw new Error(`D balance after tip = ${dAfterTip} (want ${dStart - 15})`);
+    // back out the front door
+    await travel(D.client, 976, 784, 'neon-district', 'D club -> neon door back');
+    report('club mirage: Neon -> Club Mirage -> Neon (doors both ways); free first drink at the club bar; a 25z dancer tip flourishes and sinks', true, `3 stages (Roxy, Vega, Lola), bartender Mira, balance ${dStart} -> ${dAfterTip}`);
+    D.client.ws.close();
+  } catch (e) { report('club mirage: Neon -> Club Mirage -> Neon (doors both ways); free first drink at the club bar; a 25z dancer tip flourishes and sinks', false, e.message); }
 
   // ---- positioning: B walked home. The homes leg ends with B
   // back in the Casino Lounge (its leave-studio return point), but

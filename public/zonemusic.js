@@ -24,6 +24,7 @@ const ZONE_MUSIC = {
   'solstice-bay':   { bpm: 104, genre: 'Latin', roles: ['drums', 'bass', 'melody', 'pad'] },  // light + beachy
   'casino-lounge':  { bpm: 96,  genre: 'Chill', roles: ['pad', 'bass', 'melody'] },           // casino lounge groove
   'neon-district':  { bpm: 118, genre: 'Dance', roles: ['drums', 'bass', 'melody', 'fx'] },    // synthy pulse
+  'club-mirage':    { bpm: 124, genre: 'Dance', roles: ['drums', 'bass', 'melody', 'fx'] },    // the go-go bar: neon dance, a step hotter
   'neon-casino':    { bpm: 112, genre: 'Dance', roles: ['drums', 'bass', 'pad'] },            // casino groove, neon side
   'cinder-mesa':    { bpm: 88,  genre: 'Rock',  roles: ['pad', 'bass', 'melody'] },            // sparse desert
   'hookah-lounge':  { bpm: 90,  genre: 'Latin', roles: ['pad', 'melody', 'fx'] },              // mellow / exotic

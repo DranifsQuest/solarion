@@ -390,6 +390,42 @@ const SIDE_TANK = [
   '.....SSTTTTSS.......',
   '.......TTTT.........',
 ];
+// Club Mirage (v1.4): the CURVY figure — a fixture-only variant
+// (dancer NPC looks carry `figure: 'curvy'`; it is NOT a character
+// creation axis, so no player look can ever carry it). Fuller bust
+// (the widest rows sit high), a pinched waist, and a hip flare at
+// the hem; the profile pushes the bust toward the facing edge and
+// the hip toward the back. Same 'a' arm placeholders as the plain
+// torsos, so the sleeve logic applies unchanged.
+const CURVY_TEMPLATES = [
+  '.....TTTTTTTTTT.....',
+  '....TTTTTTTTTTTT....',
+  '..aaTTTTTTTTTTTTaa..',
+  '..aaTTTTTTTTTTTTaa..',
+  '....aTTTTTTTTTTa....',
+  '....aTTTTTTTTTTa....',
+  '..aaTTTTTTTTTTTTaa..',
+  '....TTTTTTTTTT......',
+];
+const CURVY_SIDE = [
+  '......TTTTTT........',
+  '.....aTTTTTTS.......',
+  '....aaTTTTTTS.......',
+  '....aaTTTTTTS.......',
+  '.....aTTTTTTS.......',
+  '.....aTTTTTT........',
+  '....aaTTTTTTS.......',
+  '......TTTTTT........',
+];
+// The curvy skirt flares a step wider than the plain F skirt.
+const CURVY_SKIRT = [
+  '....PPPPPPPPPPPP....',
+  '..PPPPPPPPPPPPPPPP..',
+  '.PPPPPPPPPPPPPPPPPP.',
+  '....SSSS....SSSS....',
+  '....SSSS....SSSS....',
+  '....OOOO....OOOO....',
+];
 const SLEEVES = { tee: 'short', 'button-up': 'short', hoodie: 'long', jacket: 'long', sweater: 'long', tank: 'bare' };
 
 // Legs (rows 19..24). P = bottom color, d = bottom shade, S skin, O shoes.
@@ -697,9 +733,12 @@ function buildBodyGrid(cfg, dir, seated) {
 
   // torso
   const sleeve = SLEEVES[topStyle] || 'short';
+  const curvy = cfg.figure === 'curvy' && gender === 'F';
   let torso;
   if (dir === 'side') {
-    torso = (topStyle === 'tank' ? SIDE_TANK : SIDE_TORSO).slice();
+    torso = (curvy ? CURVY_SIDE : (topStyle === 'tank' ? SIDE_TANK : SIDE_TORSO)).slice();
+  } else if (curvy) {
+    torso = CURVY_TEMPLATES.slice();
   } else {
     torso = (topStyle === 'tank' ? TANK_TEMPLATES[gender] : TORSO_TEMPLATES[gender]).slice();
   }
@@ -742,6 +781,8 @@ function buildBodyGrid(cfg, dir, seated) {
     }
   } else if (seated) {
     legs = (SEATED_LEGS[bottomStyle] || SEATED_LEGS.pants).slice();
+  } else if (curvy && bottomStyle === 'skirt') {
+    legs = CURVY_SKIRT.slice();
   } else {
     legs = (LEGS[gender][bottomStyle] || LEGS[gender].pants).slice();
   }
@@ -806,7 +847,7 @@ function makeSprite(cfg, dir, opts) {
   const key = [dir, gender, cfg.face, cfg.eyes, cfg.eye_color, cfg.nose, cfg.lips,
     cfg.skin_tone, cfg.hair_style, cfg.hair_color, cfg.top_style, cfg.body_color,
     cfg.bottom_style, cfg.accent_color, cfg.shoe_color, cfg.accessory,
-    seated ? 'sit' : 'stand'].join('|');
+    cfg.figure || '', seated ? 'sit' : 'stand'].join('|');
   let cv = spriteCache.get(key);
   if (cv) return cv;
   cv = document.createElement('canvas');
@@ -858,6 +899,7 @@ const API = {
   makeSprite, spriteCache, SPR_W, SPR_H, PX,
   FACE_PROFILES, SIDE_BASE, EYE_PATTERNS, NOSE_PATTERNS, LIP_PATTERNS,
   HAIR_DOWN, HAIR_UP, HAIR_SIDE, TORSO_TEMPLATES, TANK_TEMPLATES,
+  CURVY_TEMPLATES, CURVY_SIDE, CURVY_SKIRT,
   SIDE_TORSO, SIDE_TANK, LEGS, SIDE_LEGS, SEATED_LEGS, SEATED_SIDE_LEGS, ACCESSORY_COLORS,
 };
 if (typeof window !== 'undefined') window.SolarionSprites = API;

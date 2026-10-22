@@ -76,6 +76,7 @@ const TEST_FILES = [
   ['test/mixer-cells.test.js', null, 0,    0,     0],   // no server (mixer rework: vm engine + grid + validateMix)
   ['test/audio-glitch.test.js', null, 0,   0,     0],   // no server (v1.3 mixer static fix: offline renders + choke pins)
   ['test/playtest-gate.test.js', null, 0,  0,     0],   // no server (Playtest Gate: checker codec/projection/selftest)
+  ['test/club.test.js',      50700, 20,    0,     0],   // 50700 (Club Mirage, v1.4)
 ].map(([file, base, stride, extra, run]) => ({ file, base, stride, extra, run }));
 
 const ALL_TESTS = TEST_FILES.map(t => t.file);
@@ -92,6 +93,7 @@ const CORE_SET = ['test/test.js', 'test/expansion.test.js', 'test/phase9.test.js
 const MAPPING = [
   { match: /^src\/(music|stage)\.js$/,            tests: ['test/music.test.js', 'test/audibility.test.js', 'test/mixer-cells.test.js'], why: 'music/stage engine' },
   { match: /^src\/casino\.js$/,                   tests: ['test/casino.test.js', 'test/vice.test.js'], why: 'casino engine (vice covers the casino bars/hookah)' },
+  { match: /^src\/club\.js$/,                     tests: ['test/club.test.js'], why: 'Club Mirage dancer tips (v1.4)' },
   { match: /^src\/studio\.js$/,                   tests: ['test/studios.test.js', 'test/homes.test.js'], why: 'studios/homes engine' },
   { match: /^src\/appearance\.js$/,               tests: ['test/creation.test.js', 'test/sprites.test.js'], why: 'appearance options feed creation + sprite rendering' },
   { match: /^src\/(game|maps|server|db)\.js$/,    tests: CORE_SET, why: 'core engine/map/server — broad protocol set' },

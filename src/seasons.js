@@ -118,6 +118,18 @@ const SEASONAL = {
       // the pair flanks the new doorstep from its outer tiles.
       ['pumpkin', 59, 39], ['jackolantern', 63, 39],
       ['cobweb', 57, 31],
+      // Club Mirage doorstep (v1.4): the club door sits on its
+      // FRONT (south) face at (9,38), lantern at (8,39) — the pair
+      // flanks the doorstep from its outer tiles, same doctrine.
+      ['pumpkin', 6, 39], ['jackolantern', 12, 39],
+      ['cobweb', 5, 31],
+    ],
+    'club-mirage': [
+      // v1.4: lit pumpkins flanking the foyer doorstep (the door
+      // is at (30,24), 2 wide — the pair stands clear of its
+      // apron), a web in the west stage corner.
+      ['jackolantern', 28, 22], ['jackolantern', 33, 22],
+      ['cobweb', 2, 2],
     ],
     'cinder-mesa': [
       // Flanking the pit mouth of the rebuilt NORTH venue (v1.3.1),
@@ -182,6 +194,11 @@ const SEASONAL = {
       ['holidaylights', 31, 5], ['holidaylights', 46, 5],
       ['wreath', 62, 37],           // casino FRONT face, beside the door (door (61,38), v1.2.2 Item 8)
       ['giftpile', 36, 26],         // by the market-square nook (nook moved south in v1.2.2)
+      ['wreath', 10, 37],           // Club Mirage FRONT face, beside the door (door (9,38), v1.4)
+    ],
+    'club-mirage': [
+      ['wreath', 29, 24],           // beside the door (door (30,24), v1.4)
+      ['holidaylights', 7, 20],     // garland over the bar
     ],
     'cinder-mesa': [
       ['wreath', 29, 37],           // hookah FRONT face, beside the door (door (30,38), v1.2.2 Item 8)

@@ -502,6 +502,24 @@ for (const map of Object.values(MAPS)) {
     }
   }
 
+  // -- club spots (v1.4, Club Mirage): the bar's patron spot and
+  // every dancer's platform spot must be standable floor, and
+  // every stage must carry exactly one named dancer fixture.
+  if (map.club) {
+    if (map.club.bar && collides(map, map.club.bar.x, map.club.bar.y, 6)) {
+      err(map.id, 'club bar patron spot is embedded in a solid tile');
+    }
+    if (!map.club.bartender || !map.club.bartender.name) err(map.id, 'club has no named bartender');
+    for (const stg of map.club.stages || []) {
+      const d = stg.dancer;
+      if (!d || !d.name) { err(map.id, `club stage ${stg.id} has no dancer fixture`); continue; }
+      if (collides(map, d.x, d.y, 6)) err(map.id, `dancer ${d.name} (${stg.id}) is embedded in a solid tile`);
+      if (!(d.x >= stg.x && d.x < stg.x + stg.w && d.y >= stg.y && d.y < stg.y + stg.h)) {
+        err(map.id, `dancer ${d.name} stands outside her stage rect (${stg.id})`);
+      }
+    }
+  }
+
   // -- v1.3.1 (chair-spacing pass) laws
   // SEAT SPACING BANDS (Items 1/7/8): chairs near a round table
   // belong to its group and must sit in the 46-58px band from the
@@ -556,6 +574,11 @@ for (const map of Object.values(MAPS)) {
     const n = m ? Number(m[1]) : -1;
     if (n >= 101) return 'audience grid';
     if (map.casino) return 'casino floor';
+    if (map.club && s.kind === 'stool') {
+      // v1.4: the club's bar stools belong to the bar arrangement.
+      const b = map.club.bar;
+      if (b && Math.max(Math.abs(tileOfPx(s.x) - tileOfPx(b.x)), Math.abs(tileOfPx(s.y) - tileOfPx(b.y))) <= 3) return 'club bar';
+    }
     if (s.kind === 'hookah') return 'hookah station';
     if (s.kind === 'towel') {
       const near = (map.props || []).some(pr => pr.kind === 'umbrella'
@@ -600,6 +623,14 @@ for (const map of Object.values(MAPS)) {
     }
     if (map.stage) {
       for (const [tx, ty] of [...rectTiles(map.stage), ...rectTiles(map.stage.pit)]) featureTiles.add(`${tx},${ty}`);
+    }
+    if (map.club) {
+      // v1.4: the club's stages and bar are anchor features too.
+      for (const stg of map.club.stages || []) {
+        for (const [tx, ty] of rectTiles(stg)) featureTiles.add(`${tx},${ty}`);
+      }
+      if (map.club.bar) featureTiles.add(`${tileOfPx(map.club.bar.x)},${tileOfPx(map.club.bar.y)}`);
+      if (map.club.bartender) featureTiles.add(`${tileOfPx(map.club.bartender.x)},${tileOfPx(map.club.bartender.y)}`);
     }
     const allProps = layers.flatMap(l => l.props.map(pr => ({ ...pr, layer: l.label })));
     for (const pr of allProps) if (HERO_KINDS.has(pr.kind)) featureTiles.add(`${tileOfPx(pr.x)},${tileOfPx(pr.y)}`);

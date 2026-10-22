@@ -135,6 +135,24 @@
         <span id="viceInfo" class="pkDim">Stand at the bar and order.</span>
       </div>
     </div>
+    <!-- club tray (v1.4, Club Mirage): the bar button + the dancer
+         tip box. Shown only inside the club (the client toggles it
+         per frame off mapDef.club). Tips go to the nearest dancer —
+         stand at her stage, pick an amount. -->
+    <div id="clubTray" class="hidden">
+      <div class="traySection">
+        <button id="clubDrinkBtn">🍸 Drink — 5z</button>
+        <span id="clubViceInfo" class="pkDim">Mira pours at the bar — first drink of the day is on the house.</span>
+      </div>
+      <div class="traySection">
+        <span class="pkDim">💃 Tip a dancer:</span>
+        <button class="clubTipBtn" data-amt="5">5z</button>
+        <button class="clubTipBtn" data-amt="10">10z</button>
+        <button class="clubTipBtn" data-amt="25">25z</button>
+        <button class="clubTipBtn" data-amt="50">50z</button>
+        <button class="clubTipBtn" data-amt="100">100z</button>
+      </div>
+    </div>
     <!-- slot machine GUI (v1.2 Item H): the seated player's own
          cabinet window — big reels that tumble and settle on the
          server's symbols, left to right. The in-world cabinet glass

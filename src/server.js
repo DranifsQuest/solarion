@@ -57,6 +57,7 @@ const { seasonAt, SEASONS } = require('./seasons');
 const { q } = require('./db');
 const music = require('./music');
 const { StageManager } = require('./stage');
+const { ClubSystem } = require('./club');
 const casinoModule = require('./casino');
 const { CasinoSystem } = casinoModule;
 const studioModule = require('./studio');
@@ -98,6 +99,10 @@ for (const [mapId, map] of Object.entries(MAPS)) {
 // defs, so future cities with a lounge get tables for free.
 const casino = new CasinoSystem(game);
 casino.initFromMaps(MAPS);
+// v1.4: Club Mirage — dancer tips (the drinks ride game.js's
+// shared bar/vice path; the club def comes from the map data).
+const club = new ClubSystem(game);
+club.initFromMaps(MAPS);
 // Phase 4: private studios — instanced scenes (see studio.js). No
 // per-studio registration anywhere: game.js resolves `studio:<id>`
 // scene ids on demand, and this system only handles studio messages.
@@ -387,6 +392,24 @@ if (TEST_MODE) {
         units: [{ stand: { x: spot.x, y: spot.y, dir: faceToward(spot.x, spot.y, map.tiles.w * TS / 2, map.tiles.h * TS / 2), at: 'gateway', label: gw.label } }],
       });
     }
+    if (map.club) {
+      // v1.4 (Club Mirage): a ringside shot — two standers at the
+      // stage fronts facing the dancers, one at the bar facing the
+      // bartender. The payload builder flags this shot so the
+      // capture catches a dancer-flourish mid-animation (the tip
+      // interaction pose).
+      const units = [];
+      for (const stg of map.club.stages.slice(0, 2)) {
+        const spot = previewSpot(map, tileOf(stg.x + stg.w / 2), tileOf(stg.y + stg.h) + 2);
+        units.push({ stand: { x: spot.x, y: spot.y, dir: 'up', at: 'clubstage', label: stg.dancer.name } });
+      }
+      const b = map.club.bar;
+      if (b) {
+        const spot = previewSpot(map, tileOf(b.x), tileOf(b.y));
+        units.push({ stand: { x: spot.x, y: spot.y, dir: 'down', at: 'clubbar', label: 'The Bar' } });
+      }
+      if (units.length) shots.push({ id: 'club-stage', units });
+    }
     if (map.stage && aud.length) {
       const st = map.stage;
       const pcx = st.pit.x + st.pit.w / 2, pcy = st.pit.y + st.pit.h / 2;
@@ -526,6 +549,12 @@ if (TEST_MODE) {
       });
       you = players[0];
       playtest = { shot: shot.id, map: map.id, camera: { x: units[0].x, y: units[0].y }, actors };
+      // v1.4: the club's ringside shot poses a tip — the client
+      // starts the first dancer's flourish on hello (this field
+      // exists only in test-mode preview payloads, never live).
+      if (shot.id === 'club-stage' && map.club && map.club.stages[0]) {
+        playtest.clubFlourish = { dancer: map.club.stages[0].dancer.id };
+      }
     }
     res.json({
       type: 'hello', you, map: clientMap(map, season), players, season,
@@ -778,6 +807,11 @@ wss.on('connection', (ws, req) => {
         break;
       case 'tip':
         stages.handleTip(p, msg.amount);
+        break;
+      case 'tip-dancer':
+        // v1.4: Club Mirage — tip a dancer (amount presets and the
+        // dancer id are validated server-side in club.js).
+        club.handle(p, msg);
         break;
       case 'stage-join':
         stages.handleJoin(p, msg.mixId);

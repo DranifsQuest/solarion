@@ -134,7 +134,7 @@ const Sfx = {
     let kind = null;
     if (isCasino) kind = 'casino';
     else if (mapId === 'solstice-bay') kind = 'waves';
-    else if (mapId === 'gateway-cafe' || mapId === 'hookah-lounge') kind = 'warm';
+    else if (mapId === 'gateway-cafe' || mapId === 'hookah-lounge' || mapId === 'club-mirage') kind = 'warm';
     else if (mapId && mapId.startsWith('studio:')) kind = 'room';
     else if (mapId && mapId !== 'the-gateway') kind = 'air';
     this._wantAmbience = kind;

@@ -783,7 +783,9 @@ class Game {
       return;
     }
     const map = this.sceneFor(p.mapId);
-    const bar = map && map.casino && map.casino.bar;
+    // A bar is a bar: the two casino bars and Club Mirage's bar
+    // (v1.4) all pour from the same vice model + daily ritual.
+    const bar = map && ((map.casino && map.casino.bar) || (map.club && map.club.bar));
     if (!bar) {
       this.send(p, { type: 'notice', text: 'There is no bar here.' });
       return;

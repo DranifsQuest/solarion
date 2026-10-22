@@ -217,6 +217,12 @@ html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; ba
   display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; align-items: stretch;
   max-width: min(1060px, 96vw); z-index: 5; }
 #casinoTray.hidden { display: none; }
+/* v1.4: Club Mirage's tray — same compact bottom-centre dock,
+   shown only inside the club. */
+#clubTray { position: absolute; left: 50%; transform: translateX(-50%); bottom: 12px;
+  display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; align-items: stretch;
+  max-width: min(1060px, 96vw); z-index: 5; }
+#clubTray.hidden { display: none; }
 .traySection { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: center;
   background: rgba(24,14,10,.93); border: 2px solid #8a5a2b; border-radius: 12px; padding: 7px 10px;
   box-shadow: 0 8px 24px rgba(0,0,0,.55); color: #ffe9c9; font-size: 13px; }

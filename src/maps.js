@@ -632,6 +632,133 @@ function buildNeonCasino() {
 }
 
 // ------------------------------------------------------------------
+// CLUB MIRAGE — the go-go bar off Neon District (v1.4, Zan's spec
+// 2026-10-21). A SEPARATE building from the Neon Casino, with its
+// own facade on the district's SW block. Inside, built BIG from the
+// start (40x26 — the scale rule: "we arent paying for real estate
+// here"):
+//   - NORTH: three little stages against the back wall, each with
+//     a dance pole and a dancer NPC — a platform FIXTURE like the
+//     bartenders (she dances on loop; she never wanders).
+//   - In front of the stages: six small tables in one even row,
+//     two chairs apiece in the 46-58px band (validator law), the
+//     south chairs facing the stages over their tables.
+//   - CENTRE-SOUTH: an open dance floor (club checker tiles).
+//   - SOUTH-WEST: the bar — counter, bartender fixture behind it,
+//     two stools; drinks are 5z from the shared vice model.
+//   - SOUTH-EAST: the 2-wide door back to Neon District, foyer
+//     kept clear as congregation space (door/landing law).
+// Tipping a dancer is a pure z SINK (she's an NPC — nobody is
+// credited): src/club.js owns the interaction.
+// ------------------------------------------------------------------
+function clubDancer(n, tx, name, look) {
+  return {
+    id: `club-mirage-dancer-${n}`,
+    name,
+    x: px(tx) + TILE * 3, y: cy(2),
+    look,
+  };
+}
+function clubStage(n, tx, dancer) {
+  return {
+    id: `club-mirage-stage-${n}`,
+    x: px(tx), y: px(1), w: TILE * 6, h: TILE * 3,
+    pole: { x: px(tx) + TILE * 3, y: cy(2) },
+    dancer,
+  };
+}
+
+function buildClubMirage() {
+  const W = 40, H = 26;
+  const g = makeGrid(W, H, '.');
+  setBorder(g, W, H, '#');
+  setRect(g, 14, 13, 12, 8, 'C');  // the dance floor (club checker)
+  setRect(g, 3, 23, 10, 1, '#');   // the bar counter (south-west)
+  const id = 'club-mirage';
+  // Six stage tables in one even row, two chairs apiece pulled OUT
+  // to the 50px band (v1.3.1 Item 1): the south chair faces the
+  // stage over the table ('up'), the north chair faces in ('down').
+  const tableChairs = [];
+  for (const tx of [3, 10, 16, 23, 29, 36]) {
+    tableChairs.push(
+      [tx, 9 + 1.5625, 'up'], [tx, 9 - 1.5625, 'down'],
+    );
+  }
+  // The dancers (fixtures): all blonde, curvier figure (the
+  // sprites carry a `figure: 'curvy'` variant drawn only for
+  // these looks), club wear = tank + skirt.
+  const dancers = [
+    clubDancer(1, 4, 'Roxy', {
+      gender: 'F', face: 'heart', eyes: 'lash', eye_color: '#1e4d8f', nose: 'tiny', lips: 'red',
+      skin_tone: '#f1c27d', hair_style: 'long', hair_color: '#e8c88a', top_style: 'tank',
+      body_color: '#ff2e88', bottom_style: 'skirt', accent_color: '#1c0a24', shoe_color: '#e8e4da',
+      accessory: 'none', figure: 'curvy',
+    }),
+    clubDancer(2, 17, 'Vega', {
+      gender: 'F', face: 'classic', eyes: 'winged', eye_color: '#2e5e1e', nose: 'button', lips: 'pink',
+      skin_tone: '#ffcd94', hair_style: 'ponytail', hair_color: '#f0d49a', top_style: 'tank',
+      body_color: '#37b6e0', bottom_style: 'skirt', accent_color: '#241533', shoe_color: '#ffd23f',
+      accessory: 'none', figure: 'curvy',
+    }),
+    clubDancer(3, 30, 'Lola', {
+      gender: 'F', face: 'soft', eyes: 'double-lash', eye_color: '#6e2a8f', nose: 'small', lips: 'plum',
+      skin_tone: '#ffe0bd', hair_style: 'bob', hair_color: '#e5b95f', top_style: 'tank',
+      body_color: '#c7248f', bottom_style: 'skirt', accent_color: '#2b1030', shoe_color: '#8f1e3a',
+      accessory: 'none', figure: 'curvy',
+    }),
+  ];
+  return {
+    id, name: 'Club Mirage', tiles: gridOf(g), tileSize: TILE,
+    floor: '#34102c', floorAlt: '#3d1533', wall: '#1c0716',
+    spawn: { x: cx(30), y: cy(21) },
+    gateways: [],
+    doors: [
+      door(30, 24, 'neon-district', { x: cx(9), y: cy(39) }, 'Neon District', 2),
+    ],
+    props: [
+      prop('lantern', 28, 23), prop('lantern', 33, 23),
+      prop('rug', 30, 20),
+      // The six stage tables (chairs are seats, in the band).
+      prop('table', 3, 9), prop('table', 10, 9), prop('table', 16, 9),
+      prop('table', 23, 9), prop('table', 29, 9), prop('table', 36, 9),
+      // The bar's warm dressing: string lights over the counter,
+      // a lamp at each end of it.
+      prop('stringlights', 7, 21),
+      prop('lamp', 3, 21), prop('lamp', 12, 21),
+    ],
+    areas: [
+      area('The Stages', 0, 0, 40, 12),
+      area('The Dance Floor', 12, 12, 18, 12),
+      area('The Bar', 1, 19, 14, 6),
+    ],
+    seats: [
+      ...tableChairs.map(([x, y, dir], i) => seat(id, i + 1, x, y, dir, 'chair')),
+      // Bar stools face the counter (south), flanking the patron
+      // spot — the casino bars' exact pattern.
+      seat(id, 13, 5, 22, 'down', 'stool'),
+      seat(id, 14, 9, 22, 'down', 'stool'),
+    ],
+    club: {
+      stages: [
+        clubStage(1, 4, dancers[0]),
+        clubStage(2, 17, dancers[1]),
+        clubStage(3, 30, dancers[2]),
+      ],
+      bar: { x: cx(7), y: cy(22) }, // patron spot in front of the counter
+      bartender: {
+        x: cx(7), y: cy(24), name: 'Mira',
+        look: {
+          gender: 'F', face: 'sharp', eyes: 'lash', eye_color: '#20242c', nose: 'tiny', lips: 'bold',
+          skin_tone: '#e0ac69', hair_style: 'bun', hair_color: '#191410', top_style: 'button-up',
+          body_color: '#2b1030', bottom_style: 'pants', accent_color: '#17102b', shoe_color: '#23262b',
+          accessory: 'none',
+        },
+      },
+    },
+  };
+}
+
+// ------------------------------------------------------------------
 // HOOKAH LOUNGE — an interior off Cinder Mesa (Phase B amendment).
 // Four hookah stations, two seats each: sit down, then interact to
 // take a puff (5z). The door back is on the south wall.
@@ -727,7 +854,8 @@ function buildNeonDistrict() {
   setRect(g, 24, 30, 10, 8, 's');       // ex-block plaza (S)
   setRect(g, 40, 30, 8, 8, 's');        // ex-block plaza (S)
   setRect(g, 52, 26, 18, 14, 's');      // casino terrace
-  setRect(g, 56, 30, 12, 8, '#');       // the Neon Casino (SE) — the one real building
+  setRect(g, 56, 30, 12, 8, '#');       // the Neon Casino (SE) — a facade now
+  setRect(g, 4, 30, 12, 8, '#');        // Club Mirage (SW) — its own building (v1.4)
   g[5][33] = '|'; g[5][44] = '|'; // stage speakers (front corners; stage shifted +1 in v1.2 for Item B alignment)
   // v1.2 (Items I/Q): stall posts ONLY where a stall prop stands.
   // The old list planted bare cubes at (41,18)/(30,26) and one at
@@ -752,16 +880,22 @@ function buildNeonDistrict() {
     gateways: [arch(35, 43, 'the-gateway', 'The Gateway', 'S', 40)],
     buildings: [
       building(56, 30, 12, 8, 'Neon Casino', 'neon'),
+      building(4, 30, 12, 8, 'Club Mirage', 'club'),
     ],
     doors: [
       // The SE block (tiles 56..67, 30..37) is the Neon Casino.
       // v1.2.2 (Item 8 — doors front-facing): its door moves from
       // the back (north) face to the FRONT (south) face.
       door(61, 38, 'neon-casino', { x: cx(17), y: cy(20) }, 'Neon Casino'),
+      // v1.4: Club Mirage — the SW block (tiles 4..15, 30..37),
+      // door on its FRONT (south) face, same pattern as the casino.
+      door(9, 38, 'club-mirage', { x: cx(30), y: cy(21) }, 'Club Mirage'),
     ],
     props: [
       // v1.2.2 (Item 8): the doorstep lantern moved with the door.
       prop('lantern', 60, 39),
+      // v1.4: a lantern flanks the Club Mirage doorstep too.
+      prop('lantern', 8, 39),
       // The heroes: twin NEON signs flanking the STAGE ends (v1.2
       // Item I — the old single sign stood mid-seating on a cube).
       prop('neonsign', 32, 4), prop('neonsign', 45, 4),
@@ -1038,7 +1172,7 @@ function buildVerdantHollow() {
 const MAPS = {};
 for (const def of [
   buildGateway(), buildCafe(), buildSolsticeBay(), buildCasinoLounge(),
-  buildNeonDistrict(), buildNeonCasino(), buildCinderMesa(), buildHookahLounge(),
+  buildNeonDistrict(), buildNeonCasino(), buildClubMirage(), buildCinderMesa(), buildHookahLounge(),
   buildFrosthaven(), buildVerdantHollow(),
 ]) {
   MAPS[def.id] = def;
@@ -1151,6 +1285,15 @@ function clientMap(map, seasonOverride) {
       slots: map.casino.slots.map(s => ({ id: s.id, x: s.x, y: s.y, ix: s.ix, iy: s.iy })),
       bar: map.casino.bar || null,
       bartender: map.casino.bartender || null,
+    } : null,
+    club: map.club ? {
+      stages: map.club.stages.map(s => ({
+        id: s.id, x: s.x, y: s.y, w: s.w, h: s.h,
+        pole: { x: s.pole.x, y: s.pole.y },
+        dancer: { id: s.dancer.id, name: s.dancer.name, x: s.dancer.x, y: s.dancer.y, look: s.dancer.look },
+      })),
+      bar: map.club.bar || null,
+      bartender: map.club.bartender || null,
     } : null,
   };
 }
