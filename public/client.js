@@ -771,10 +771,10 @@ function drawBuilding(b) {
   // a dark board, a buzzing pink border, the name in pink/cyan.
   if (b.style === 'club') {
     let scx = (SW[0] + SE[0]) / 2, scy = (SW[1] + SE[1]) / 2 - H * 0.58;
-    const dr = (mapDef.doors || []).find(d2 => d2.target === 'club-mirage');
+    const dr = (mapDef.doors || []).find(d2 => d2.label === 'Club Mirage'); // clientMap strips door.target — label is the key that survives
     if (dr) {
       const [dcx, dcy] = proj(dr.x + dr.w / 2, dr.y + dr.h / 2);
-      scx = dcx; scy = dcy - 47 - 6 - 17; // leaf top, a breath, half the board
+      scx = dcx; scy = dcy - 47 - 34 - 17; // leaf top + clear air (the leaf paints over the board if they touch — parent review 2026-10-22), half the board
     }
     const flick = Math.sin(Date.now() / 90 + b.tx) > -0.92 ? 1 : 0.35;
     if (darknessNow() > 0.03) { // the sign throws a warm pink pool after dark
