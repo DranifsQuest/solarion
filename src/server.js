@@ -102,6 +102,7 @@ casino.initFromMaps(MAPS);
 // scene ids on demand, and this system only handles studio messages.
 const studios = new StudioSystem(game);
 game.studioSystem = studios; // Phase 10: portal routing (home door / studio door exit)
+game.stageSystem = stages;   // v1.2 (Item A): the sim asks it who owns the stage
 // Phase 9: friends / navigator / profiles (needs studios for home travel).
 const social = new SocialSystem(game, studios);
 // Phase 9: trophy fanfare — the record lands in the performer's home

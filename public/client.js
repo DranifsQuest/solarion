@@ -1689,69 +1689,99 @@ function drawTvScene(channelId, x, y, w, h, t) {
 // and a slatted BACKREST on the side away from its facing — never
 // the old 12px diamond "dot". Warm wood throughout (Phase 10).
 function drawChairAt(x, y, dir) {
-  // v1.1.1 chair art v2 — must read as A CHAIR at play zoom: a TALL
-  // backrest (posts + top rail + slats) rising ~30px above a warm
-  // russet cushion, visible legs, soft ground shadow. The back
-  // stands on the side opposite the sitter's facing.
+  // Chair art v3 (v1.2, Items E/K/P): EVERY facing visibly has a
+  // BACK — drawn in iso-correct order per facing so no facing can
+  // collapse to a bare seat pad (the v2 bug: 'up' backs were drawn
+  // first and swallowed by the cushion drawn over them):
+  //   down (back on the far side): back first, cushion over its base.
+  //   up   (back on the near side): cushion first, then a SOLID
+  //        back panel over the cushion's near edge — the panel you
+  //        see from behind a chair, posts + slats + top rail.
+  //   left/right: a filled ladder panel on the far side, thick
+  //        enough to read at play zoom (v2's hairlines vanished).
+  // Same footprint/anchor as v2 (seat centre at x,y) — seats and
+  // sitters aligned to v2 keep their spots.
   ctx.beginPath(); ctx.ellipse(x, y + 9, 16, 6, 0, 0, Math.PI * 2);
   ctx.fillStyle = 'rgba(0,0,0,.28)'; ctx.fill();
   const FRAME = '#8a5a2b', DARK = '#5a3d1f', SLAT = '#a5713a';
   const CUSH = '#c96f4a', CUSH_D = '#9c4f30';
-  if (dir === 'left' || dir === 'right') {
-    const s = dir === 'left' ? 1 : -1; // facing left -> back on the east side
+  const legs = () => {
     ctx.strokeStyle = DARK; ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.moveTo(x - 10, y + 1); ctx.lineTo(x - 11, y + 9);
-    ctx.moveTo(x + 10, y + 1); ctx.lineTo(x + 11, y + 9);
+    ctx.moveTo(x - 11, y + 2); ctx.lineTo(x - 12, y + 10);
+    ctx.moveTo(x + 11, y + 2); ctx.lineTo(x + 12, y + 10);
     ctx.stroke();
-    diamond(x, y, 30, 12, CUSH_D);
-    diamond(x, y - 2.5, 27, 10, CUSH);
-    // ladder side panel: two posts, two slats, a top rail
-    const bx = x + s * 14;
-    ctx.strokeStyle = FRAME; ctx.lineWidth = 3.4;
+  };
+  const cushion = () => {
+    diamond(x, y, 32, 13, CUSH_D);
+    diamond(x, y - 2.5, 28, 10.5, CUSH);
+  };
+  // A ladder back whose BASE sits at baseY, rising `rise` px. With
+  // panel=true the slat field gets a warm translucent fill first
+  // so the back reads as one solid piece, not floating lines.
+  const ladderBack = (baseY, rise, panel) => {
+    if (panel) {
+      ctx.beginPath();
+      ctx.moveTo(x - 13, baseY); ctx.lineTo(x - 14, baseY - rise);
+      ctx.lineTo(x + 14, baseY - rise); ctx.lineTo(x + 13, baseY);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(138,90,43,.38)'; ctx.fill();
+    }
+    ctx.strokeStyle = FRAME; ctx.lineWidth = 3.6;
+    ctx.beginPath();
+    ctx.moveTo(x - 12, baseY); ctx.lineTo(x - 13, baseY - rise + 5);
+    ctx.moveTo(x + 12, baseY); ctx.lineTo(x + 13, baseY - rise + 5);
+    ctx.stroke();
+    ctx.strokeStyle = SLAT; ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(x - 12.6, baseY - rise * 0.45); ctx.lineTo(x + 12.6, baseY - rise * 0.45);
+    ctx.moveTo(x - 12.9, baseY - rise * 0.72); ctx.lineTo(x + 12.9, baseY - rise * 0.72);
+    ctx.stroke();
+    ctx.fillStyle = FRAME;
+    ctx.fillRect(x - 15, baseY - rise, 30, 6); // top rail
+    ctx.fillStyle = 'rgba(255,220,150,.35)';
+    ctx.fillRect(x - 15, baseY - rise, 30, 2);
+  };
+  if (dir === 'left' || dir === 'right') {
+    const s = dir === 'left' ? 1 : -1; // facing left -> back on the east side
+    legs();
+    cushion();
+    // filled side panel: a quad behind the ladder lines
+    const bx = x + s * 13;
+    ctx.beginPath();
+    ctx.moveTo(bx - s * 4, y + 1); ctx.lineTo(bx - s * 2, y - 27);
+    ctx.lineTo(bx + s * 6, y - 23); ctx.lineTo(bx + s * 5, y + 2);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(138,90,43,.42)'; ctx.fill();
+    ctx.strokeStyle = FRAME; ctx.lineWidth = 3.6;
     ctx.beginPath();
     ctx.moveTo(bx - s * 3, y - 2); ctx.lineTo(bx - s * 1, y - 29);
     ctx.moveTo(bx + s * 4, y + 1); ctx.lineTo(bx + s * 5, y - 25);
     ctx.stroke();
-    ctx.strokeStyle = SLAT; ctx.lineWidth = 2.6;
+    ctx.strokeStyle = SLAT; ctx.lineWidth = 3;
     for (const t of [0.4, 0.68]) {
       ctx.beginPath();
       ctx.moveTo(bx - s * 3 + s * 2 * t, y - 2 - 27 * t);
       ctx.lineTo(bx + s * 4 + s * 1 * t, y + 1 - 26 * t);
       ctx.stroke();
     }
-    ctx.strokeStyle = FRAME; ctx.lineWidth = 4.4;
+    ctx.strokeStyle = FRAME; ctx.lineWidth = 4.6;
     ctx.beginPath();
     ctx.moveTo(bx - s * 2, y - 30); ctx.lineTo(bx + s * 6, y - 26);
     ctx.stroke();
     return;
   }
-  const s = dir === 'up' ? 1 : -1; // 'down': back up-screen; 'up': back near-side
-  const by = s * 8;
-  // back assembly first — seat and sitter overlap its base
-  ctx.strokeStyle = FRAME; ctx.lineWidth = 3.4;
-  ctx.beginPath();
-  ctx.moveTo(x - 12, y + by); ctx.lineTo(x - 13, y + by - 25);
-  ctx.moveTo(x + 12, y + by); ctx.lineTo(x + 13, y + by - 25);
-  ctx.stroke();
-  ctx.strokeStyle = SLAT; ctx.lineWidth = 2.6;
-  ctx.beginPath();
-  ctx.moveTo(x - 12.6, y + by - 12); ctx.lineTo(x + 12.6, y + by - 12);
-  ctx.moveTo(x - 12.9, y + by - 19); ctx.lineTo(x + 12.9, y + by - 19);
-  ctx.stroke();
-  ctx.fillStyle = FRAME;
-  ctx.fillRect(x - 15, y + by - 30, 30, 6); // top rail
-  ctx.fillStyle = 'rgba(255,220,150,.35)';
-  ctx.fillRect(x - 15, y + by - 30, 30, 2);
-  // legs
-  ctx.strokeStyle = DARK; ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.moveTo(x - 11, y + 2); ctx.lineTo(x - 12, y + 10);
-  ctx.moveTo(x + 11, y + 2); ctx.lineTo(x + 12, y + 10);
-  ctx.stroke();
-  // seat cushion
-  diamond(x, y, 32, 13, CUSH_D);
-  diamond(x, y - 2.5, 28, 10.5, CUSH);
+  if (dir === 'up') {
+    // Back on the NEAR side: cushion first, panel over its edge.
+    legs();
+    cushion();
+    ladderBack(y + 7, 26, true);
+    return;
+  }
+  // 'down' (and default): back on the far side, cushion over base.
+  ladderBack(y - 6, 26, true);
+  legs();
+  cushion();
 }
 
 /** A built-in fishing-pole stand at a pond edge: crossed sticks, a
@@ -2121,15 +2151,15 @@ function draw() {
       const [tx2, ty2] = proj(t.x, t.y);
       for (const ch2 of t.chairs) {
         const [chx, chy] = proj(ch2.x, ch2.y);
-        // v1.1: poker chairs read as chairs — a backrest crescent on
-        // the side away from the table + a plush cushion. (Art only:
-        // table geometry and seat positions are untouched.)
-        const away = Math.atan2(chy - ty2, chx - tx2);
-        ctx.beginPath(); ctx.ellipse(chx + Math.cos(away) * 9, chy + Math.sin(away) * 5 - 2, 13, 6.5, 0, 0, Math.PI * 2);
-        ctx.fillStyle = '#571a24'; ctx.fill();
-        ctx.beginPath(); ctx.ellipse(chx, chy, 15, 8, 0, 0, Math.PI * 2);
-        ctx.fillStyle = '#6e1f2a'; ctx.fill();
-        ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = 1; ctx.stroke();
+        // v1.2 (Item E/K): poker chairs are the SHARED v3 chair —
+        // a real chair with a back, ringed at the unchanged seat
+        // positions. Facing derives from the chair's side of the
+        // table (the sitter faces the felt): north chair faces
+        // down-screen, south chair up, east chair left, west right.
+        const face = Math.abs(chx - tx2) > Math.abs(chy - ty2)
+          ? (chx > tx2 ? 'left' : 'right')
+          : (chy > ty2 ? 'up' : 'down');
+        drawChairAt(chx, chy, face);
       }
       ctx.beginPath(); ctx.ellipse(tx2, ty2, 44, 23, 0, 0, Math.PI * 2);
       ctx.fillStyle = '#7a5a2b'; ctx.fill();
@@ -2255,11 +2285,32 @@ function draw() {
   for (const s of mapDef.seats || []) {
     const [sx3, sy3] = proj(s.x, s.y);
     if (s.kind === 'bench') {
+      // v1.2 (Items K/Q): a bench has a BACK — slatted, on the side
+      // opposite the sitter's facing (drawn before the seat when
+      // it's on the far side, over the seat's edge when near).
+      const bk = { down: [0, -7], up: [0, 7], left: [10, 2], right: [-10, 2] }[s.dir] || [0, -7];
+      const benchBack = () => {
+        ctx.strokeStyle = '#5a3d1f'; ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(sx3 + bk[0] - 11, sy3 + bk[1] + 3); ctx.lineTo(sx3 + bk[0] - 11, sy3 + bk[1] - 8);
+        ctx.moveTo(sx3 + bk[0] + 11, sy3 + bk[1] + 3); ctx.lineTo(sx3 + bk[0] + 11, sy3 + bk[1] - 8);
+        ctx.stroke();
+        ctx.strokeStyle = '#a5713a'; ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(sx3 + bk[0] - 12, sy3 + bk[1] - 4); ctx.lineTo(sx3 + bk[0] + 12, sy3 + bk[1] - 4);
+        ctx.moveTo(sx3 + bk[0] - 12, sy3 + bk[1] - 8); ctx.lineTo(sx3 + bk[0] + 12, sy3 + bk[1] - 8);
+        ctx.stroke();
+      };
+      if (s.dir !== 'up') benchBack();
       diamond(sx3, sy3, 30, 10, '#8a5a2b');
-      diamond(sx3, sy3 - 5, 30, 6, '#a5713a');
+      diamond(sx3, sy3 - 4, 30, 6, '#a5713a');
+      if (s.dir === 'up') benchBack();
     } else if (s.kind === 'sofa') {
       diamond(sx3, sy3, 34, 13, '#7a3b4f');
       diamond(sx3, sy3 - 5, 34, 9, '#93536b');
+      // v1.2: a hint of backrest crest on the far side per facing.
+      const sb = { down: [0, -9], up: [0, 6], left: [12, 0], right: [-12, 0] }[s.dir] || [0, -9];
+      diamond(sx3 + sb[0], sy3 + sb[1], 30, 8, '#a8667e');
     } else if (s.kind === 'cafe') {
       // Lane C booth seating, v1.1 scale: the table sits at the TRUE
       // projected midpoint between the facing pair (the old hand-tuned

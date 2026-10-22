@@ -485,6 +485,19 @@ class Game {
           this.send(p, { type: 'notice', text: 'You wander off — the line comes with you. Cast cancelled.' });
         }
       }
+      // v1.2 (Item A): stage lockout — while a set is live, the
+      // platform is the performer's alone. Anyone else found ON it
+      // (standing there when the set started, teleported, lagged
+      // through) is stepped off into the pit, even standing still.
+      const lockRect = this.stageLockRect(map, p);
+      if (lockRect && p.x >= lockRect.x && p.x < lockRect.x + lockRect.w &&
+          p.y >= lockRect.y && p.y < lockRect.y + lockRect.h) {
+        const pit = map.stage.pit;
+        if (pit) { p.x = pit.x + pit.w / 2; p.y = pit.y + pit.h / 2; }
+        else { p.y = lockRect.y + lockRect.h + PLAYER_RADIUS + 2; }
+        p.path = null;
+        this.savePosition(p);
+      }
       let dx = 0, dy = 0;
       if (p.keys.left) dx -= 1;
       if (p.keys.right) dx += 1;
@@ -528,11 +541,18 @@ class Game {
         dx = rx; dy = ry;
       }
 
-      // Axis-separated movement → wall sliding for free.
+      // Axis-separated movement → wall sliding for free. v1.2
+      // (Item A): for a non-performer during a live set, the stage
+      // platform additionally acts solid — the step is refused if
+      // the player's centre would enter the platform rect grown
+      // by the body radius (same feel as a wall).
+      const inLock = (x, y) => Boolean(lockRect) &&
+        x > lockRect.x - PLAYER_RADIUS && x < lockRect.x + lockRect.w + PLAYER_RADIUS &&
+        y > lockRect.y - PLAYER_RADIUS && y < lockRect.y + lockRect.h + PLAYER_RADIUS;
       const nx = p.x + dx;
-      if (!collides(map, nx, p.y, PLAYER_RADIUS)) p.x = nx;
+      if (!collides(map, nx, p.y, PLAYER_RADIUS) && !inLock(nx, p.y)) p.x = nx;
       const ny = p.y + dy;
-      if (!collides(map, p.x, ny, PLAYER_RADIUS)) p.y = ny;
+      if (!collides(map, p.x, ny, PLAYER_RADIUS) && !inLock(p.x, ny)) p.y = ny;
 
       // v1.1 facing (Zan: "walk right, face right"): dir names the
       // SCREEN direction of travel. dx/dy here are world axes; the
@@ -652,6 +672,23 @@ class Game {
     });
     this.sendVice(p);
     if (this.onMapEntered) this.onMapEntered(p);
+  }
+
+  // ---------------------------------------------------------- stage lockout
+
+  /**
+   * v1.2 (Item A): the stage-platform rect when it is LOCKED for
+   * this player — a performance is live on this map's stage and
+   * the player is not the performer. Null when the platform is
+   * open (between sets, other maps, or the performer themself).
+   * Wired from server.js via this.stageSystem (the StageManager).
+   */
+  stageLockRect(map, p) {
+    if (!map || !map.stage || !this.stageSystem) return null;
+    const st = this.stageSystem.stages.get(map.id);
+    if (!st || !st.current) return null;
+    if (st.current.performerId === p.userId) return null;
+    return map.stage;
   }
 
   // ---------------------------------------------------------- sitting

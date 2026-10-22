@@ -372,3 +372,66 @@ test('stage v1.1: tip drop box moves z atomically; self/ghost/invalid tips refus
   assert.equal(perf.client.msgs.filter(m => m.type === 'notice' && /tipped you/.test(m.text)).length, 1, 'no phantom second tip landed');
   perf.client.ws.close(); fan.client.ws.close();
 });
+
+test('stage lockout (Item A): platform is the performer\'s alone mid-set, open between sets', { timeout: 90000 }, async () => {
+  const a = await makeUser('lock_perf');
+  const b = await makeUser('lock_fan');
+  const mixA = await saveMix(a, 1, SHORT_MIX);
+  await prepCd(a, mixA.id);
+  await toBay(a);
+  await toBay(b);
+  await sleep(300);
+
+  // Bay stage rect (tiles 33..42 x 6..8) and pit (rows 9..11) in px.
+  const STAGE = { x0: 1056, x1: 1376, y0: 192, y1: 288 };
+  const PIT = { x0: 1056, x1: 1376, y0: 288, y1: 384 };
+  const posOf = (u, who) => {
+    const s = u.client.msgs.filter(m => m.type === 'snapshot').pop();
+    const p = s && s.players.find(q => q.id === who);
+    return p ? { x: p.x, y: p.y } : null;
+  };
+
+  a.client.send({ type: 'stage-join', mixId: mixA.id });
+  await waitFor(() => a.client.msgs.filter(m => m.type === 'performance-start').pop(), 5000, 'set started');
+
+  // Bystander in the pit holds NORTH for 1.6s: walks up to the
+  // platform edge and no further — never inside the stage rect.
+  b.client.send({ type: 'debug-teleport', x: 1216, y: 336 });
+  await sleep(250);
+  b.client.send({ type: 'input', keys: { up: true } });
+  await sleep(1600);
+  b.client.send({ type: 'input', keys: {} });
+  const bPos = await waitFor(() => posOf(b, b.id), 5000, 'B position sampled');
+  assert.ok(bPos.y < 330, `B walked toward the stage (y=${bPos.y})`);
+  assert.ok(bPos.y >= STAGE.y1 - 4, `B never entered the platform (y=${bPos.y} >= ${STAGE.y1})`);
+  assert.ok(!(bPos.x > STAGE.x0 && bPos.x < STAGE.x1 && bPos.y > STAGE.y0 && bPos.y < STAGE.y1), 'B outside the stage rect');
+
+  // Teleported onto the platform mid-set: swept into the pit.
+  b.client.send({ type: 'debug-teleport', x: 1216, y: 240 });
+  const swept = await waitFor(() => {
+    const p = posOf(b, b.id);
+    return p && p.x >= PIT.x0 && p.x <= PIT.x1 && p.y >= PIT.y0 && p.y <= PIT.y1 ? p : null;
+  }, 5000, 'B stepped off into the pit');
+  assert.ok(swept, 'non-performer on the platform is relocated to the pit');
+
+  // The performer moves freely ON the platform (and stays on it).
+  const aBefore = await waitFor(() => posOf(a, a.id), 5000, 'A position sampled');
+  a.client.send({ type: 'input', keys: { right: true } });
+  await sleep(700);
+  a.client.send({ type: 'input', keys: {} });
+  const aAfter = await waitFor(() => posOf(a, a.id), 5000, 'A moved');
+  assert.ok(aAfter.x > aBefore.x + 10, `performer walks the platform (${aBefore.x} -> ${aAfter.x})`);
+  assert.ok(aAfter.x >= STAGE.x0 && aAfter.x <= STAGE.x1 && aAfter.y >= STAGE.y0 && aAfter.y <= STAGE.y1,
+    'performer stays on the platform');
+
+  // Set ends (3s mix + 10s grace): the lock releases and the
+  // bystander can step up onto the platform.
+  await waitFor(() => b.client.msgs.filter(m => m.type === 'performance-end').pop(), 30000, 'set ended');
+  b.client.send({ type: 'input', keys: { up: true } });
+  await sleep(1500);
+  b.client.send({ type: 'input', keys: {} });
+  const bUp = await waitFor(() => posOf(b, b.id), 5000, 'B position after release');
+  assert.ok(bUp.y < STAGE.y1, `after the set, B steps onto the platform (y=${bUp.y})`);
+
+  a.client.ws.close(); b.client.ws.close();
+});
