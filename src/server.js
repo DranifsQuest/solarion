@@ -324,6 +324,17 @@ if (TEST_MODE) {
     };
     pushGroup('table', seats.filter(s => s.kind === 'chair' && tableNear(s)), 4);
     pushGroup('hearth', seats.filter(s => (s.kind === 'chair' || s.kind === 'sofa') && nearHearth(s)), 3);
+    if (map.casino) {
+      // v1.4.1 (seat audit): the bar stools get their own posed
+      // group, claimed BEFORE the generic 'stool' group below mixes
+      // them in with the slot stools — the bar (the "chairs ON the
+      // bar" exhibit) was never framed on its own. The data-space
+      // SEAT FOOTPRINT LAW is what catches a stool on its counter;
+      // this shot exists so a human signing the contact sheet SEES
+      // the bar stools seated, at the counter, every run.
+      const slotSeatIds = new Set(map.casino.slots.map(sl => sl.seatId));
+      pushGroup('bar', seats.filter(s => s.kind === 'stool' && !slotSeatIds.has(s.id)), 4);
+    }
     for (const kind of ['chair', 'stool', 'sofa', 'bench', 'cafe', 'hookah']) {
       pushGroup(kind, seats.filter(s => s.kind === kind), 4);
     }

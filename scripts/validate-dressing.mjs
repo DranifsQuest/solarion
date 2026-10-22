@@ -60,8 +60,19 @@
  *     rule, whose 'right' rows aimed ~90° off the stage in Neon.
  *   - SEAT SPACING BANDS (v1.3.1, Items 1/7/8): table-group chairs
  *     sit 46-58px from their table's centre; poker chairs 55-66px
- *     from their table's centre; a slot stool's cushion may not
- *     touch its cabinet's screen footprint (nor float away).
+ *     from their table's centre.
+ *   - SEAT FOOTPRINT LAW (v1.4.1, the seat audit): judged in the
+ *     client's TRUE screen geometry (positions scale by ZOOM
+ *     0.72, furniture art does not — the v1.3.1 slot test modelled
+ *     the cushion at half size and passed stools that painted
+ *     over their cabinets). A slot stool's whole art bbox must
+ *     clear its cabinet's screen rect (and not float); a poker
+ *     cushion centre stays outside the felt ellipse; no chair/
+ *     stool cushion may overlap the raised top face of a '#'/'W'
+ *     tile; bar counters are flat 'B' tiles by construction
+ *     (interior 'W'/'#' counters fail) with every bar stool one
+ *     tile north of its counter; seat kinds are a closed set and
+ *     audience seats are always kind 'chair' (the current art).
  *   - ARRANGEMENT LAW (v1.3.1, Item 5): every seat belongs to a
  *     registered arrangement — table group, hearth arc, audience
  *     grid, casino floor, hookah station, beach towel unit, or an
@@ -92,9 +103,9 @@ const { overlayProps, SEASONAL, SEASONAL_KINDS } = require('../src/seasons');
 
 // The tile alphabet exactly as documented in src/maps.js (header):
 // '#'=solid, '%'=water, '|'=post, 'W'=casino wall, 'T'=tree, 'P'=planter,
-// 'R'=rock (all solid); '.'=ground, 'C'=casino floor, 'b'=boardwalk,
-// 's'=stone, 'p'=path (walkable — see WALKABLE in src/maps.js).
-const KNOWN_CHARS = new Set(['.', '#', '%', '|', 'W', 'C', 'T', 'P', 'R', 'b', 's', 'p']);
+// 'R'=rock, 'B'=bar counter (all solid); '.'=ground, 'C'=casino floor,
+// 'b'=boardwalk, 's'=stone, 'p'=path (walkable — see WALKABLE in maps.js).
+const KNOWN_CHARS = new Set(['.', '#', '%', '|', 'W', 'C', 'T', 'P', 'R', 'b', 's', 'p', 'B']);
 const errors = [];
 const warnings = [];
 const notes = [];
@@ -115,6 +126,39 @@ function rectTiles(r) {
   return out;
 }
 const inRect = (x, y, r) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
+
+// ------------------------------------------------------------------
+// SEAT FOOTPRINT LAW constants (v1.4.1, the seat audit) — the
+// client's TRUE screen geometry, mirrored from public/client.js.
+// The render projects world -> screen with ZOOM 0.72 and then draws
+// furniture art at FIXED screen sizes, so world-space distances
+// systematically understate screen-space overlap (a 52px world gap
+// is 37px on screen). Every constant below is the drawn size:
+//   proj:        client.js `proj` (ZOOM = 0.72)
+//   chair art:   client.js `drawChairAt` — cushion diamonds are
+//                hw=30 (60px wide!), skirt/pad/top union hh=15.5
+//                centred ~+1.75 below the seat point; ladder backs
+//                rise 27-28px on the side away from the facing.
+//   slot cabinet: client.js `drawSlotCabinet` — body ±15 plus the
+//                cheek panel to ±21, 52px above its centre to +2.
+//   wall tile:   drawTile '#'/'W' — top-face diamond at -WALL_H
+//                (20px), hw = TILE*ZOOM = 23.04, hh = 11.52.
+//   bar counter: drawTile 'B' — FLAT (top at -4px): governed by
+//                construction law, not intersection (like tables).
+const projS = (x, y) => [(x - y) * 0.72, (x + y) * 0.36];
+const SEAT_BBOX = {
+  down: { x: [-30, 30], y: [-33, 17] },
+  up: { x: [-30, 30], y: [-20, 17] },
+  left: { x: [-30, 30], y: [-35, 17] },
+  right: { x: [-30, 30], y: [-35, 17] },
+};
+const CABINET_RECT = { x: [-21, 21], y: [-52, 2] };
+const CUSHION_D = { hw: 30, hh: 15.5, dy: 1.75 };
+const WALLTOP_D = { hw: 23.04, hh: 11.52, dy: -20 };
+/** Iso-diamond overlap (L1 in scaled space); <1 means the two
+ * diamonds' interiors intersect. 0.98 leaves a hair of margin. */
+const diamondHit = (ax, ay, ahw, ahh, bx, by, bhw, bhh) =>
+  Math.abs(ax - bx) / (ahw + bhw) + Math.abs(ay - by) / (ahh + bhh) < 0.98;
 
 /** Tile-level BFS over the game's walkable set, from the spawn tile. */
 function reachableTiles(map) {
@@ -543,18 +587,126 @@ for (const map of Object.values(MAPS)) {
         if (d < 55 || d > 66) err(map.id, `poker band: ${t.id} chair ${c.dir} sits ${d.toFixed(0)}px from the table centre — poker chairs keep a 55-66px band`);
       }
     }
-    // Slot stools (Item 8): in screen space the stool's cushion
-    // (30x12) must not intersect its cabinet's footprint (30 wide,
-    // 52 above its centre to 2 below) — that's the "wooden slab
-    // flush against the machine" read — and must not float away.
-    const projV = (x, y) => [x - y, (x + y) / 2];
+    // Slot stools (Item 8; REBUILT v1.4.1 seat audit): the v1.3.1
+    // test modelled the cushion at HALF its drawn size (30x12
+    // total vs drawChairAt's 60px-wide cushion diamonds) in an
+    // unscaled projection, so it passed stools whose art painted
+    // over the cabinets — "chairs on top of slot machines". The
+    // law now uses the client's TRUE screen geometry (see the
+    // SEAT FOOTPRINT LAW constants below): the stool's whole art
+    // bbox must clear the cabinet's screen rect, and the stool
+    // must not float away from its machine.
     for (const sl of map.casino.slots) {
-      const [msx, msy] = projV(sl.x, sl.y);
-      const [isx, isy] = projV(sl.ix, sl.iy);
-      const overlap = Math.abs(isx - msx) < 30 && (isy + 6) > (msy - 52) && (isy - 6) < (msy + 2);
-      if (overlap) err(map.id, `slot band: ${sl.id}'s stool cushion touches its cabinet on screen — stools keep a visible gap from the machine front`);
+      const seat = (map.seats || []).find(s => s.id === sl.seatId);
+      const dir = seat ? seat.dir : 'up';
+      const [msx, msy] = projS(sl.x, sl.y);
+      const [isx, isy] = projS(sl.ix, sl.iy);
+      const bb = SEAT_BBOX[dir] || SEAT_BBOX.up;
+      const hit = (isx + bb.x[1] > msx + CABINET_RECT.x[0]) && (isx + bb.x[0] < msx + CABINET_RECT.x[1])
+        && (isy + bb.y[1] > msy + CABINET_RECT.y[0]) && (isy + bb.y[0] < msy + CABINET_RECT.y[1]);
+      if (hit) err(map.id, `slot footprint: ${sl.id}'s stool (dir '${dir}') intersects its cabinet's screen rect — stools sit IN FRONT of the machine, never on it (v1.4.1)`);
       const distS = Math.hypot(isx - msx, isy - msy);
-      if (distS > 95) err(map.id, `slot band: ${sl.id}'s stool floats ${distS.toFixed(0)} screen-px from its machine`);
+      if (distS > 75) err(map.id, `slot footprint: ${sl.id}'s stool floats ${distS.toFixed(0)} screen-px from its machine (cap 75)`);
+    }
+    // Poker chairs (v1.4.1): the sitter's cushion CENTRE must stay
+    // outside the table's felt ellipse in screen space — the band
+    // above keeps the ring honest, this keeps a chair from ever
+    // sitting IN the table.
+    for (const t of map.casino.tables) {
+      const [tsx, tsy] = projS(t.x, t.y);
+      for (const c of t.chairs) {
+        const [csx, csy] = projS(c.x, c.y);
+        const e = ((csx - tsx) / 44) ** 2 + ((csy - tsy) / 23) ** 2;
+        if (e <= 1) err(map.id, `poker footprint: ${t.id} chair ${c.dir}'s cushion centre sits inside the felt ellipse — chairs ring the table, never sit in it`);
+      }
+    }
+  }
+  // -- SEAT FOOTPRINT LAW (v1.4.1, the seat audit) ---------------
+  // Zan's live playtest found three faces of one class: seats whose
+  // art lands ON the furniture they serve (club bar stools on the
+  // counter, casino stools over the slot cabinets). The class is
+  // screen-space: the render scales positions by ZOOM 0.72 but
+  // draws furniture at fixed screen sizes, so world-space bands
+  // passed data the screen rejected. Three rules pin it:
+  //
+  // (B) TALL FURNITURE: a chair/stool seat's CUSHION diamond may
+  //     not overlap the raised TOP-FACE diamond of any '#'/'W'
+  //     tile (walls and old-style counters extrude WALL_H=20px —
+  //     cushion height). One tile north of an extruded counter is
+  //     exactly this geometry, which is why bar counters are 'B'
+  //     (flat) by construction now. Poker chairs are checked with
+  //     their client-derived facing.
+  // (C) BAR CONSTRUCTION: in casino maps any interior (non-border)
+  //     'W' tile is a counter wearing a wall's extrusion — fail.
+  //     In the club any interior '#' tile likewise. And every bar
+  //     stool (a non-slot 'stool' seat in a casino, every 'stool'
+  //     in the club) must stand exactly one tile north of a 'B'
+  //     counter tile in its own column — the patron side, at the
+  //     counter, never on it or behind it.
+  // (D) SPRITE PATH: seat kinds are a closed set (an unknown kind
+  //     silently falls into the client's chair branch), and
+  //     audience seats (ids >= 101) are ALWAYS kind 'chair' — the
+  //     current drawChairAt art. (Verified in the audit: every
+  //     venue's audience already resolves there; this pins it.)
+  {
+    const tallTiles = [];
+    map.tiles.rows.forEach((row, ty) => {
+      [...row].forEach((ch, tx) => { if (ch === '#' || ch === 'W') tallTiles.push([tx, ty]); });
+    });
+    const cushionVsTall = (sx2, sy2, label) => {
+      const stx = tileOfPx(sx2), sty = tileOfPx(sy2);
+      const [csx, csy] = projS(sx2, sy2 + 0); // seat point in screen space
+      for (const [tx, ty] of tallTiles) {
+        if (Math.max(Math.abs(tx - stx), Math.abs(ty - sty)) > 3) continue;
+        const [tsx, tsy] = projS((tx + 0.5) * TILE, (ty + 0.5) * TILE);
+        if (diamondHit(csx, csy + CUSHION_D.dy, CUSHION_D.hw, CUSHION_D.hh,
+          tsx, tsy + WALLTOP_D.dy, WALLTOP_D.hw, WALLTOP_D.hh)) {
+          err(map.id, `seat footprint: ${label}'s cushion overlaps the raised top face of the '${tileAt(map, tx, ty)}' tile at (${tx},${ty}) — a seat against tall furniture reads as sitting ON it; counters are flat 'B' tiles, and chairs keep off wall tops (v1.4.1)`);
+          return;
+        }
+      }
+    };
+    for (const s of map.seats || []) {
+      if (s.kind === 'chair' || s.kind === 'stool') cushionVsTall(s.x, s.y, `seat ${s.id}`);
+    }
+    if (map.casino) {
+      for (const t of map.casino.tables) {
+        for (const c of t.chairs) cushionVsTall(c.x, c.y, `${t.id} poker chair ${c.dir}`);
+      }
+    }
+    // (C) bar construction
+    const isBorder = (tx, ty) => tx === 0 || ty === 0 || tx === map.tiles.w - 1 || ty === map.tiles.h - 1;
+    if (map.casino) {
+      map.tiles.rows.forEach((row, ty) => {
+        [...row].forEach((ch, tx) => {
+          if (ch === 'W' && !isBorder(tx, ty)) err(map.id, `bar construction: interior 'W' tile at (${tx},${ty}) — a casino counter drawn as a wall extrudes its top to stool-cushion height ("chairs on the bar"); counters are 'B' tiles (v1.4.1)`);
+        });
+      });
+    }
+    if (map.club) {
+      map.tiles.rows.forEach((row, ty) => {
+        [...row].forEach((ch, tx) => {
+          if (ch === '#' && !isBorder(tx, ty)) err(map.id, `bar construction: interior '#' tile at (${tx},${ty}) — the club's counter drawn as a wall cube puts its top at stool-cushion height ("chairs on the bar"); counters are 'B' tiles (v1.4.1)`);
+        });
+      });
+    }
+    const slotSeatIds = new Set((map.casino ? map.casino.slots : []).map(sl => sl.seatId));
+    for (const s of map.seats || []) {
+      if (s.kind !== 'stool' || slotSeatIds.has(s.id)) continue;
+      if (!map.casino && !map.club) continue;
+      const tx = tileOfPx(s.x), ty = tileOfPx(s.y);
+      if (tileAt(map, tx, ty + 1) !== 'B') {
+        err(map.id, `bar construction: bar stool ${s.id} at (${tx},${ty}) does not face a 'B' counter one tile south (found '${tileAt(map, tx, ty + 1)}') — bar stools stand on the patron side, one tile north of the counter (v1.4.1)`);
+      }
+    }
+    // (D) sprite path: closed kind set + audience is always 'chair'
+    const SEAT_KINDS = new Set(['chair', 'stool', 'sofa', 'bench', 'cafe', 'hookah', 'towel']);
+    for (const s of map.seats || []) {
+      if (!SEAT_KINDS.has(s.kind)) err(map.id, `sprite path: seat ${s.id} has unknown kind '${s.kind}' — kinds are a closed set; the current chair art is kind 'chair' (v1.4.1)`);
+      const m = /-seat-(\d+)$/.exec(s.id);
+      if (m && Number(m[1]) >= 101 && s.kind !== 'chair') {
+        err(map.id, `sprite path: audience seat ${s.id} is kind '${s.kind}' — audience seats always resolve to the current chair art (kind 'chair') (v1.4.1)`);
+      }
     }
   }
   // ARRANGEMENT LAW (Item 5): a seat may exist ONLY inside a

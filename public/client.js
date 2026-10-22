@@ -1760,6 +1760,31 @@ function drawTile(ch, tx, ty) {
     ctx.closePath(); ctx.stroke();
     return;
   }
+  if (ch === 'B') { // v1.4.1 (seat audit): a BAR COUNTER — floor-level
+    // furniture, not a wall. A flat warm-wood top (lifted just 4px,
+    // like a tabletop) over a short dark skirt, with a brass rail
+    // along the front edge. The old extruded-cube counters ('W'/'#')
+    // raised their top face 20px — exactly bar-stool cushion height
+    // in screen space — so every stool one tile away read as a chair
+    // ON the bar. Flat counters keep stools tucked AT the bar.
+    diamond(cx, cy - 4, hw, hh, '#a5713a');                    // the top
+    diamond(cx, cy - 4, hw * 0.82, hh * 0.82, '#b98a4e');     // worn sheen
+    // front skirt: the top's two south edges dropped 10px
+    ctx.beginPath();
+    ctx.moveTo(cx - hw, cy - 4); ctx.lineTo(cx, cy + hh - 4);
+    ctx.lineTo(cx, cy + hh + 6); ctx.lineTo(cx - hw, cy + 6);
+    ctx.closePath(); ctx.fillStyle = '#2e1c11'; ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(cx, cy + hh - 4); ctx.lineTo(cx + hw, cy - 4);
+    ctx.lineTo(cx + hw, cy + 6); ctx.lineTo(cx, cy + hh + 6);
+    ctx.closePath(); ctx.fillStyle = '#3a2417'; ctx.fill();
+    // brass rail along the front lip
+    ctx.strokeStyle = 'rgba(255,210,63,.6)'; ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(cx - hw, cy - 4); ctx.lineTo(cx, cy + hh - 4); ctx.lineTo(cx + hw, cy - 4);
+    ctx.stroke();
+    return;
+  }
   if (ch === '%') { // water — Phase 9: animated shimmer
     diamond(cx, cy, hw, hh, (tx + ty) % 2 ? '#2f8fb8' : '#2b84ad');
     const t = performance.now() / 620 + tx * 0.9 + ty * 0.6;

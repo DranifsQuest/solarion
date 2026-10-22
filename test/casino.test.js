@@ -946,8 +946,8 @@ test('slot stools: seated player faces the machine in BOTH casinos (Item G)', { 
   const u = await makeUser('facing_fay');
   await toCasino(u);
   await sleep(3400); // transfer lock
-  await sitAndCheck(u, { x: 624, y: 112 }, 'up', 'lounge north-row slot');
-  await sitAndCheck(u, { x: 1052, y: 176 }, 'right', 'lounge east-wall slot'); // v1.3.1: stool pulled out to a 52px gap (Item 8)
+  await sitAndCheck(u, { x: 624, y: 140 }, 'up', 'lounge north-row slot'); // v1.4.1: stool 70px south of the cabinet centre (screen-space footprint law)
+  await sitAndCheck(u, { x: 1040, y: 192 }, 'right', 'lounge east-wall slot'); // v1.4.1: stool 64px west + 16px south (was v1.3.1's 52px due-west, which painted over the cabinet on screen)
   u.client.ws.close();
 
   // Neon Casino: the east-wall row from Zan's screenshot.
@@ -958,7 +958,7 @@ test('slot stools: seated player faces the machine in BOTH casinos (Item G)', { 
   v.client.send({ type: 'debug-teleport', x: 1968, y: 1232 }); // casino door (FRONT/south face since v1.2.2 Item 8)
   await waitFor(() => v.client.msgs.filter(m => m.type === 'map' && m.map.id === 'neon-casino').pop(), 5000, 'vic in neon-casino');
   await sleep(3400); // transfer lock
-  await sitAndCheck(v, { x: 1052, y: 176 }, 'right', 'neon east-wall slot');
-  await sitAndCheck(v, { x: 624, y: 112 }, 'up', 'neon north-row slot');
+  await sitAndCheck(v, { x: 1040, y: 192 }, 'right', 'neon east-wall slot');
+  await sitAndCheck(v, { x: 624, y: 140 }, 'up', 'neon north-row slot');
   v.client.ws.close();
 });

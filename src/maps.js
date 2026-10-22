@@ -11,7 +11,13 @@
  * '|'=tree/stall post (solid), '.'=walkable, 'W'=casino wall (solid),
  * 'C'=casino floor (walkable). Lane C added: 'T'=tree (solid),
  * 'P'=planter (solid), 'R'=rock (solid), 'b'=boardwalk, 's'=stone
- * plaza, 'p'=path (all walkable). Gateways are GATEHOUSES now: a
+ * plaza, 'p'=path (all walkable). v1.4.1 (seat audit): 'B'=bar
+ * counter (solid) — a counter is FLOOR-LEVEL furniture in the
+ * render (a flat top + short skirt, like a table), never an
+ * extruded wall cube: a stool one tile away of a WALL_H counter
+ * lands its cushion on the counter's raised top face in screen
+ * space ("chairs ON the bar"). Bar counters are 'B' by law
+ * (see scripts/validate-dressing.mjs, SEAT FOOTPRINT LAW). Gateways are GATEHOUSES now: a
  * 2-tile trigger rect on the map edge (the inner threshold), solid
  * flank towers, and a short passage the client renders with real
  * double doors; `spawnOut` is where a traveller arriving INTO this
@@ -335,7 +341,7 @@ function buildCafe() {
   const W = 32, H = 20;
   const g = makeGrid(W, H, '.');
   setBorder(g, W, H, '#');
-  setRect(g, 3, 2, 26, 1, '#');   // serving counter (north wall)
+  setRect(g, 3, 2, 26, 1, 'B');   // serving counter (north wall) — 'B': counters are flat (v1.4.1 seat audit)
   // v1.2 (Item K rider): the two south-corner post cubes are gone —
   // they rendered as stray crate boxes in the café corners.
   g[10][1] = '#';                  // Phase 10: the hearth niche (west wall, centred)
@@ -514,7 +520,7 @@ function buildCasino({ id, name, hostId, hostLabel, hostSpawn, floor, floorAlt, 
   const W = 36, H = 24;
   const g = makeGrid(W, H, 'C');
   setBorder(g, W, H, 'W');
-  setRect(g, 2, 21, 9, 1, 'W'); // bar counter (bartender stands behind it)
+  setRect(g, 2, 21, 9, 1, 'B'); // bar counter (bartender stands behind it) — 'B', not 'W': counters are flat (v1.4.1 seat audit)
   // v1.3.1 (Item 7): poker chairs pulled OUT to 60px from the
   // table centre — the old 44px ring tucked the cushions half
   // under the felt edge. Validator band: [55,66]px.
@@ -539,17 +545,27 @@ function buildCasino({ id, name, hostId, hostLabel, hostSpawn, floor, floorAlt, 
     const tx = 19 + i * 2;
     slots.push({
       id: `${id}-slot-${i + 1}`, seatId: `${id}-slotseat-${i + 1}`,
-      x: cx(tx), y: cy(2) - 10, ix: cx(tx), iy: cy(3),
+      // v1.4.1 (seat audit): the stool sits 70px south of the
+      // cabinet centre (was 42 — in SCREEN space the stool's back
+      // panel clipped the cabinet's bottom corner by ~6x7px; the
+      // v1.3.1 validator modelled the cushion at half its drawn
+      // size and passed it). Screen-space law now: the stool's
+      // whole art bbox must clear the cabinet's rect.
+      x: cx(tx), y: cy(2) - 10, ix: cx(tx), iy: cy(3) + 28,
     });
   }
   for (let i = 0; i < 5; i++) {
     const ty = 5 + i * 2;
     slots.push({
       id: `${id}-slot-${i + 6}`, seatId: `${id}-slotseat-${i + 6}`,
-      // v1.3.1 (Item 8): the east-row stool sits 52px west of the
-      // cabinet centre (was 32 — the cushion touched the cabinet
-      // and read as a wooden slab / little table, not a chair).
-      x: cx(34), y: cy(ty), ix: cx(34) - 52, iy: cy(ty),
+      // v1.4.1 (seat audit): the east-row stool sits 64px west +
+      // 16px south of the cabinet centre (v1.3.1: 52px due west —
+      // in screen space a due-west offset RISES 0.36px per px into
+      // the cabinet's 52px-tall body, and the stool's 60px-wide
+      // cushion painted over the machine: "chairs on top of slot
+      // machines"). The southward step keeps the stool at the
+      // machine's front, the westward step clears its rect.
+      x: cx(34), y: cy(ty), ix: cx(34) - 64, iy: cy(ty) + 16,
     });
   }
   const seats = [
@@ -673,7 +689,7 @@ function buildClubMirage() {
   const g = makeGrid(W, H, '.');
   setBorder(g, W, H, '#');
   setRect(g, 14, 13, 12, 8, 'C');  // the dance floor (club checker)
-  setRect(g, 3, 23, 10, 1, '#');   // the bar counter (south-west)
+  setRect(g, 3, 23, 10, 1, 'B');   // the bar counter (south-west) — 'B', not '#': counters are flat (v1.4.1 seat audit; the '#' cube put the stools' cushions ON the bar)
   const id = 'club-mirage';
   // Six stage tables in one even row, two chairs apiece pulled OUT
   // to the 50px band (v1.3.1 Item 1): the south chair faces the
