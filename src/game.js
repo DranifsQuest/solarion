@@ -75,8 +75,9 @@ const FURN_ROT_DIRS = ['down', 'left', 'up', 'right']; // studio furniture rot -
 // Phase 9 — emotes: one-shot social expressions. The server tracks
 // the active emote per player (snapshots carry it, so late viewers
 // see it too) and broadcasts the start. Dance lasts longest and is
-// cancelled by walking.
-const EMOTES = { wave: 2600, dance: 6000, laugh: 2600, thumbsup: 2600 };
+// cancelled by walking. `fish` (Zan, 2026-10-21) brandishes a fish
+// in triumph — the client draws the catch held high.
+const EMOTES = { wave: 2600, dance: 6000, laugh: 2600, thumbsup: 2600, fish: 3200 };
 
 /** Server-local calendar day, YYYY-MM-DD (daily-bonus day boundary). */
 function localDay(now = new Date()) {
@@ -391,7 +392,7 @@ class Game {
     p.run = Boolean(on);
   }
 
-  /** { type:'emote', emote } — wave / dance / laugh / thumbsup. */
+  /** { type:'emote', emote } — wave / dance / laugh / thumbsup / fish. */
   handleEmote(p, name) {
     if (typeof name !== 'string' || !Object.hasOwn(EMOTES, name)) return;
     if (p.passedOutUntil && Date.now() < p.passedOutUntil) return;
@@ -660,9 +661,11 @@ class Game {
     p.keys = {};
     this.savePosition(p);
     const { clientMap } = require('./maps');
+    const { seasonAt } = require('./seasons');
     this.send(p, {
       type: 'map',
       map: clientMap(scene),
+      season: seasonAt(new Date()),
       players: this.playersInMap(scene.id),
       chat: this.historyFor(scene.id),
       you: this.publicPlayer(p),

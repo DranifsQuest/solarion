@@ -21,6 +21,10 @@
  *   - dressing props or seats overlapping door/gateway tiles, or
  *     seats embedded in solid tiles
  *   - casino slot interact spots / bar spot embedded in solid tiles
+ *   - SEASONAL overlay layers (src/seasons.js) held to the same
+ *     rules as the base dressing: no prop on a door/gateway tile,
+ *     none inside a venue's seat block / pit / platform, none on
+ *     top of a seat, only known seasonal kinds, in-bounds only
  *
  *   WARNINGS (Zan's standing rules, as far as the data supports)
  *   - an interior map with != 1 inbound door (one facade entrance)
@@ -38,6 +42,7 @@
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const { MAPS, TILE, collides, WALKABLE } = require('../src/maps');
+const { overlayProps, SEASONAL, SEASONAL_KINDS } = require('../src/seasons');
 
 // The tile alphabet exactly as documented in src/maps.js (header):
 // '#'=solid, '%'=water, '|'=post, 'W'=casino wall, 'T'=tree, 'P'=planter,
@@ -165,9 +170,25 @@ for (const map of Object.values(MAPS)) {
   }
 
   // -- props & seats vs portals / solids
-  for (const pr of map.props || []) {
-    const k = `${tileOfPx(pr.x)},${tileOfPx(pr.y)}`;
-    if (portalTiles.has(k)) err(map.id, `prop "${pr.kind}" sits on a door/gateway tile (${k})`);
+  // The base dressing AND each seasonal overlay layer go through
+  // the same portal check; seasonal layers get the extra rules
+  // (known kinds, in-bounds, never on a seat tile).
+  const seatTiles = new Set((map.seats || []).map(s => `${tileOfPx(s.x)},${tileOfPx(s.y)}`));
+  const layers = [
+    { label: 'base', seasonal: false, props: map.props || [] },
+    { label: 'halloween', seasonal: true, props: overlayProps(map.id, 'halloween') },
+    { label: 'christmas', seasonal: true, props: overlayProps(map.id, 'christmas') },
+  ];
+  for (const layer of layers) {
+    for (const pr of layer.props) {
+      const tx = tileOfPx(pr.x), ty = tileOfPx(pr.y), k = `${tx},${ty}`;
+      if (portalTiles.has(k)) err(map.id, `[${layer.label}] prop "${pr.kind}" sits on a door/gateway tile (${k})`);
+      if (layer.seasonal) {
+        if (!SEASONAL_KINDS.has(pr.kind)) err(map.id, `[${layer.label}] unknown seasonal prop kind "${pr.kind}" (${k})`);
+        if (tx < 0 || ty < 0 || tx >= map.tiles.w || ty >= map.tiles.h) err(map.id, `[${layer.label}] prop "${pr.kind}" is out of bounds (${k})`);
+        if (seatTiles.has(k)) err(map.id, `[${layer.label}] prop "${pr.kind}" sits on a seat tile (${k})`);
+      }
+    }
   }
   for (const s of map.seats || []) {
     const k = `${tileOfPx(s.x)},${tileOfPx(s.y)}`;
@@ -205,11 +226,13 @@ for (const map of Object.values(MAPS)) {
         y0 = Math.min(y0, tileOfPx(s.y)); y1 = Math.max(y1, tileOfPx(s.y));
       }
       const inBox = (tx, ty) => tx >= x0 && tx <= x1 && ty >= y0 && ty <= y1;
-      for (const pr of map.props || []) {
-        const tx = tileOfPx(pr.x), ty = tileOfPx(pr.y), k = `${tx},${ty}`;
-        if (inBox(tx, ty)) err(map.id, `venue purity: prop "${pr.kind}" intrudes into the audience seat block (${k})`);
-        if (pitTiles.has(k)) err(map.id, `venue purity: prop "${pr.kind}" intrudes into the stage pit (${k})`);
-        if (stageTiles.has(k)) err(map.id, `venue purity: prop "${pr.kind}" intrudes onto the stage platform (${k})`);
+      for (const layer of layers) {
+        for (const pr of layer.props) {
+          const tx = tileOfPx(pr.x), ty = tileOfPx(pr.y), k = `${tx},${ty}`;
+          if (inBox(tx, ty)) err(map.id, `venue purity: [${layer.label}] prop "${pr.kind}" intrudes into the audience seat block (${k})`);
+          if (pitTiles.has(k)) err(map.id, `venue purity: [${layer.label}] prop "${pr.kind}" intrudes into the stage pit (${k})`);
+          if (stageTiles.has(k)) err(map.id, `venue purity: [${layer.label}] prop "${pr.kind}" intrudes onto the stage platform (${k})`);
+        }
       }
       for (const s of map.seats || []) {
         const tx = tileOfPx(s.x), ty = tileOfPx(s.y), k = `${tx},${ty}`;
@@ -260,6 +283,14 @@ for (const map of Object.values(MAPS)) {
     if (map.casino.bar && collides(map, map.casino.bar.x, map.casino.bar.y, 6)) {
       err(map.id, 'bar patron spot is embedded in a solid tile');
     }
+  }
+}
+
+// -- seasonal layers must name real maps (a typo'd key would
+// silently dress nothing at all)
+for (const [seasonName, layer] of Object.entries(SEASONAL)) {
+  for (const mapId of Object.keys(layer)) {
+    if (!MAPS[mapId]) err(mapId, `seasonal layer "${seasonName}" names an unknown map`);
   }
 }
 

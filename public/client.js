@@ -29,6 +29,7 @@ let keys = { up: false, down: false, left: false, right: false };
 let lastSentKeys = '';
 let coins = 0;
 let dayCycle = null; // Phase 9: { periodMs, anchor } — world clock
+let season = null; // Seasonal themes: 'halloween' | 'christmas' | null, server-owned (src/seasons.js)
 let lastDarkness = -1;
 
 /** Phase within the world clock: 0.0 = sunrise, 0.5 = sunset. */
@@ -214,7 +215,7 @@ function drawHearthAt(x, y, seed) {
   tongue(2, 2.8, 9, 'rgba(255,233,163,1)');
 }
 
-function drawStringLights(x, y, seed) {
+function drawStringLights(x, y, seed, cols) {
   const x0 = x - 34, x1 = x + 34, topY = y - 30;
   const pts = [];
   for (let i = 0; i <= 12; i++) {
@@ -226,12 +227,12 @@ function drawStringLights(x, y, seed) {
   ctx.beginPath();
   pts.forEach(([px2, py2], i) => { if (i === 0) ctx.moveTo(px2, py2); else ctx.lineTo(px2, py2); });
   ctx.stroke();
-  const cols = ['#ffd9a0', '#ffb84d', '#ff9d7a', '#ffe9a3'];
+  const palette = cols || ['#ffd9a0', '#ffb84d', '#ff9d7a', '#ffe9a3'];
   const night = darknessNow() > 0.03;
   for (let i = 1; i < 12; i++) {
     const [bx, by] = pts[i];
     ctx.beginPath(); ctx.arc(bx, by + 2.5, night ? 3 : 2.4, 0, Math.PI * 2);
-    ctx.fillStyle = cols[(i + seed) % cols.length];
+    ctx.fillStyle = palette[(i + seed) % palette.length];
     ctx.globalAlpha = night ? 1 : 0.75;
     ctx.fill();
     ctx.globalAlpha = 1;
@@ -252,6 +253,143 @@ function drawLampAt(x, y, lantern) {
     ctx.fillStyle = '#ffe9a3'; ctx.fill();
     ctx.strokeStyle = '#8a5a2b'; ctx.lineWidth = 1.2; ctx.stroke();
   }
+}
+
+// ------------------------------------------------------------------
+// Seasonal props (server-driven overlay, src/seasons.js): Halloween
+// (Oct) and Christmas (Dec). Same canvas vocabulary as the warm
+// props — shapes, no assets. Lit faces join the night-glow pass.
+function drawPumpkinAt(x, y, lit, s = 1) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(s, s);
+  ctx.beginPath(); ctx.ellipse(0, 3, 13, 4.5, 0, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0,0,0,.22)'; ctx.fill();
+  // ribbed body: three overlapping ellipses read as pumpkin lobes
+  ctx.fillStyle = '#c85f16';
+  ctx.beginPath(); ctx.ellipse(-6, -3, 6.5, 7.5, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(6, -3, 6.5, 7.5, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#e8721e';
+  ctx.beginPath(); ctx.ellipse(0, -3.5, 7.5, 8.5, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(120,50,5,.55)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.ellipse(0, -3.5, 3.6, 8.3, 0, 0, Math.PI * 2); ctx.stroke();
+  // stem
+  ctx.fillStyle = '#5d7d43';
+  ctx.fillRect(-1.6, -14.5, 3.4, 4.5);
+  if (lit) {
+    // carved face, lit from inside — flickers a touch off the clock
+    const fl = 0.85 + 0.15 * Math.sin(Date.now() / 140 + x * 0.7);
+    ctx.fillStyle = `rgba(255,214,110,${fl})`;
+    ctx.beginPath(); // left eye
+    ctx.moveTo(-6.5, -7); ctx.lineTo(-2.5, -7); ctx.lineTo(-4.5, -3.5); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); // right eye
+    ctx.moveTo(2.5, -7); ctx.lineTo(6.5, -7); ctx.lineTo(4.5, -3.5); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); // grin
+    ctx.moveTo(-6, 0.5); ctx.lineTo(-2.5, 2.6); ctx.lineTo(0, 0.8);
+    ctx.lineTo(2.5, 2.6); ctx.lineTo(6, 0.5); ctx.lineTo(4, 4); ctx.lineTo(-4, 4);
+    ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawPumpkinStackAt(x, y) {
+  // The Gateway centerpiece: a composed pyramid, jack on top.
+  drawPumpkinAt(x - 11, y, false, 0.95);
+  drawPumpkinAt(x + 11, y, false, 0.95);
+  drawPumpkinAt(x, y - 13, true, 1.05);
+}
+
+function drawCobwebAt(x, y) {
+  // A web fanning from the point's top-left — corners and eaves.
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.strokeStyle = 'rgba(235,240,248,.55)';
+  ctx.lineWidth = 1;
+  const R = 26;
+  const spokes = [0, Math.PI / 6, Math.PI / 3, Math.PI / 2];
+  for (const a of spokes) {
+    ctx.beginPath(); ctx.moveTo(0, 0);
+    ctx.lineTo(Math.cos(a) * R, Math.sin(a) * R); ctx.stroke();
+  }
+  for (const rr of [9, 16, 23]) {
+    ctx.beginPath();
+    for (let i = 0; i < spokes.length; i++) {
+      const a = spokes[i];
+      const sag = rr * 0.16;
+      const px2 = Math.cos(a) * rr, py2 = Math.sin(a) * rr + (i > 0 && i < spokes.length - 1 ? sag : 0);
+      if (i === 0) ctx.moveTo(px2, py2); else ctx.lineTo(px2, py2);
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawWreathAt(x, y) {
+  ctx.save();
+  ctx.translate(x, y - 12);
+  ctx.beginPath(); ctx.arc(0, 0, 9.5, 0, Math.PI * 2);
+  ctx.strokeStyle = '#2c6e33'; ctx.lineWidth = 5.5; ctx.stroke();
+  ctx.beginPath(); ctx.arc(0, 0, 9.5, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(67,163,85,.8)'; ctx.lineWidth = 2; ctx.stroke();
+  const berries = [[-6, -5], [5, -7], [8, 3], [-8, 3], [0, 9], [3, -1]];
+  ctx.fillStyle = '#d93a2b';
+  for (const [bx, by] of berries) {
+    ctx.beginPath(); ctx.arc(bx, by, 1.7, 0, Math.PI * 2); ctx.fill();
+  }
+  // a little gold bow at the base
+  ctx.fillStyle = '#ffd23f';
+  ctx.beginPath(); ctx.moveTo(0, 9); ctx.lineTo(-4.5, 5.5); ctx.lineTo(-4.5, 12); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(0, 9); ctx.lineTo(4.5, 5.5); ctx.lineTo(4.5, 12); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+
+function drawGiftPileAt(x, y) {
+  // A deliberate little arrangement: two boxes down, one up top,
+  // each ribboned — NOT scatter (v1.2 Item Q's lesson).
+  ctx.beginPath(); ctx.ellipse(x, y + 3, 17, 5.5, 0, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0,0,0,.20)'; ctx.fill();
+  const gift = (gx, gy, w, h, body, ribbon) => {
+    ctx.fillStyle = body;
+    ctx.fillRect(gx - w / 2, gy - h, w, h);
+    ctx.fillStyle = ribbon;
+    ctx.fillRect(gx - 1.6, gy - h, 3.2, h);
+    ctx.fillRect(gx - w / 2, gy - h - 2.2, w, 3);
+    ctx.fillStyle = ribbon;
+    ctx.beginPath(); ctx.ellipse(gx - 2.6, gy - h - 3.4, 2.6, 1.6, -0.5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(gx + 2.6, gy - h - 3.4, 2.6, 1.6, 0.5, 0, Math.PI * 2); ctx.fill();
+  };
+  gift(x - 8, y + 2, 15, 10, '#b03030', '#ffd23f');
+  gift(x + 8, y + 2, 13, 8, '#2c6e33', '#ffe9a3');
+  gift(x, y - 8, 11, 8, '#31579e', '#ff8fab');
+}
+
+function drawSnowmanAt(x, y) {
+  ctx.beginPath(); ctx.ellipse(x, y + 3, 13, 4.5, 0, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(20,40,70,.20)'; ctx.fill();
+  const ball = (bx, by, r) => {
+    ctx.beginPath(); ctx.arc(bx, by, r, 0, Math.PI * 2);
+    ctx.fillStyle = '#f4f9ff'; ctx.fill();
+    ctx.strokeStyle = 'rgba(140,180,220,.6)'; ctx.lineWidth = 1; ctx.stroke();
+  };
+  ball(x, y - 4, 9.5);
+  ball(x, y - 17, 7);
+  ball(x, y - 28, 5.4);
+  // stick arms
+  ctx.strokeStyle = '#6e4a2c'; ctx.lineWidth = 1.6;
+  ctx.beginPath(); ctx.moveTo(x - 6, y - 18); ctx.lineTo(x - 14, y - 24); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x + 6, y - 18); ctx.lineTo(x + 14, y - 25); ctx.stroke();
+  // coal eyes + carrot nose + buttons
+  ctx.fillStyle = '#20242c';
+  ctx.beginPath(); ctx.arc(x - 1.9, y - 29, 0.9, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + 1.9, y - 29, 0.9, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x, y - 17, 1, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x, y - 12, 1, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#e8721e';
+  ctx.beginPath(); ctx.moveTo(x + 1, y - 27.5); ctx.lineTo(x + 8, y - 26); ctx.lineTo(x + 1, y - 25); ctx.closePath(); ctx.fill();
+  // scarf
+  ctx.fillStyle = '#b03030';
+  ctx.fillRect(x - 5, y - 24.5, 10, 2.8);
+  ctx.fillRect(x + 2.5, y - 24, 3, 6);
 }
 
 function drawProp(pr) {
@@ -275,6 +413,15 @@ function drawProp(pr) {
     case 'volleyball': drawVolleyballAt(px2, py2); break;
     case 'umbrella': drawUmbrellaAt(px2, py2); break;
     case 'stall': drawStallAt(px2, py2, (pr.x + pr.y) % 5); break;
+    case 'pumpkin': drawPumpkinAt(px2, py2, false); break;
+    case 'jackolantern': drawPumpkinAt(px2, py2, true); break;
+    case 'pumpkinstack': drawPumpkinStackAt(px2, py2); break;
+    case 'cobweb': drawCobwebAt(px2 - 13, py2 - 26); break;
+    case 'wreath': drawWreathAt(px2, py2); break;
+    case 'giftpile': drawGiftPileAt(px2, py2); break;
+    case 'snowman': drawSnowmanAt(px2, py2); break;
+    case 'holidaylights': drawStringLights(px2, py2, Math.round(pr.x / 32) % 4,
+      ['#ff5a4d', '#57d95d', '#ffd23f', '#5ab0ff', '#ff8fab']); break;
     case 'flowers': {
       const cols = ['#ff8fab', '#ffd23f', '#fff6e6', '#c77dff'];
       const seed = Math.round(pr.x + pr.y);
@@ -579,6 +726,21 @@ function drawBuilding(b) {
     poly([NWt, SWt, rS, rN], roofDark);
     poly([NEt, SEt, rS, rN], st.roof);
     if (st.chimney) drawChimneyAt(rN[0] + (rS[0] - rN[0]) * 0.3, rN[1] + (rS[1] - rN[1]) * 0.3 + 7);
+  }
+  // Christmas: snow settles on the roof — a soft cap over the
+  // sun-facing slope and a bright line along the ridge.
+  if (season === 'christmas' && mapDef.id !== 'frosthaven') {
+    if (b.tw >= b.th) {
+      const rW = up(mid(NWt, SWt), roofH), rE = up(mid(NEt, SEt), roofH);
+      poly([SWt, SEt, rE, rW], 'rgba(244,249,255,.22)');
+      ctx.strokeStyle = 'rgba(244,249,255,.8)'; ctx.lineWidth = 2.4;
+      ctx.beginPath(); ctx.moveTo(...rW); ctx.lineTo(...rE); ctx.stroke();
+    } else {
+      const rN = up(mid(NWt, NEt), roofH), rS = up(mid(SWt, SEt), roofH);
+      poly([NEt, SEt, rS, rN], 'rgba(244,249,255,.22)');
+      ctx.strokeStyle = 'rgba(244,249,255,.8)'; ctx.lineWidth = 2.4;
+      ctx.beginPath(); ctx.moveTo(...rN); ctx.lineTo(...rS); ctx.stroke();
+    }
   }
 }
 
@@ -1047,6 +1209,7 @@ function showGame() {
 let transfer = null; // { startedAt, ms, snapshotSeen }
 
 function beginTransfer(m) {
+  if ('season' in m) season = m.season;
   transfer = {
     startedAt: performance.now(), ms: m.transferMs || 3000, snapshotSeen: false,
     interior: Boolean(m.map.studio) || INTERIOR_IDS.has(m.map.id),
@@ -1127,6 +1290,7 @@ function handle(m) {
       me = { ...m.you };
       coins = m.zcoins;
       if (m.dayCycle) dayCycle = m.dayCycle;
+      if ('season' in m) season = m.season;
       $('coins').textContent = coins;
       players = m.players;
       sceneFurniture = m.furniture || [];
@@ -1440,12 +1604,31 @@ function tileSkipSet() {
   return set;
 }
 
+/**
+ * Christmas: a light dusting of snow on open ground in the
+ * non-snow zones (Frosthaven is already snow; interiors and
+ * player homes stay swept). Deterministic per tile so it never
+ * shimmers between frames.
+ */
+function snowDust(cx, cy, tx, ty) {
+  if (season !== 'christmas' || !mapDef) return;
+  if (mapDef.id === 'frosthaven' || mapDef.studio || INTERIOR_IDS.has(mapDef.id)) return;
+  // A scattered hash, not a rhythm: ~1 tile in 4 gets a patch, and
+  // patch size/placement vary so the eye reads weather, not print.
+  const h = ((tx * 73856093) ^ (ty * 19349663)) >>> 0;
+  if (h % 11 > 2) return;
+  const dx = (h % 13) - 6, r = 5.5 + (h % 5);
+  ctx.fillStyle = 'rgba(244,249,255,.11)';
+  ctx.beginPath(); ctx.ellipse(cx + dx, cy + (h % 5) - 2, r, r * 0.38, 0.3, 0, Math.PI * 2); ctx.fill();
+}
+
 function drawTile(ch, tx, ty) {
   const TS = mapDef.tileSize;
   const [cx, cy] = proj((tx + 0.5) * TS, (ty + 0.5) * TS);
   const hw = TS * ZOOM, hh = TS * ZOOM * 0.5;
   if (ch === '.') {
     diamond(cx, cy, hw, hh, (tx + ty) % 2 ? mapDef.floor : mapDef.floorAlt);
+    snowDust(cx, cy, tx, ty);
     return;
   }
   if (ch === 'C') { // Casino Lounge indoor floor — dark club checkerboard
@@ -1518,6 +1701,7 @@ function drawTile(ch, tx, ty) {
       diamondPath(cx, cy, hw, hh);
       ctx.strokeStyle = 'rgba(70,42,16,.35)'; ctx.lineWidth = 1; ctx.stroke();
     }
+    snowDust(cx, cy, tx, ty);
     return;
   }
   if (ch === 'T') { // Lane C tree: trunk + layered canopy (solid)
@@ -1532,6 +1716,26 @@ function drawTile(ch, tx, ty) {
     blob(cx - 10, cy - 17, 10, '#2f7a3d');
     blob(cx + 10, cy - 17, 10, '#358547');
     blob(cx + v, cy - 28, 8, '#43a355');
+    // Seasonal themes: the trees dress up with everyone else —
+    // Halloween hangs tiny pumpkin lights in the canopy, Christmas
+    // strings coloured bulbs + ornaments and caps it with snow.
+    if (season === 'halloween' || season === 'christmas') {
+      const seed = tx * 7 + ty * 13;
+      const cols = season === 'halloween'
+        ? ['#ff9d2e', '#ffb84d', '#ff7b1c']
+        : ['#ff5a4d', '#57d95d', '#ffd23f', '#5ab0ff', '#ff8fab'];
+      for (let i = 0; i < 5; i++) {
+        const dx = ((seed * (i + 3) * 11) % 21) - 10;
+        const dy = -14 - ((seed * (i + 5) * 7) % 15);
+        ctx.beginPath(); ctx.arc(cx + dx, cy + dy, season === 'halloween' ? 1.9 : 2.1, 0, Math.PI * 2);
+        ctx.fillStyle = cols[(seed + i) % cols.length];
+        ctx.globalAlpha = 0.95; ctx.fill(); ctx.globalAlpha = 1;
+      }
+      if (season === 'christmas') {
+        ctx.beginPath(); ctx.ellipse(cx + v, cy - 31, 7.5, 3.2, 0, Math.PI, Math.PI * 2);
+        ctx.fillStyle = 'rgba(244,249,255,.85)'; ctx.fill();
+      }
+    }
     return;
   }
   if (ch === 'P') { // Lane C planter: low box, shrubs, flowers (solid)
@@ -2427,6 +2631,8 @@ function draw() {
     let bob = rp.moving ? Math.abs(Math.sin(now / 110 + p.id)) * 3 : 0;
     // Phase 9: dancing is a whole-body bounce (anywhere, anytime).
     if (p.emote === 'dance') bob += Math.abs(Math.sin(now / 130 + p.id * 1.3)) * 6;
+    // Fish emote: a little triumph hop while the catch is held high.
+    if (p.emote === 'fish') bob += Math.abs(Math.sin(now / 160 + p.id * 1.7)) * 2.5;
 
     // soft ground shadow (scales with the character footprint)
     ctx.beginPath();
@@ -2467,6 +2673,13 @@ function draw() {
       ctx.font = '15px system-ui';
       ctx.textAlign = 'center';
       ctx.fillText('🎤', sx + 13 * CHAR_SCALE, sy - 12 * CHAR_SCALE - bob);
+    }
+
+    // Fish emote (Zan, 2026-10-21): the catch brandished overhead
+    // in triumph — the real fish art, wiggling, beside the head.
+    if (p.emote === 'fish' && !p.fallen) {
+      const wig = Math.sin(now / 120 + p.id * 2.3) * 0.22;
+      drawFishShape(sx + 15 * CHAR_SCALE, sy - dh - 9 - bob, 'sunfish', 0.95, wig);
     }
 
     // Phase B amendment — drink bubbles float up around drinkers
@@ -2590,7 +2803,16 @@ function draw() {
   const gold = goldenNow();
   if (dark > 0.01 || gold > 0.005) {
     if (dark > 0.01) {
-      ctx.fillStyle = `rgba(32,18,36,${dark})`;
+      // Seasonal palettes ride the SAME day/night system (no fork):
+      // Halloween deepens the plum and pushes the dark further;
+      // Christmas warms the plum a touch.
+      if (season === 'halloween') {
+        ctx.fillStyle = `rgba(22,8,34,${Math.min(0.54, dark * 1.24)})`;
+      } else if (season === 'christmas') {
+        ctx.fillStyle = `rgba(34,16,30,${dark})`;
+      } else {
+        ctx.fillStyle = `rgba(32,18,36,${dark})`;
+      }
       ctx.fillRect(camX, camY, W, H);
     }
     if (gold > 0.005) {
@@ -2601,11 +2823,13 @@ function draw() {
   if (dark > 0.01) {
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
+    // Halloween burns more orange than gold in every lamp.
+    const glowRGB = season === 'halloween' ? '255,150,60' : '255,205,110';
     const glow = (wx, wy, r, a) => {
       const [gx, gy] = proj(wx, wy);
       const g = ctx.createRadialGradient(gx, gy, 2, gx, gy, r);
-      g.addColorStop(0, `rgba(255,205,110,${a})`);
-      g.addColorStop(1, 'rgba(255,205,110,0)');
+      g.addColorStop(0, `rgba(${glowRGB},${a})`);
+      g.addColorStop(1, `rgba(${glowRGB},0)`);
       ctx.fillStyle = g;
       ctx.beginPath();
       ctx.arc(gx, gy, r, 0, Math.PI * 2);
@@ -2626,6 +2850,9 @@ function draw() {
       else if (pr.kind === 'lighthouse') glow(pr.x - 100, pr.y - 100, 115, 0.34);
       else if (pr.kind === 'neonsign') glow(pr.x - 88, pr.y - 88, 95, 0.22);
       else if (pr.kind === 'forge') glow(pr.x, pr.y - 14, 70, 0.26);
+      // Seasonal: jack-o'-lanterns burn from inside; holiday bulbs hum.
+      else if (pr.kind === 'jackolantern' || pr.kind === 'pumpkinstack') glow(pr.x, pr.y - 10, 60, 0.32);
+      else if (pr.kind === 'holidaylights') glow(pr.x, pr.y - 24, 68, 0.20);
     }
     // Lane C: slot marquees hum in the dark, and lit facade windows
     // warm the street in front of every real building.

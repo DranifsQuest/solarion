@@ -637,6 +637,17 @@ test('emotes broadcast + snapshot state; profiles carry look, mixes, friend stat
   a.client.send({ type: 'emote', emote: 'backflip' });
   await sleep(400);
   assert.equal(b.client.msgs.filter(m => m.type === 'emote' && m.emote === 'backflip').length, 0);
+  // The fish emote (Zan, 2026-10-21) rides the same machinery:
+  // broadcast to the room + carried in snapshots while active.
+  a.client.send({ type: 'emote', emote: 'fish' });
+  const fev = await waitFor(() => b.client.msgs.filter(m => m.type === 'emote' && m.userId === a.id && m.emote === 'fish').pop(),
+    5000, 'B receives A fish emote broadcast');
+  assert.equal(fev.emote, 'fish');
+  await waitFor(() => {
+    const s = b.client.msgs.filter(m => m.type === 'snapshot').pop();
+    const pa = s && s.players.find(p => p.id === a.id);
+    return pa && pa.emote === 'fish' ? pa : null;
+  }, 5000, 'snapshot carries the active fish emote');
 
   b.client.send({ type: 'profile', userId: a.id });
   const prof = await waitFor(() => b.client.msgs.filter(m => m.type === 'profile').pop(), 5000, 'profile payload');

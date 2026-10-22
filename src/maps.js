@@ -943,8 +943,17 @@ function doorAt(map, x, y) {
   return null;
 }
 
-/** Strip a map def down to what the client needs to render it. */
-function clientMap(map) {
+/**
+ * Strip a map def down to what the client needs to render it.
+ * `seasonOverride` is for tooling/tests (the Bake Shop preview):
+ * pass a season name to force that layer, or null to force none.
+ * Live callers omit it and get the calendar's current season —
+ * its overlay props are merged into `props` (src/seasons.js);
+ * the BASE dressing above is never edited by a season.
+ */
+function clientMap(map, seasonOverride) {
+  const { seasonAt, overlayProps } = require('./seasons');
+  const season = seasonOverride === undefined ? seasonAt(new Date()) : seasonOverride;
   return {
     id: map.id,
     name: map.name,
@@ -964,7 +973,10 @@ function clientMap(map) {
       x: d.x, y: d.y, w: d.w, h: d.h, label: d.label,
       home: d.target === 'studio:self',
     })),
-    props: (map.props || []).map(p => ({ kind: p.kind, x: p.x, y: p.y })),
+    props: [
+      ...(map.props || []).map(p => ({ kind: p.kind, x: p.x, y: p.y })),
+      ...overlayProps(map.id, season),
+    ],
     seats: (map.seats || []).map(s => ({ id: s.id, x: s.x, y: s.y, dir: s.dir, kind: s.kind })),
     areas: (map.areas || []).map(a => ({ ...a })),
     hookahs: (map.hookahs || []).map(h => ({ x: h.x, y: h.y })),
