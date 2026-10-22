@@ -185,13 +185,13 @@ test('door conversion: every door is labelled, resolvable, and interiors have th
 
 // ------------------------------------------------------------------ b
 
-test('home door round trip: Gateway front door -> own home (3s lock) -> out the home door', { timeout: 60000 }, async () => {
+test('home door round trip: Gateway front door -> own home (1.5s lock) -> out the home door', { timeout: 60000 }, async () => {
   const u = await makeUser('home_dora');
   // Step onto the My Home door pad on the Gateway (tile 7,22).
   teleport(u, 240, 720);
   const home = await arriveMap(u, `studio:${u.id}`);
   const t0 = Date.now();
-  assert.equal(home.transferMs, 3000, 'home entry rides the fixed 3s transfer');
+  assert.equal(home.transferMs, 1500, 'home entry rides the fixed 1.5s transfer');
   assert.ok(home.map.studio && home.map.studio.door, 'the home scene carries its own door');
 
   // INPUT LOCKED mid-window: hold "up" — no movement at all.
@@ -208,7 +208,7 @@ test('home door round trip: Gateway front door -> own home (3s lock) -> out the 
   await sleep(1600); // portal debounce from the entry hop
   teleport(u, 336, 432);
   const back = await arriveMap(u, 'the-gateway');
-  assert.equal(back.transferMs, 3000);
+  assert.equal(back.transferMs, 1500);
   // Landed OUTSIDE the front door: one tile south of the pad (7,23),
   // never on the pad itself, so the door cannot bounce you back in.
   assert.ok(Math.abs(back.you.x - 240) < 2 && Math.abs(back.you.y - 752) < 2,
