@@ -48,7 +48,7 @@ function darknessNow() {
 }
 
 /**
- * Cozy pass (Zan's standing aesthetic — warm, golden, welcoming):
+ * Cozy pass (X's standing aesthetic — warm, golden, welcoming):
  * a golden-hour wash that peaks at sunrise and sunset and fades as
  * full day / full night take over. Pure client-side tint.
  */
@@ -190,7 +190,7 @@ function drawDoor(d, open) {
 
 // ------------------------------------------------------------------ warm props (Phase 10)
 function drawHearthAt(x, y, seed) {
-  // Hearth v3 (v1.2.3, Item 6 — Zan: "fireplaces need to be big"):
+  // Hearth v3 (v1.2.3, Item 6 — X: "fireplaces need to be big"):
   // a proper CHIMNEY BREAST about three tiles across — a broad
   // stone hearth floor, a wide brick body with a breast column
   // rising above a deep mantel shelf, a LARGE firebox with big
@@ -1155,7 +1155,7 @@ function drawBlackjackState(t, tx2, ty2) {
 
 // v1.6 (Orders 1+4): BLACKJACK CARDS ON THE FELT — post-entity
 // overlay, the poker board's sibling. Cards are 24x34 (bigger
-// than poker's 22x31 board cards, per Zan: "show up more like
+// than poker's 22x31 board cards, per X: "show up more like
 // the slots do") with the same big-face rank-over-suit art. The
 // dealer's hand fans across the felt's far edge — hole card
 // face-down (the null in dealer.cards) until settlement reveals
@@ -1314,7 +1314,7 @@ function drawSlotCabinet(sx, sy, idx, facing, machineId) {
 // stool (round pad on a pedestal), drawn ONLY for slot seats.
 // Until now kind 'stool' had no art of its own and fell into the
 // generic chair branch: the 60px-wide ladder-back table chair,
-// whose cushion painted over the east-row cabinets (Zan's red
+// whose cushion painted over the east-row cabinets (X's red
 // circle, "THESE CHAIRS ARE ON THE SLOTS"). The stool's whole
 // solid art is the cushion union (hw 17, hh ~12) — sized for the
 // slot rows' screen pitch, and the validator's Law A models
@@ -2529,7 +2529,7 @@ function drawChairAt(x, y, dir, opts) {
 
 // ------------------------------------------------------------------
 // v1.5.1: the AUDIENCE chair (kind 'audience' — stage seating
-// blocks only). Zan circled the venue rows for the tenth time:
+// blocks only). X circled the venue rows for the tenth time:
 // from behind, drawChairAt's panel-filled ladder back + the wide
 // cushion merged into a solid slab — "old chair models", crates
 // on red pads. The table chairs are APPROVED and untouched; the
@@ -2777,7 +2777,7 @@ function drawTableAt(x, y) {
   ctx.strokeStyle = '#7a5a2b'; ctx.lineWidth = 1.2; ctx.stroke();
 }
 
-// v1.2.3 (Item 1 — Zan: "my legs should be under the table"): a
+// v1.2.3 (Item 1 — X: "my legs should be under the table"): a
 // player seated at a TABLE seat (a chair one tile from a round
 // table — the café's and terrace's baked tables, or a placed
 // table piece in a home) gets two things: a small PULL-IN toward
@@ -2903,7 +2903,7 @@ function drawClubPass(now) {
     }
     ctx.restore();
     // the dancer herself — v1.6: drawn at CHAR_SCALE, the SAME
-    // size as player characters (Zan's order; the 'curvy' figure
+    // size as player characters (X's order; the 'curvy' figure
     // is her silhouette, not a smaller size). While she is off
     // her stage (a 500z follow, or walking back) the entity pass
     // draws her at her streamed position instead — this pass
@@ -3661,7 +3661,7 @@ function draw() {
       ctx.fillText('🎤', sx + 13 * CHAR_SCALE, sy - 12 * CHAR_SCALE - bob);
     }
 
-    // Fish emote (Zan, 2026-10-21): the catch brandished overhead
+    // Fish emote (X, 2026-10-21): the catch brandished overhead
     // in triumph — the real fish art, wiggling, beside the head.
     if (p.emote === 'fish' && !p.fallen) {
       const wig = Math.sin(now / 120 + p.id * 2.3) * 0.22;

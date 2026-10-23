@@ -3,7 +3,7 @@
 /**
  * Mixer static fix (v1.3) — RENDERED regression proof.
  *
- * Zan (2026-10-21): "Make sure the sounds from the mixer at any
+ * X (2026-10-21): "Make sure the sounds from the mixer at any
  * BPM don't cause staticy glitchy sounds... u can hear it at high
  * bpm with most drum lines."
  *

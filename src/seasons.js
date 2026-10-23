@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Solarion — seasonal themes (Zan's standing annual rule,
+ * Solarion — seasonal themes (X's standing annual rule,
  * 2026-10-21): "From 10/1 to 11/1 lets have Halloween themes run
  * in all zones. 12/1 - 1/1 Xmas themes."
  *

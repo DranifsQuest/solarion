@@ -314,7 +314,7 @@ test('casino social: table chat reaches the table only; jackpot accrues 2% per b
 
 // ------------------------------------------------------------ item 13: ambient life
 // Lane B (post-Phase 10): the wandering NPC locals were removed at
-// Zan's direction — snapshots must contain ONLY real players. The
+// X's direction — snapshots must contain ONLY real players. The
 // 12-minute world clock in hello stays (day/night is not NPC-driven).
 
 test('ambient life: no NPCs ride snapshots anymore; the world clock ships in hello', { timeout: 60000 }, async () => {
@@ -372,7 +372,7 @@ test('burn-to-CD: stage refuses without a CD; CDs are reusable + deletable, mixe
   assert.equal(burned.blanks, 9);
   assert.equal(burned.cds[0].name, 'P9 Banger', 'CD carries the mix title');
 
-  // v1.1 (Zan): performing does NOT spend the CD. Set #1 in the Bay…
+  // v1.1 (X): performing does NOT spend the CD. Set #1 in the Bay…
   u.client.send({ type: 'stage-join', mixId: mix.id });
   await waitFor(() => u.client.msgs.filter(m => m.type === 'performance-start').pop(), 8000, 'performance #1 starts with CD');
   await waitFor(() => u.client.msgs.filter(m => m.type === 'performance-end').pop(), 30000, 'performance #1 ends');
@@ -570,7 +570,7 @@ test('friends: request → accept, presence + locations, owner-only fast travel 
     5000, 'regular navigate refused by the owner gate');
   assert.ok(navRefusal);
 
-  // The owner flag rides the hello: regulars false, Zan's true.
+  // The owner flag rides the hello: regulars false, X's true.
   assert.equal(a.client.hello.you.isOwner, false, 'regular account: isOwner false in hello');
   const o = await makeUser('zantheon');
   assert.equal(o.client.hello.you.isOwner, true, 'owner account: isOwner true in hello');
@@ -637,7 +637,7 @@ test('emotes broadcast + snapshot state; profiles carry look, mixes, friend stat
   a.client.send({ type: 'emote', emote: 'backflip' });
   await sleep(400);
   assert.equal(b.client.msgs.filter(m => m.type === 'emote' && m.emote === 'backflip').length, 0);
-  // The fish emote (Zan, 2026-10-21) rides the same machinery:
+  // The fish emote (X, 2026-10-21) rides the same machinery:
   // broadcast to the room + carried in snapshots while active.
   a.client.send({ type: 'emote', emote: 'fish' });
   const fev = await waitFor(() => b.client.msgs.filter(m => m.type === 'emote' && m.userId === a.id && m.emote === 'fish').pop(),

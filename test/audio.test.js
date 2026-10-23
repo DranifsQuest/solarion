@@ -23,7 +23,7 @@
  * v1.3 (mixer static fix): the v1.2 limiter above was NOT enough
  * for the mixer path — five layered drum lines sum coherently to
  * +8..+14dBFS and the -8dB/4ms limiter let the destination reach
- * 1.11-1.82 (hundreds of DAC-clipped samples = the static Zan
+ * 1.11-1.82 (hundreds of DAC-clipped samples = the static X
  * heard at high BPM). The chain is now master -> trim(0.8) ->
  * highpass(32Hz) -> fast ceiling limiter (-4dB, 20:1, 0.8ms),
  * plus per-loop drum trims and drum-machine choke. The RENDERED

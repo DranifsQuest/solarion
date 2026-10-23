@@ -242,7 +242,7 @@ async function main() {
     report('presence: A and B see each other in snapshots', true, 'mutual snapshot presence');
   } catch (e) { report('presence: A and B see each other in snapshots', false, e.message); }
 
-  // Politeness (Zan, 2026-10-21): the chat exchange happens inside
+  // Politeness (X, 2026-10-21): the chat exchange happens inside
   // B's PRIVATE home instance, not a public room — a verify bot's
   // "hello" line in the Gateway crossed a real player's session.
   // Homes are instanced rooms on the same per-map chat broadcast

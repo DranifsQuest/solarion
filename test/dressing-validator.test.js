@@ -9,7 +9,7 @@
  * It copies the validator + map data into a throwaway tree, runs
  * the validator as a subprocess, and asserts:
  *   - the clean tree PASSES;
- *   - each of Zan's three live-playtest exhibits, reintroduced as
+ *   - each of X's three live-playtest exhibits, reintroduced as
  *     a data doctoring, FAILS BY NAME:
  *       1. club counter back to an extruded '#' cube
  *          ("chairs by the bar are still ON the bar"),
@@ -27,7 +27,7 @@
  *   the north seats back to CHAIR art at the old offset (the
  *   back panel was the violation), and 3c doctors the east
  *   seats to chair art at the CURRENT offset — the exact class
- *   Zan circled, which the v1.4.1 law's own-cabinet-only test
+ *   X circled, which the v1.4.1 law's own-cabinet-only test
  *   could not see.
  *   v1.6 (club pass) adds: a reintroduced bar stool fails by name
  *   (the stools are gone game-wide), a city venue stripped of its
@@ -97,8 +97,8 @@ test('exhibit 1: an extruded club counter fails by name (bar construction)', () 
 test('exhibit 1c: a reintroduced bar stool fails by name (v1.6: no bar stools)', () => {
   const dir = makeTree();
   doctor(dir, 'src/maps.js',
-    "      // (v1.6: the two bar stools that stood here are GONE — Zan's",
-    "      seat(id, 13, 5, 22, 'down', 'stool'), // doctored back in\n      // (v1.6: the two bar stools that stood here are GONE — Zan's");
+    "      // (v1.6: the two bar stools that stood here are GONE — X's",
+    "      seat(id, 13, 5, 22, 'down', 'stool'), // doctored back in\n      // (v1.6: the two bar stools that stood here are GONE — X's");
   const { code, out } = runValidator(dir);
   assert.equal(code, 1, `doctored tree must fail:\n${out}`);
   assert.match(out, /bar stool club-mirage-seat-13 .* bar stools were removed game-wide/);

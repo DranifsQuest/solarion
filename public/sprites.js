@@ -529,7 +529,7 @@ const SIDE_LEGS = [
 // then the legs come TOGETHER — thighs side by side, knees
 // together, shins dropping as one column, shoes adjacent at the
 // centre. The pre-v1.2.2 art splayed the legs apart around the
-// furniture (the "straddle" Zan kept flagging): thighs split,
+// furniture (the "straddle" X kept flagging): thighs split,
 // shins at the outer edges, shoes wide. Keyed by bottom style;
 // both genders share the shapes (the torso/head carry the gender
 // read, as with SIDE_LEGS). test/sprites.test.js pins the

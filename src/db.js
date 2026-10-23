@@ -245,7 +245,7 @@ const q = {
 
   // Atomic daily-bonus claim: succeeds only when last_bonus_day differs
   // from today. Returns the number of changed rows (1 = bonus granted).
-  // v1.1 (Zan): a brand-new account's FIRST-EVER claim (last_bonus_day
+  // v1.1 (X): a brand-new account's FIRST-EVER claim (last_bonus_day
   // IS NULL at claim time) pays a 5,000z welcome bonus instead of the
   // usual 100z — the CASE is evaluated against the pre-update row, so
   // the first-claim detection lives inside the same atomic UPDATE.
@@ -253,7 +253,7 @@ const q = {
     'UPDATE avatars SET zcoins = zcoins + CASE WHEN last_bonus_day IS NULL THEN 5000 ELSE 100 END, last_bonus_day = ? WHERE user_id = ? AND (last_bonus_day IS NULL OR last_bonus_day <> ?)'
   ),
 
-  // Owner top-up (Zan, 2026-10-21): floors the owner's balance at the
+  // Owner top-up (X, 2026-10-21): floors the owner's balance at the
   // given amount on connect. Only ever raises, never lowers.
   ownerTopUp: db.prepare(
     'UPDATE avatars SET zcoins = ? WHERE user_id = ? AND zcoins < ?'

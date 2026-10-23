@@ -49,12 +49,12 @@ const CHAT_WINDOW_MS = 10e3;    // ... per window
 const CHAT_MAX_LEN = 240;
 const CHAT_HISTORY = 40;        // messages kept per map for joiners
 const POSITION_SAVE_MS = 15e3;  // periodic crash-safe position flush
-const TRANSFER_MS = 1500;       // load-screen window on every transfer (Phase B: 3000; v1.2 Item T: 1500, Zan's ruling)
+const TRANSFER_MS = 1500;       // load-screen window on every transfer (Phase B: 3000; v1.2 Item T: 1500, X's ruling)
 const SIT_RADIUS = 52;          // px: how close to a seat `interact` must be
 
 // Phase B amendment — vices (bar drinks + hookah puffs). All state
 // is server-tracked per player; clients only render the effects.
-// v1.1 model (Zan, 2026-10-21): the ENTIRE drunk / high state lives
+// v1.1 model (X, 2026-10-21): the ENTIRE drunk / high state lives
 // in a 30-second window from the LAST drink / puff — haze, wobble,
 // level, pass-out, hippy, all of it. Each new drink/puff refreshes
 // the window and stacks the level toward THRESHOLD. When the window
@@ -75,7 +75,7 @@ const FURN_ROT_DIRS = ['down', 'left', 'up', 'right']; // studio furniture rot -
 // Phase 9 — emotes: one-shot social expressions. The server tracks
 // the active emote per player (snapshots carry it, so late viewers
 // see it too) and broadcasts the start. Dance lasts longest and is
-// cancelled by walking. `fish` (Zan, 2026-10-21) brandishes a fish
+// cancelled by walking. `fish` (X, 2026-10-21) brandishes a fish
 // in triumph — the client draws the catch held high.
 const EMOTES = { wave: 2600, dance: 6000, laugh: 2600, thumbsup: 2600, fish: 3200 };
 
@@ -587,7 +587,7 @@ class Game {
       const ny = p.y + dy;
       if (!collides(map, p.x, ny, PLAYER_RADIUS) && !inLock(p.x, ny)) p.y = ny;
 
-      // v1.1 facing (Zan: "walk right, face right"): dir names the
+      // v1.1 facing (X: "walk right, face right"): dir names the
       // SCREEN direction of travel. dx/dy here are world axes; the
       // shared mapping projects them through the iso transform and
       // takes the dominant screen axis. (The old world-axis read was
@@ -871,7 +871,7 @@ class Game {
   }
 
   // ---------------------------------------------------------- fishing
-  // v1.1.1 (Zan): pond fishing. v1.2 (Items N/O): PROXIMITY fishing
+  // v1.1.1 (X): pond fishing. v1.2 (Items N/O): PROXIMITY fishing
   // — no fixed spots, no rod stands. Anywhere along the bank of a
   // fishable pond (map def `fishable: true`; `frozen: true` = ice
   // fishing on a frozen pond), E casts. State, RNG and money all
@@ -976,7 +976,7 @@ class Game {
    * tick's movement-stand cleared p.seated directly, so a poker
    * spectator's chair reservation was never released — after four
    * sit/stand cycles every chair at the table answered "taken"
-   * forever (Zan, live, Neon Casino 2026-10-22). Returns true when
+   * forever (X, live, Neon Casino 2026-10-22). Returns true when
    * the player actually stood.
    */
   standUp(p, viaMovement = false) {

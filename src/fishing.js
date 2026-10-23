@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Solarion — fishing (v1.1.1, Zan's ruling 2026-10-21).
+ * Solarion — fishing (v1.1.1, X's ruling 2026-10-21).
  *
  * Pond fishing: stand on a shore spot (map data: `fishing`), press E
  * to cast, wait out the cast, and the server rolls. One fish every

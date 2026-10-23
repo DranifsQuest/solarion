@@ -72,7 +72,7 @@
  *     tile; bar counters are flat 'B' tiles by construction
  *     (interior 'W'/'#' counters fail); seat kinds are a closed
  *     set and audience seats resolve to the audience chair art.
- *   - NO BAR STOOLS (v1.6, Zan's order): bar stools were removed
+ *   - NO BAR STOOLS (v1.6, X's order): bar stools were removed
  *     game-wide — patrons STAND at the counter (the drink flow is
  *     proximity-based). A non-slot 'stool' seat in a bar map
  *     (casino or club) fails: the only stools left in the game
@@ -97,7 +97,7 @@
  *     or clusters with other props (<=3 tiles), or stands inside
  *     a populated named area. Open-ground loners fail.
  *
- *   WARNINGS (Zan's standing rules, as far as the data supports)
+ *   WARNINGS (X's standing rules, as far as the data supports)
  *   - an interior map with != 1 inbound door (one facade entrance)
  *   - an exterior door with no solid tile adjacent (no building
  *     face — a floating door)
@@ -130,7 +130,7 @@ const warn = (mapId, msg) => warnings.push(`[${mapId}] ${msg}`);
 // PIT-ONLY VENUES (v1.6, registered variant): maps whose player
 // stage runs a standing PIT with zero audience seats BY DESIGN.
 // Club Mirage is the one entry — its ringside tables are its
-// seating, and Zan ordered "a stage with only a pit" for it.
+// seating, and X ordered "a stage with only a pit" for it.
 // This is a registry, not a general weakening: a stage map NOT
 // listed here with no audience seats fails the venue law below.
 const PIT_ONLY_VENUES = new Set(['club-mirage']);
@@ -698,7 +698,7 @@ for (const map of Object.values(MAPS)) {
     // cabinets sit at a (46, 23) screen pitch while the seat art
     // was the 60px-wide table chair, so every east stool's
     // cushion landed inside the NEXT cabinet south's rect (its
-    // centre included) and the law passed it — Zan's circled
+    // centre included) and the law passed it — X's circled
     // "chairs ON the slots" shipped straight through the gate.
     // The law now tests EVERY slot seat, with the art bbox of
     // the kind it actually is (stool diamond / chair bbox),
@@ -746,7 +746,7 @@ for (const map of Object.values(MAPS)) {
     }
   }
   // -- SEAT FOOTPRINT LAW (v1.4.1, the seat audit) ---------------
-  // Zan's live playtest found three faces of one class: seats whose
+  // X's live playtest found three faces of one class: seats whose
   // art lands ON the furniture they serve (club bar stools on the
   // counter, casino stools over the slot cabinets). The class is
   // screen-space: the render scales positions by ZOOM 0.72 but
@@ -763,7 +763,7 @@ for (const map of Object.values(MAPS)) {
   // (C) BAR CONSTRUCTION: in casino maps any interior (non-border)
   //     'W' tile is a counter wearing a wall's extrusion — fail.
   //     In the club any interior '#' tile likewise. And (v1.6) bar
-  //     stools must NOT exist: Zan ordered them gone game-wide
+  //     stools must NOT exist: X ordered them gone game-wide
   //     after the club's rendered as big flat cushions ON the
   //     counter. Patrons stand at the counter (the drink flow is
   //     proximity-based and never needed the seat). The only
@@ -822,7 +822,7 @@ for (const map of Object.values(MAPS)) {
       if (s.kind !== 'stool' || slotSeatIds.has(s.id)) continue;
       if (!map.casino && !map.club) continue;
       const tx = tileOfPx(s.x), ty = tileOfPx(s.y);
-      err(map.id, `bar construction: bar stool ${s.id} at (${tx},${ty}) — bar stools were removed game-wide (v1.6, Zan's order); patrons stand at the counter, and the only stools left are the slot machines' seats`);
+      err(map.id, `bar construction: bar stool ${s.id} at (${tx},${ty}) — bar stools were removed game-wide (v1.6, X's order); patrons stand at the counter, and the only stools left are the slot machines' seats`);
     }
     // (D) sprite path: closed kind set + audience is always
     // 'audience'. v1.5.1: the pin flips — venue audience seats
@@ -884,7 +884,7 @@ for (const map of Object.values(MAPS)) {
   // building frontage, stage/pit, water, a hero prop), cluster
   // with other props, or stand in a populated named area. A prop
   // in open ground with none of those is scatter, and scatter is
-  // what Zan keeps circling in screenshots.
+  // what X keeps circling in screenshots.
   {
     const HERO_KINDS = new Set(['hearth', 'forge', 'fountain', 'greattree', 'lighthouse', 'icesculpt', 'neonsign', 'stall', 'volleyball']);
     const nearAny = (set, tx, ty, r) => {

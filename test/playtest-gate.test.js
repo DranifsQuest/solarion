@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Playtest Gate tooling (Zan's challenge, 2026-10-21): the visual
+ * Playtest Gate tooling (X's challenge, 2026-10-21): the visual
  * level of the Gatekeeper. These tests pin the CHECKER, not the
  * game: the PNG codec round-trips, the screen-space projection
  * matches the client's math, and — the important part — every

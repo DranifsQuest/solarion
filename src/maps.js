@@ -147,7 +147,7 @@ function stageDef(tx, ty, facing = 'S') {
  *  v1.5.1: kind 'audience', NOT 'chair'. The generic table-chair
  *  art (drawChairAt) reads fine at a table, but in a 20-seat block
  *  seen from behind its panel-filled back + wide cushion merged
- *  into a crate on a red pad — Zan circled it ten times ("old
+ *  into a crate on a red pad — X circled it ten times ("old
  *  chair models... those chairs all gotta go; the others are
  *  fine"). Audience seats get their own draw path in the client
  *  (drawAudienceChairAt): arched slatted back with real gaps,
@@ -554,7 +554,7 @@ function buildCasino({ id, name, hostId, hostLabel, hostSpawn, floor, floorAlt, 
     // live-verify harness legs are untouched).
     { id: `${id}-blackjack-2`, game: 'blackjack', x: cx(12), y: cy(5), chairs: chairSet(cx(12), cy(5)) },
     tableAt(3, 5, 11),
-    // v1.5 (Zan, live playtest 2026-10-22): "make a couple tables
+    // v1.5 (X, live playtest 2026-10-22): "make a couple tables
     // black jack instead" — ONE table per casino converts: the
     // centre-east table (#4 spot, middle row, east column) in BOTH
     // lounges (shared floor plan, so the conversion is symmetric).
@@ -591,7 +591,7 @@ function buildCasino({ id, name, hostId, hostLabel, hostSpawn, floor, floorAlt, 
       // was drawn with the 60px-wide table-chair art: every east
       // stool's cushion corner landed ~33px inside the NEXT
       // machine south's screen rect, and the seat's centre sat
-      // inside that rect outright (the chairs Zan circled "ON
+      // inside that rect outright (the chairs X circled "ON
       // THE SLOTS"). No anchor fixes that at pitch 2 with any
       // seat art — the southern cabinet's 54px-tall billboard
       // claims the whole north-west quadrant. Pitch 3 (screen
@@ -608,7 +608,7 @@ function buildCasino({ id, name, hostId, hostLabel, hostSpawn, floor, floorAlt, 
     // slot stools (sit to spin): north row faces up, east row faces right
     ...slots.slice(0, 5).map((s, i) => ({ id: s.seatId, x: s.ix, y: s.iy, dir: 'up', kind: 'stool' })),
     ...slots.slice(5).map((s) => ({ id: s.seatId, x: s.ix, y: s.iy, dir: 'right', kind: 'stool' })),
-    // (v1.6: NO bar stools — Zan's order, game-wide. Patrons STAND
+    // (v1.6: NO bar stools — X's order, game-wide. Patrons STAND
     // at the counter; the drink flow is proximity-based and never
     // needed the seat. The validator's bar law now FORBIDS bar
     // stools in bar maps. Slot stools above are machines' seats,
@@ -686,7 +686,7 @@ function buildNeonCasino() {
 }
 
 // ------------------------------------------------------------------
-// CLUB MIRAGE — the go-go bar off Neon District (v1.4, Zan's spec
+// CLUB MIRAGE — the go-go bar off Neon District (v1.4, X's spec
 // 2026-10-21). A SEPARATE building from the Neon Casino, with its
 // own facade on the district's SW block. Inside, built BIG from the
 // start (40x26 — the scale rule: "we arent paying for real estate
@@ -787,11 +787,11 @@ function buildClubMirage() {
     ],
     seats: [
       ...tableChairs.map(([x, y, dir], i) => seat(id, i + 1, x, y, dir, 'chair')),
-      // (v1.6: the two bar stools that stood here are GONE — Zan's
+      // (v1.6: the two bar stools that stood here are GONE — X's
       // order, game-wide. Mira serves patrons standing at the
       // counter; the drink flow is proximity-based.)
     ],
-    // v1.6 (Zan's order): a REAL player-performance stage in the
+    // v1.6 (X's order): a REAL player-performance stage in the
     // club — the full stage complex (platform + standing pit +
     // speakers) but PIT-ONLY: no 20-chair audience grid (the
     // ringside tables are the club's seating). Placement: the EAST
@@ -1002,7 +1002,7 @@ function buildNeonDistrict() {
       // the rows read scattered). The street now reads as the
       // aisle between the pit and the seats.
       // v1.3.1 (Item 3 — UNIFORM VENUE GEOMETRY): the audience
-      // faces straight at the stage ('up') — Zan's annotated
+      // faces straight at the stage ('up') — X's annotated
       // screenshot showed the old 'right' profile rows aiming
       // screen-SE, ~90° off the stage. The per-venue profile
       // exceptions are abolished in all five cities.
@@ -1042,7 +1042,7 @@ function buildCinderMesa() {
   g[5][32] = '|'; g[5][43] = '|';   // stage speakers (v1.3.1: front corners of the north stage)
   // v1.5.1 (Job B): the forge's two '|' POSTS are DELETED — as
   // tiles they extrude into plain wooden cubes, and flanking the
-  // old forge they read as stray CRATES in the nook (Zan: "get
+  // old forge they read as stray CRATES in the nook (X: "get
   // rid of boxes"). The forge's 'R' stone-base tile goes too:
   // the big hearth (below) draws its own stone floor, and the
   // plaza's 's' stone shows through where all three stood.
@@ -1066,7 +1066,7 @@ function buildCinderMesa() {
     props: [
       // v1.2.2 (Item 8): the doorstep lantern moved with the door.
       prop('lantern', 29, 39),
-      // v1.5.1 (Job B — Zan: "make cozy, get rid of boxes,
+      // v1.5.1 (Job B — X: "make cozy, get rid of boxes,
       // bigger fireplace"): the old FORGE prop read as a little
       // stove in the corner, so the plaza's hero is now the BIG
       // HEARTH (the v3 chimney-breast fireplace, same as the
@@ -1374,7 +1374,7 @@ function clientMap(map, seasonOverride) {
       // v1.4.1 shipped that client logic but this serializer
       // stripped the field, so NO client ever matched a slot
       // seat: the generic seat pass drew full chairs at every
-      // slot (Zan's live screenshot — backed-up chairs on the
+      // slot (X's live screenshot — backed-up chairs on the
       // north row, chairs ON the cabinets on the east row) and
       // occupied slot sitters got phantom chair backs. Every
       // automated check still passed because they all measure

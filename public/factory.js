@@ -154,7 +154,7 @@ function makeBuilding(ctx, cx, cy, opts = {}) {
 }
 
 /**
- * An arcade cabinet (the slot/pinball lesson from Zan's Coke
+ * An arcade cabinet (the slot/pinball lesson from X's Coke
  * reference): chunky body, lit marquee with bulbs, angled glass
  * screen with the reels showing through a shine streak, coin panel.
  * (cx, cy) = ground point at the cabinet's base center.

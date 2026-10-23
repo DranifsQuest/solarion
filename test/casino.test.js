@@ -692,7 +692,7 @@ test('poker join flow: sit -> offer -> watch (no chips) -> buy in (atomic)', { t
 });
 
 // ---------------------------------------------------------------- v1.3.1
-// Item 6 regression (Zan, live, Neon Casino 2026-10-22): a poker
+// Item 6 regression (X, live, Neon Casino 2026-10-22): a poker
 // spectator's chair reservation was never released when they stood
 // via MOVEMENT input — the tick cleared p.seated directly and the
 // casino never heard about it. Four sit/stand cycles leaked all
@@ -952,7 +952,7 @@ test('slot stools: seated player faces the machine in BOTH casinos (Item G)', { 
   await sitAndCheck(u, { x: 1020, y: 128 }, 'right', 'lounge east-wall slot'); // v1.6: pitch-3 row, stool 84px west + 16px north of the cabinet centre (the v1.4.1 spot painted over the NEXT machine south)
   u.client.ws.close();
 
-  // Neon Casino: the east-wall row from Zan's screenshot.
+  // Neon Casino: the east-wall row from X's screenshot.
   const v = await makeUser('facing_vic');
   v.client.send({ type: 'debug-teleport', x: 224, y: 48 });
   await waitFor(() => v.client.msgs.filter(m => m.type === 'map' && m.map.id === 'neon-district').pop(), 5000, 'vic in neon-district');

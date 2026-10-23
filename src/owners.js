@@ -3,7 +3,7 @@
 /**
  * Solarion — owner accounts (ONE source of truth).
  *
- * Zan's accounts. Two standing perks key off this set:
+ * X's accounts. Two standing perks key off this set:
  *  - the balance floor (1,000,000z top-up on every WS connect,
  *    applied in src/server.js), and
  *  - fast travel (v1.2, Item J): the Navigator's travel-to-city

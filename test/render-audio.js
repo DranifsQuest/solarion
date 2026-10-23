@@ -3,7 +3,7 @@
 /**
  * Offline SAMPLE renderer for the client audio engine (AE in
  * public/mixer.js) — the measurement instrument for the mixer
- * static/glitch fix (Zan, 2026-10-21: "at high bpm with most drum
+ * static/glitch fix (X, 2026-10-21: "at high bpm with most drum
  * lines" the mixer turns staticy).
  *
  * The other suites use recording fakes: they prove WHAT is

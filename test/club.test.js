@@ -165,7 +165,7 @@ test('club mirage: a big room with three stages, blonde curvy dancers, and a bar
 });
 
 test('club mirage: NO bar stools anywhere (v1.6) — patrons stand at every bar', () => {
-  // Zan's order: bar chairs are gone game-wide. The only stools
+  // X's order: bar chairs are gone game-wide. The only stools
   // left in any map are the slot machines' own seats.
   for (const map of Object.values(MAPS)) {
     const slotSeatIds = new Set(map.casino ? map.casino.slots.map(s => s.seatId) : []);
