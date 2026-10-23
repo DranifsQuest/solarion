@@ -541,7 +541,7 @@ html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; ba
 }
 
 /* ------------------------------------------------ UX overhaul (v1.8)
-   Zan's written spec, 2026-10-22. Four systems land here:
+   X's written spec, 2026-10-22. Four systems land here:
 
    1. GEOMETRY — the nested-radius golden rule as tokens:
       --r-in = --r-panel − --p-panel (inner radius equals outer

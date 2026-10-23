@@ -189,7 +189,7 @@ function drawDoor(d, open) {
 }
 
 // ------------------------------------------------------------------ UX overhaul: panel motion + dragging
-// Motion is a budget, not a garnish (Zan's spec): panels opened by a
+// Motion is a budget, not a garnish (X's spec): panels opened by a
 // CLICK get one small ease-out settle (translate + fade); closing is
 // softer and shorter. Scene-driven panels (stage, trays) never come
 // through here — they stay instant. Nothing animates on first
