@@ -162,6 +162,17 @@ class PokerTable {
     this.chairs = def.chairs.map((c) => ({
       dir: c.dir, x: c.x, y: c.y, seat: null,
     }));
+    // v1.6 (Order 3, Zan live playtest 2026-10-22: "make poker
+    // have a house hand that you play againist"): a VIRTUAL fifth
+    // chair on the dealer's side (north, inside the ring) that no
+    // human can sit in. When exactly one human is dealt in, the
+    // house takes it with a fresh table-buy-in stack and plays a
+    // real heads-up hand through this same engine. This REPLACES
+    // the v1.5 solo house match (the 1:1 auto-match is gone —
+    // solo pots are now built from real bets on both sides).
+    this.houseIdx = this.chairs.length;
+    this.chairs.push({ dir: 'H', x: def.x, y: def.y - 44, seat: null, virtual: true });
+    this.houseActAt = 0; // tick-scheduled AI action time (0 = unscheduled)
     this.state = 'idle';
     this.reservedBy = new Map(); // chairIdx -> userId (v1.1.1 spectator holds)
     // v1.1.2: the TABLE owns its buy-in. null = unset (empty table);
@@ -181,15 +192,19 @@ class PokerTable {
     this.stateUntil = 0;
     this.lastWinners = null;
     this.reveal = null;
-    // v1.5 (Zan, live playtest 2026-10-22): one-player minimum.
-    // soloHand is latched AT THE DEAL: a hand that starts with a
-    // single player is a solo hand for its whole life — the house
-    // matches that player's total contribution 1:1 and the matched
-    // pot shows in publicState. A hand that starts 2+ and folds
-    // down to one is NEVER solo (no match), and a spectator who
-    // buys in mid-hand is sittingOut until the next deal, so they
-    // cannot retro-solo or un-solo the running hand.
-    this.soloHand = false;
+    // v1.6: the house seat lives only for the length of a heads-up
+    // hand (created at the deal in startHand, removed in
+    // cleanupHand); between hands the virtual chair is empty, so
+    // countdowns and eligibility count humans only.
+    this.houseInHand = false;
+    // v1.6 (Order 5 forfeit accounting): chips committed by a
+    // player who LEAVES mid-hand (stand / disconnect) move here
+    // so they stay in the pot after their seat is removed —
+    // potTotal() and buildPots() both count dead money. (Before
+    // this, removing the seat silently destroyed the leaver's
+    // committed chips: the remaining players played for a pot
+    // missing exactly the forfeited amount.)
+    this.deadCommitted = 0;
   }
 
   seatAt(i) { return this.chairs[i].seat; }
@@ -203,7 +218,9 @@ class PokerTable {
   }
 
   eligibleCount() {
-    return this.chairs.filter((c) => c.seat && !c.seat.sittingOut && c.seat.chips > 0).length;
+    // Humans only: the virtual house chair never counts toward
+    // starting a hand (it joins at the deal, see startHand).
+    return this.chairs.filter((c, i) => i !== this.houseIdx && c.seat && !c.seat.sittingOut && c.seat.chips > 0).length;
   }
 
   // Total table equity of a seat (chips + committed) — the value
@@ -225,7 +242,7 @@ class PokerTable {
   }
 
   potTotal() {
-    let t = 0;
+    let t = this.deadCommitted || 0;
     for (const c of this.chairs) {
       const s = c.seat;
       if (s) t += s.committed;
@@ -234,23 +251,22 @@ class PokerTable {
   }
 
   /**
-   * v1.5 solo house match: in a solo hand the house matches the
-   * lone player's total contribution 1:1, continuously — the match
-   * IS their committed total (every chip they put in is doubled
-   * by house money). The match is not player equity until it is
-   * won: seatTotal()/the ledger never include it; showdown adds
-   * it to the pot being distributed, and publicState adds it to
-   * the displayed pot. If the solo player folds or leaves mid-hand
-   * the match simply never pays (abort refunds only their own
-   * committed chips).
+   * v1.6 (Order 3): the public face of the house seat — stack,
+   * street bet and hole-card COUNT (the cards themselves stay
+   * secret until the showdown reveal, exactly like a human's).
+   * The v1.5 currentHouseMatch() is gone: there is no match any
+   * more, the house's chips enter the pot only as real bets.
    */
-  currentHouseMatch() {
-    if (!this.soloHand) return 0;
-    for (const c of this.chairs) {
-      const s = c.seat;
-      if (s && s.inHand) return s.committed;
-    }
-    return 0;
+  housePublic() {
+    const s = this.chairs[this.houseIdx].seat;
+    if (!s) return null;
+    return {
+      name: s.name, chips: s.chips, bet: s.bet,
+      folded: !!s.folded, allIn: !!s.allIn,
+      acting: this.actionChair === this.houseIdx,
+      cards: (s.inHand && !s.folded) ? 2 : 0,
+      x: Math.round(this.chairs[this.houseIdx].x), y: Math.round(this.chairs[this.houseIdx].y),
+    };
   }
 
   playerOf(seat) {
@@ -268,7 +284,10 @@ class PokerTable {
     return {
       type: 'poker-state', id: this.id, state: this.state,
       tableX: Math.round(this.x), tableY: Math.round(this.y),
-      chairs: this.chairs.map((c, i) => {
+      // Only the four guest chairs are listed; the virtual house
+      // chair rides in `house` below (clients derive "my seat"
+      // from this list by name — the house must never match).
+      chairs: this.chairs.slice(0, this.houseIdx).map((c, i) => {
         const s = c.seat;
         return {
           dir: c.dir, x: Math.round(c.x), y: Math.round(c.y),
@@ -280,13 +299,12 @@ class PokerTable {
         };
       }),
       community: this.community.map(cardStr),
-      // v1.5 solo: the displayed pot includes the house match, so
-      // the lone player sees the real (doubled) pot they are
-      // playing for. Non-solo hands never carry a match.
-      pot: this.potTotal() + this.currentHouseMatch(),
+      // v1.6: the pot is real bets only (the v1.5 house match is
+      // replaced by the house HAND — its bets are ordinary seat
+      // commitments and already counted by potTotal()).
+      pot: this.potTotal(),
       game: 'poker',
-      solo: this.soloHand,
-      houseMatch: this.currentHouseMatch(),
+      house: this.housePublic(),
       currentBet: this.currentBet, minRaise: this.minRaise,
       toCall: this.actionChair >= 0 && this.chairs[this.actionChair].seat
         ? Math.max(0, this.currentBet - this.chairs[this.actionChair].seat.bet) : 0,
@@ -343,7 +361,7 @@ class PokerTable {
     if (this.casino.blackjackSeated && this.casino.blackjackSeated(p.userId)) { this.game.send(p, { type: 'notice', text: 'You are already seated at a table.' }); return { ok: false, reason: 'guard' }; }
     // Phase 5: chair must be a known chair string — no probing other shapes.
     if (typeof dir !== 'string' || dir.length > 8) { this.game.send(p, { type: 'notice', text: 'No such chair.' }); return { ok: false, reason: 'guard' }; }
-    const i = this.chairs.findIndex((c) => c.dir === dir);
+    const i = this.chairs.findIndex((c) => !c.virtual && c.dir === dir);
     if (i < 0) { this.game.send(p, { type: 'notice', text: 'No such chair.' }); return { ok: false, reason: 'guard' }; }
     if (this.chairs[i].seat) { this.game.send(p, { type: 'notice', text: 'That chair is taken.' }); return { ok: false, reason: 'guard' }; }
     if (this.reservedBy.has(i) && this.reservedBy.get(i) !== p.userId) { this.game.send(p, { type: 'notice', text: 'That chair is taken.' }); return { ok: false, reason: 'guard' }; }
@@ -418,7 +436,16 @@ class PokerTable {
     if (!found) return false;
     const { seat, idx } = found;
     // Leaving mid-hand folds; chips already committed stay in the pot.
+    // v1.6 (Order 5, standing table rule): that fold is a FORFEIT —
+    // if this stand takes the player out of a live hand with money
+    // already committed, say so with the amount (no silent losses).
+    const forfeitAmt = (seat.inHand && !seat.folded) ? seat.committed : 0;
     if (seat.inHand && !seat.folded) seat.folded = true;
+    // The committed chips stay in the pot (Order 5) — move them
+    // to the table's dead money before the seat goes, or
+    // potTotal() would lose them with the seat. (Live states
+    // only: in the 'done' window the pot is already settled.)
+    if (seat.inHand && seat.committed > 0 && this.inHandState()) this.deadCommitted += seat.committed;
     const refund = seat.chips;
     this.chairs[idx].seat = null;
     if (p && p.seated && p.seated.kind === 'poker') {
@@ -437,6 +464,9 @@ class PokerTable {
       try { db.exec('ROLLBACK'); } catch (e2) { /* ignore */ }
     }
     if (!silent) {
+      if (forfeitAmt > 0) {
+        this.game.send(p, { type: 'notice', text: `You stood up mid-hand — your ${forfeitAmt}z wager is forfeited.` });
+      }
       this.game.send(p, { type: 'notice', text: `You stand. ${refund}z cashed out.` });
       this.game.send(p, { type: 'zcoins', zcoins: this.zcoinsOf(seat.userId) });
     }
@@ -506,6 +536,7 @@ class PokerTable {
     this.dealerChair = this.nextOccupied(this.dealerChair, true);
     this.deck = newDeck();
     this.community = [];
+    this.deadCommitted = 0;
     this.lastWinners = null;
     this.reveal = null;
     this.currentBet = BB;
@@ -520,27 +551,35 @@ class PokerTable {
       s.hole = [this.deck.pop(), this.deck.pop()];
       inHandIdx.push(i);
     }
-    // v1.5: latch solo-ness at the deal (see constructor note).
-    this.soloHand = inHandIdx.length === 1;
-    if (this.soloHand) {
-      // Solo: the lone player posts the big blind as their ante
-      // (posting SB+BB from one stack would leave their street
-      // bet above currentBet and wedge the betting round). They
-      // then check the board down street by street — or raise
-      // their own bet, which the house still matches 1:1.
-      this.postBlind(inHandIdx[0], BB);
-      this.state = 'preflop';
-      this.actionChair = this.nextActive(this.dealerChair);
-    } else {
-      // Blinds.
-      const sbI = this.nextOccupied(this.dealerChair, false);
-      let bbI = this.nextOccupied(sbI, false);
-      if (bbI === sbI) bbI = sbI; // heads-up: dealer is SB, other is BB
-      this.postBlind(sbI, SB);
-      this.postBlind(bbI, BB);
-      this.state = 'preflop';
-      this.actionChair = this.nextActive(bbI);
+    // v1.6 (Order 3): exactly ONE human dealt in => the house
+    // takes the virtual chair with a FRESH table-buy-in stack
+    // (house bankroll; refilled here, between hands, never
+    // mid-hand) and is dealt in like any second player. With
+    // 2+ humans dealt in there is no house seat at all.
+    this.houseInHand = false;
+    if (inHandIdx.length === 1) {
+      const stack = this.buyin ?? CHIP_BUYIN_MAX;
+      this.chairs[this.houseIdx].seat = {
+        userId: 'house', name: 'House',
+        chips: stack, buyin: stack, bet: 0, committed: 0,
+        hole: [this.deck.pop(), this.deck.pop()],
+        inHand: true, folded: false, allIn: false, sittingOut: false,
+      };
+      this.houseInHand = true;
     }
+    // Blinds — the engine's ordinary path, heads-up included:
+    // with two seats dealt in (human + house, or two humans) the
+    // next two occupied chairs post SB and BB exactly as a
+    // two-human hand has always done. The v1.5 solo branch
+    // (BB-only ante, board runs out vs nobody) is deleted.
+    const sbI = this.nextOccupied(this.dealerChair, false);
+    let bbI = this.nextOccupied(sbI, false);
+    if (bbI === sbI) bbI = sbI; // heads-up: dealer is SB, other is BB
+    this.postBlind(sbI, SB);
+    this.postBlind(bbI, BB);
+    this.state = 'preflop';
+    this.actionChair = this.nextActive(bbI);
+    this.houseActAt = 0;
     this.actionStart = now;
     this.turnDeadline = now + TURN_SECS * 1000;
     this.sendHoleCards();
@@ -673,6 +712,130 @@ class PokerTable {
     this.broadcast();
   }
 
+  // ------------------------------------------------------------ house AI
+  /**
+   * v1.6 (Order 3): the house hand's brain — a deliberately simple
+   * heuristic player. Preflop: hole-strength tiers (pairs, high
+   * cards, suited/connected bonuses). Postflop: the ported
+   * evaluator's made-hand category plus a four-flush draw bump.
+   * Modest randomization on top. It only ever PROPOSES a move;
+   * applyHouseMove validates/clamps it against the same legality
+   * rules act() enforces, and houseAct wraps the whole thing so
+   * any error degrades to check/call — the house can never stall
+   * or wedge a hand (and the 25s turn timer's autoAct remains as
+   * a final backstop).
+   */
+  houseDecide(s) {
+    const toCall = Math.max(0, this.currentBet - s.bet);
+    const pot = this.potTotal();
+    const rnd = Math.random();
+    let strength; // 0..1
+    if (this.community.length === 0) {
+      const rs = s.hole.map((c) => c.r).sort((a, b) => b - a);
+      const [a, b] = rs;
+      if (a === b) strength = 0.55 + ((a - 2) / 12) * 0.4; // pocket pair
+      else {
+        strength = ((a - 2) / 12) * 0.45 + ((b - 2) / 12) * 0.2;
+        if (s.hole[0].s === s.hole[1].s) strength += 0.06; // suited
+        if (a - b === 1) strength += 0.05;                 // connected
+        if (a === 14) strength += 0.08;                    // any ace
+      }
+    } else {
+      const cat = evaluate7([...s.hole, ...this.community])[0];
+      strength = [0.08, 0.3, 0.52, 0.68, 0.8, 0.86, 0.93, 0.97, 1][cat] || 0.1;
+      if (cat <= 1 && this.community.length < 5) {
+        const suits = {};
+        let flushDraw = false;
+        for (const c of [...s.hole, ...this.community]) {
+          suits[c.s] = (suits[c.s] || 0) + 1;
+          if (suits[c.s] === 4) flushDraw = true;
+        }
+        if (flushDraw) strength = Math.max(strength, 0.42);
+        if (cat === 1 && s.hole.some((c) => c.r === 14)) strength = Math.max(strength, 0.38);
+      }
+    }
+    strength += (rnd - 0.5) * 0.12;
+    const stack = s.chips + s.bet;
+    if (toCall === 0) {
+      if (strength > 0.62) {
+        return { action: 'raise', amount: this.currentBet + Math.max(BB, Math.round(pot * (0.5 + rnd * 0.5))) };
+      }
+      if (strength > 0.45 && rnd < 0.35) {
+        return { action: 'raise', amount: this.currentBet + BB * 2 };
+      }
+      return { action: 'check' };
+    }
+    const callFrac = toCall / Math.max(1, stack);
+    if (strength > 0.78 && rnd < 0.5) {
+      return { action: 'raise', amount: this.currentBet + Math.max(this.minRaise, Math.round(pot * 0.6)) };
+    }
+    if (strength > 0.5) return { action: 'call' };
+    if (strength > 0.32 && callFrac <= 0.25) return { action: 'call' };
+    if (strength > 0.2 && toCall <= BB) return { action: 'call' };
+    return { action: 'fold' };
+  }
+
+  /**
+   * Apply a house move with the same bookkeeping act() uses
+   * (street bet, currentBet/minRaise, acted set, all-in flags) —
+   * anything illegal is clamped to the nearest legal move, and a
+   * 'raise' that can't clear the current bet degrades to a call.
+   */
+  applyHouseMove(i, s, mv) {
+    const toCall = Math.max(0, this.currentBet - s.bet);
+    const prevBet = this.currentBet;
+    let a = mv && mv.action;
+    if (a === 'check' && toCall > 0) a = 'call';
+    if (a === 'fold') { s.folded = true; return; }
+    if (a === 'call') {
+      this.applyBet(s, Math.min(toCall, s.chips));
+      this.acted.add(i);
+      return;
+    }
+    if (a === 'raise') {
+      let target = Math.round(Number(mv.amount) || 0);
+      target = Math.min(target, s.bet + s.chips);
+      if (target <= this.currentBet) { // not a raise at all -> call
+        this.applyBet(s, Math.min(toCall, s.chips));
+        this.acted.add(i);
+        return;
+      }
+      if (target - s.bet < s.chips && target < this.currentBet + this.minRaise) {
+        target = Math.min(this.currentBet + this.minRaise, s.bet + s.chips);
+      }
+      const need = target - s.bet;
+      const isAllIn = need === s.chips;
+      this.applyBet(s, need);
+      if (target > prevBet) {
+        this.currentBet = target;
+        if (!isAllIn || need >= this.minRaise) {
+          this.minRaise = Math.max(BB, target - prevBet);
+          this.acted = new Set([i]);
+        }
+      }
+      this.acted.add(i);
+      return;
+    }
+    this.acted.add(i); // 'check' (or anything unknown): a check
+  }
+
+  /** Run one house action. NEVER throws, NEVER stalls. */
+  houseAct() {
+    const i = this.houseIdx;
+    const s = this.chairs[i].seat;
+    if (!s || !s.inHand || s.folded || s.allIn) { this.advanceOrEnd(); return; }
+    try {
+      this.applyHouseMove(i, s, this.houseDecide(s));
+    } catch (e) {
+      try { this.applyHouseMove(i, s, { action: 'call' }); }
+      catch (e2) { s.folded = true; }
+    }
+    this.actionStart = Date.now();
+    this.turnDeadline = this.actionStart + TURN_SECS * 1000;
+    this.checkHandEnd();
+    this.broadcast();
+  }
+
   bettingComplete() {
     const act = this.activeSeats();
     if (!act.length) return true;
@@ -693,11 +856,11 @@ class PokerTable {
     if (!this.inHandState()) return;
     const nf = this.nonFolded();
     if (nf.length === 0) { this.abortHand(); return; }
-    // v1.5: a SOLO hand never ends by "everyone else folded" —
-    // the board runs out in full so the lone player plays the
-    // hand they were dealt (and the house match pays at
-    // showdown). Non-solo hands keep the uncontested award.
-    if (nf.length === 1 && !this.soloHand) { this.awardUncontested(nf[0].s); return; }
+    // v1.6: one un-folded seat left = an ordinary uncontested
+    // win, heads-up against the house included — when the lone
+    // human folds or leaves, the house seat is the nf seat and
+    // takes the pot (Order 5's forfeit-fold) through this path.
+    if (nf.length === 1) { this.awardUncontested(nf[0].s); return; }
     if (this.bettingComplete()) { this.nextStreet(); return; }
     this.advanceOrEnd();
   }
@@ -783,19 +946,16 @@ class PokerTable {
       if (amount > 0) pots.push({ amount, eligible });
       prev = L;
     }
+    // v1.6: dead money (mid-hand leavers' forfeited commitments)
+    // joins the main pot — it belongs to no one, so it adds to
+    // the first pot's amount without adding eligibility.
+    if (this.deadCommitted > 0 && pots.length) pots[0].amount += this.deadCommitted;
     return pots;
   }
 
   showdown() {
     this.state = 'showdown';
     const pots = this.buildPots();
-    // v1.5 solo: the house match joins the pot before distribution.
-    // A solo hand has exactly one contributor, hence exactly one
-    // pot; the match equals that player's total contribution.
-    if (this.soloHand && pots.length) {
-      const match = this.currentHouseMatch();
-      if (match > 0) pots[0].amount += match;
-    }
     const scores = new Map();
     for (const c of this.chairs) {
       const s = c.seat;
@@ -857,7 +1017,11 @@ class PokerTable {
     this.community = [];
     this.lastWinners = null;
     this.reveal = null;
-    this.soloHand = false;
+    this.deadCommitted = 0;
+    // v1.6: the house seat is per-hand — it leaves with the hand.
+    this.chairs[this.houseIdx].seat = null;
+    this.houseInHand = false;
+    this.houseActAt = 0;
     this.state = 'idle';
     this.broadcast();
   }
@@ -866,7 +1030,7 @@ class PokerTable {
   tick(now) {
     if (this.state === 'idle') {
       // v1.5: one-player minimum — a lone bought-in player starts
-      // the countdown too (their hand will be a solo hand).
+      // the countdown too (the house joins them at the deal, v1.6).
       if (this.eligibleCount() >= 1) {
         this.state = 'countdown';
         this.stateUntil = now + START_COUNTDOWN_SECS * 1000;
@@ -878,6 +1042,14 @@ class PokerTable {
     } else if (this.state === 'done') {
       if (now >= this.stateUntil) this.cleanupHand();
     } else if (this.inHandState()) {
+      // v1.6: the house thinks for ~500-800ms, then acts. The
+      // scheduling lives here (not in act()) so EVERY path that
+      // hands the house the turn — deal, street change, a human
+      // action — is covered by the one clock.
+      if (this.actionChair === this.houseIdx && this.chairs[this.houseIdx].seat) {
+        if (!this.houseActAt) { this.houseActAt = now + 500 + Math.floor(Math.random() * 300); return; }
+        if (now >= this.houseActAt) { this.houseActAt = 0; this.houseAct(); return; }
+      }
       if (this.actionChair < 0) { this.checkHandEnd(); return; }
       if (now >= this.turnDeadline) this.autoAct();
     }
@@ -1100,7 +1272,7 @@ class CasinoSystem {
     if (this.findSeatByUser(p.userId)) return false; // already holds chips somewhere
     let best = -1, bestD = Infinity;
     table.chairs.forEach((c, i) => {
-      if (c.seat || table.reservedBy.has(i)) return;
+      if (c.virtual || c.seat || table.reservedBy.has(i)) return;
       const d = Math.hypot(p.x - c.x, p.y - c.y);
       if (d < bestD) { bestD = d; best = i; }
     });
@@ -1374,6 +1546,10 @@ class CasinoSystem {
       if (!found) continue;
       const { seat, idx } = found;
       if (seat.inHand && !seat.folded) seat.folded = true;
+      // v1.6 (Order 5): committed chips stay in the pot — move
+      // them to dead money before the seat is removed, exactly
+      // like stand() (disconnect == stand).
+      if (seat.inHand && seat.committed > 0 && t.inHandState()) t.deadCommitted += seat.committed;
       const refund = seat.chips;
       t.chairs[idx].seat = null;
       try {

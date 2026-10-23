@@ -13,8 +13,10 @@
  * Live legs spawn a real server: sit at the converted table
  * (casino-lounge-blackjack-1), bet, play stand-always rounds,
  * and check the stack deltas against the server's own reported
- * results — plus the ghost-seat rule (disconnect mid-round: the
- * hand stands, settles, and the stack lands back in the balance).
+ * results — plus the v1.6 standing table rule (Order 5):
+ * disconnect mid-round FORFEITS the bet; the stack (minus the
+ * bet) lands back in the balance and no settlement ever follows.
+ * The v1.5 ghost-seat rule is retired and its test replaced.
  *
  * Run:  TEST_RUN=<n> node --test test/blackjack.test.js
  */
@@ -205,7 +207,7 @@ function unitTable(deckSeq) {
   return t;
 }
 function unitSeat(t, i, id, name, chips = 200) {
-  t.chairs[i].seat = { userId: id, name, chips, buyin: chips, bet: 0, hand: [], doubled: false, done: false, result: null, gone: false };
+  t.chairs[i].seat = { userId: id, name, chips, buyin: chips, bet: 0, hand: [], doubled: false, done: false, result: null };
 }
 function unitBet(t, i, amount) {
   const s = t.chairs[i].seat;
@@ -322,6 +324,65 @@ test('blackjack unit: multi-seat independence + solo-seat round + conservation',
   assert.equal(t2.chairs[0].seat.chips, 210, '20 beat 17 for +10');
 });
 
+// ------------------------------------------------------------------ v1.6 Order 5
+
+test('blackjack unit: standing mid-round forfeits exactly the bet, seat frees at once, no settlement later', () => {
+  const sent = [];
+  const recGame = { getPlayer: () => null, send: (p, m) => sent.push(m), broadcastToMap: () => {}, savePosition: () => {} };
+  const t = new bj.BlackjackTable(recGame, fakeSys, bjDef);
+  // Deal order: dealer up 10♠, hole 7♥ (17); A: 10♦ 9♣ (19); B: 10♥ 8♦ (18).
+  t.nextDeck = () => [C(10, 's'), C(7, 'h'), C(10, 'd'), C(9, 'c'), C(10, 'h'), C(8, 'd')].reverse();
+  unitSeat(t, 0, 1, 'A'); unitSeat(t, 1, 2, 'B');
+  unitBet(t, 0, 25); unitBet(t, 1, 10);
+  t.startRound();
+  assert.equal(t.state, 'playing');
+  assert.equal(t.actionIdx, 0, 'A acts first');
+  let paidOut = null;
+  const orig = t.cashOutSeat.bind(t);
+  t.cashOutSeat = (i) => { const s = t.chairs[i].seat; if (s) paidOut = s.chips + s.bet; return orig(i); };
+  t.stand(P(1));
+  assert.equal(t.chairs[0].seat, null, 'the seat frees immediately');
+  assert.equal(paidOut, 175, 'stack cashed out WITHOUT the 25z bet — the bet is forfeited exactly');
+  assert.ok(sent.some(m => m.type === 'notice' && /stood up mid-round — your 25z bet is forfeited/.test(m.text)),
+    'the forfeit is confirmed with its amount');
+  assert.equal(t.state, 'playing', 'the round continues for the remaining seats');
+  assert.equal(t.actionIdx, 1, 'the turn passes to B');
+  // B stands on 18, dealer stands on 17: B wins. A is nowhere in
+  // the settlement — no result, no chips, no resurrection.
+  t.act(P(2), 'stand');
+  assert.equal(t.state, 'payout');
+  assert.equal(t.chairs[1].seat.chips, 210, 'B: 18 beats 17 for +10 net of the 10z bet');
+  assert.ok(!(t.lastResults || []).some(r => r.name === 'A'), 'no settlement entry for the forfeited seat');
+  t.cleanupRound();
+  assert.equal(t.chairs[0].seat, null, 'nothing cashes out for A at round close');
+});
+
+test('blackjack unit: disconnect mid-round == stand (forfeit), betting-window stand refunds', () => {
+  const recGame = { getPlayer: () => null, send: () => {}, broadcastToMap: () => {}, savePosition: () => {} };
+  const sys = new bj.BlackjackSystem(recGame);
+  const t = new bj.BlackjackTable(recGame, sys, bjDef);
+  sys.tables.set(t.id, t);
+  t.nextDeck = () => [C(10, 's'), C(7, 'h'), C(10, 'd'), C(9, 'c'), C(5, 'h')].reverse();
+  unitSeat(t, 0, 1, 'A'); unitBet(t, 0, 40);
+  t.startRound();
+  assert.equal(t.state, 'playing');
+  let paidOut = null;
+  const orig = t.cashOutSeat.bind(t);
+  t.cashOutSeat = (i) => { const s = t.chairs[i].seat; if (s) paidOut = s.chips + s.bet; return orig(i); };
+  sys.handlePlayerGone(1);
+  assert.equal(t.chairs[0].seat, null, 'disconnect frees the seat at once');
+  assert.equal(paidOut, 160, 'disconnect forfeits the 40z bet exactly like standing');
+  // Betting window: no cards are out — the bet refunds in full.
+  const t2 = new bj.BlackjackTable(recGame, fakeSys, bjDef);
+  unitSeat(t2, 0, 1, 'A'); unitBet(t2, 0, 40);
+  t2.state = 'betting';
+  let paid2 = null;
+  const orig2 = t2.cashOutSeat.bind(t2);
+  t2.cashOutSeat = (i) => { const s = t2.chairs[i].seat; if (s) paid2 = s.chips + s.bet; return orig2(i); };
+  t2.stand(P(1));
+  assert.equal(paid2, 200, 'a betting-window stand returns the bet with the stack');
+});
+
 // ------------------------------------------------------------------ live
 
 test('blackjack live: converted table identity + full round, stack delta == reported net', { timeout: 150000 }, async () => {
@@ -333,7 +394,12 @@ test('blackjack live: converted table identity + full round, stack delta == repo
   const bjt = tables.find(t => t.id === BJT.id);
   assert.ok(bjt, 'blackjack table present in the lounge map');
   assert.equal(bjt.game, 'blackjack');
-  assert.equal(tables.filter(t => t.game === 'poker').length, 5, 'five poker tables remain');
+  // v1.6 (Order 2): a SECOND table converted — the floor is now
+  // 4 poker + 2 blackjack per casino (six tables total).
+  assert.equal(tables.filter(t => t.game === 'poker').length, 4, 'four poker tables remain');
+  assert.equal(tables.filter(t => t.game === 'blackjack').length, 2, 'two blackjack tables now');
+  assert.ok(tables.some(t => t.id === 'casino-lounge-blackjack-2' && t.game === 'blackjack'),
+    'blackjack-2 present in the lounge map');
   const seated = await sitBj(u);
   assert.equal(myChair(seated, u.name).chips, 200, 'direct sit buys in the 200 max stack');
   assert.equal(await balanceOf(u), 4800, 'buy-in debited exactly once');
@@ -374,8 +440,8 @@ test('blackjack live: chip conservation across three rounds', { timeout: 240000 
   u.client.ws.close();
 });
 
-test('blackjack live: ghost seat — disconnect mid-round settles into the balance', { timeout: 150000 }, async () => {
-  const u = await makeUser('bj_ghost');
+test('blackjack live: disconnect mid-round FORFEITS the bet — stack returns minus the bet, nothing settles later', { timeout: 150000 }, async () => {
+  const u = await makeUser('bj_quit');
   await toCasino(u);
   await sitBj(u);
   // Bet 25, wait for the deal, then vanish.
@@ -389,14 +455,15 @@ test('blackjack live: ghost seat — disconnect mid-round settles into the balan
     return s && s.state === 'playing' ? s : null;
   }, 30000, 'the round deals');
   u.client.ws.close();
-  // The hand stands, the dealer plays, the stack cashes out to the
-  // balance: 4800 + settled stack. Bet 25 from a 200 stack settles
-  // to 175 (lose/bust), 200 (push), 225 (win) or 237 (natural:
-  // 175 + 25 stake + floor(37.5)=37 profit... paid as 175+62).
+  // v1.6 (Order 5): the stack (200 − 25 = 175) cashes out at
+  // once; the bet is the house's. Balance: 4800 + 175 = 4975,
+  // exactly — and it must NEVER move again (the v1.5 ghost rule
+  // would have settled the hand and paid a variable amount).
   const final = await waitFor(async () => {
     const b = await balanceOf(u);
     return b !== 4800 ? b : null;
-  }, 60000, 'ghost stack lands back in the balance');
-  assert.ok([4975, 5000, 5025, 5037].includes(final),
-    `settled ghost balance ${final} is one of the four legal outcomes`);
+  }, 60000, 'stack (minus the forfeited bet) lands back in the balance');
+  assert.equal(final, 4975, 'balance is start − buy-in + stack-without-bet: the 25z bet is forfeited exactly');
+  await sleep(12000); // well past the round + payout window
+  assert.equal(await balanceOf(u), 4975, 'no settlement arrives later — the ghost rule is retired');
 });

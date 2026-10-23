@@ -1035,6 +1035,19 @@ function drawFeltState(t, tx2, ty2) {
       drawMiniCard(mx + 7, my + 2, null, true);
     }
   });
+  // v1.6 (Order 3): the house seat — its acting ring rides here;
+  // its cards + stack ride the board overlay (post-entity, where
+  // the plaque can't bury them).
+  const hs = st.house;
+  if (hs) {
+    const [hx, hy] = proj(hs.x, hs.y);
+    if (hs.acting) {
+      ctx.beginPath(); ctx.ellipse(hx, hy, 19, 10, 0, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255,210,63,.9)'; ctx.lineWidth = 2; ctx.stroke();
+    }
+    ctx.font = '8.5px system-ui'; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(255,233,168,.85)';
+    ctx.fillText('🏠', hx, hy + 3);
+  }
 }
 
 // v1.5 (Feature 1): THE BOARD ON THE TABLE — post-entity overlay.
@@ -1070,7 +1083,24 @@ function drawBoardOverlay(t, tx2, ty2) {
   ctx.textAlign = 'center';
   if (st.pot) {
     ctx.font = 'bold 10.5px system-ui'; ctx.fillStyle = '#ffd23f';
-    ctx.fillText(st.solo && st.houseMatch ? `POT ${st.pot}z · house matched ${st.houseMatch}z 🏠` : `POT ${st.pot}z`, tx2, ty2 - 21);
+    // v1.6: the house-match readout is gone — in a heads-up hand
+    // the line names the house's live stack instead.
+    ctx.fillText(st.house ? `POT ${st.pot}z · 🏠 House ${st.house.chips}z` : `POT ${st.pot}z`, tx2, ty2 - 21);
+  }
+  // v1.6 (Order 3): the house's hole cards ride the plaque's
+  // west rim — face-down backs while the hand is live, face-up
+  // from the showdown reveal. West of the plaque so no text
+  // line ever collides with them.
+  if (st.house && st.house.cards) {
+    const revH = (st.reveal || []).find((r) => r.name === 'House');
+    ctx.font = '9px system-ui'; ctx.fillStyle = 'rgba(255,233,168,.9)';
+    ctx.fillText('🏠', tx2 - 69, ty2 - 12);
+    if (revH && revH.cards && revH.cards.length) {
+      revH.cards.forEach((card, i) => drawMiniCard(tx2 - 76 + i * 14, ty2 + 5, card, false));
+    } else {
+      drawMiniCard(tx2 - 76, ty2 + 5, null, true);
+      drawMiniCard(tx2 - 62, ty2 + 5, null, true);
+    }
   }
   if (st.winners && st.winners.length) {
     ctx.font = 'bold 10px system-ui'; ctx.fillStyle = '#8dff9a';
@@ -1078,14 +1108,14 @@ function drawBoardOverlay(t, tx2, ty2) {
   }
 }
 
-// v1.5 (Feature 3): blackjack ON the table — dealer row across
-// the far edge of the felt, each seat's hand in front of its
-// chair, bets and results as felt text. Same fixed-screen-size
-// card language as the poker board, a touch smaller (hands are
-// per-seat, not shared). State: SolarionBlackjack's store, in
-// the server's blackjack-state shape (chairs carry hand /
-// handTotal / bet / result; nets live in the table-level
-// results list; the dealer's hole card arrives as null).
+// v1.5 (Feature 3): blackjack ON the table. v1.6 (Orders 1+4):
+// the CARDS moved to drawBlackjackOverlay (post-entity, like the
+// poker board) and grew to 24x34 — bigger than the poker board
+// cards, slot-glass legible. What stays here in the furniture
+// pass is the idle signage, the betting prompt, and each chair's
+// stack/bet text; state comes from SolarionBlackjack's store
+// (chairs carry hand / handTotal / bet / result; the dealer's
+// hole card arrives as null).
 const BJ_RESULT_LABEL = {
   blackjack: ['★ BLACKJACK!', '#8dff9a'], win: ['WIN', '#8dff9a'], 'dealer-bust': ['DEALER BUSTS', '#8dff9a'],
   push: ['PUSH', '#ffe9a8'], bust: ['BUST', '#ff9a8d'], lose: ['LOSE', '#ff9a8d'], 'dealer-blackjack': ['DEALER BJ', '#ff9a8d'],
@@ -1101,27 +1131,10 @@ function drawBlackjackState(t, tx2, ty2) {
     ctx.fillText('pays 3 : 2', tx2, ty2 + 11);
     return;
   }
-  // Dealer row (far edge). A null card is the face-down hole card.
-  const dc = (st.dealer && st.dealer.cards) || [];
-  dc.forEach((card, i) => {
-    drawCardFace(tx2 + (i - (dc.length - 1) / 2) * 20, ty2 - 9, 18, 25, card, card === null);
-  });
-  if (dc.length) {
-    // Label UNDER the row: beside it, a far-side sitter's sprite
-    // clips the text (v1.5 playtest capture).
-    ctx.font = 'bold 8.5px system-ui'; ctx.fillStyle = '#ffe9a8';
-    const hidden = dc.includes(null);
-    const label = hidden ? `DEALER SHOWS ${dc[0]}` : `DEALER ${st.dealer.total}`;
-    ctx.fillText(label, tx2, ty2 + 19);
-  }
   if (st.state === 'betting') {
     ctx.font = 'bold 9.5px system-ui'; ctx.fillStyle = '#ffd23f';
     ctx.fillText('PLACE YOUR BETS', tx2, ty2 + 16);
   }
-  const netOf = (name) => {
-    const r = (st.results || []).find((x) => x.name === name);
-    return r ? r.amount : 0;
-  };
   (t.chairs || []).forEach((ch3, ci) => {
     const cst = st.chairs && st.chairs[ci];
     if (!cst || !cst.name) return;
@@ -1135,19 +1148,73 @@ function drawBlackjackState(t, tx2, ty2) {
     const mx = cx9 + (tx2 - cx9) * 0.42, my = cy9 + (ty2 - cy9) * 0.42;
     if (cst.bet) {
       ctx.font = 'bold 9px system-ui'; ctx.fillStyle = '#ffe9a8';
-      ctx.fillText(`bet ${cst.bet}z`, mx, my - 14);
+      ctx.fillText(`bet ${cst.bet}z`, mx, my - 21);
     }
+  });
+}
+
+// v1.6 (Orders 1+4): BLACKJACK CARDS ON THE FELT — post-entity
+// overlay, the poker board's sibling. Cards are 24x34 (bigger
+// than poker's 22x31 board cards, per Zan: "show up more like
+// the slots do") with the same big-face rank-over-suit art. The
+// dealer's hand fans across the felt's far edge — hole card
+// face-down (the null in dealer.cards) until settlement reveals
+// it — and each seated guest's hand fans at their seat's arc
+// point on the felt, overlapping horizontally like a real fan
+// once a hand grows past three cards. Totals ride under each
+// fan; results ride above it at payout. Nothing here can be
+// buried by a sitter's sprite, and the old "DEALER SHOWS" label
+// that clipped behind far-side sitters is gone — the dealer's
+// total sits ABOVE the dealer fan, drawn over everything.
+function drawBlackjackOverlay(t, tx2, ty2) {
+  const B = window.SolarionBlackjack;
+  const st = B && B.tables ? B.tables.get(t.id) : null;
+  if (!st) return;
+  const fanPitch = (n) => (n <= 2 ? 26 : n === 3 ? 24 : Math.max(14, Math.floor(66 / (n - 1))));
+  const fan = (cxA, cyA, cards) => {
+    const pitch = fanPitch(cards.length);
+    cards.forEach((card, i) => {
+      drawCardFace(cxA + (i - (cards.length - 1) / 2) * pitch, cyA, 24, 34, card, card === null);
+    });
+  };
+  ctx.textAlign = 'center';
+  // Dealer row (far edge of the felt).
+  const dc = (st.dealer && st.dealer.cards) || [];
+  if (dc.length) {
+    fan(tx2, ty2 - 15, dc);
+    ctx.font = 'bold 9px system-ui'; ctx.fillStyle = '#ffe9a8';
+    const hidden = dc.includes(null);
+    const label = hidden ? `DEALER SHOWS ${dc[0]}` : `DEALER ${st.dealer.total}`;
+    ctx.fillText(label, tx2, ty2 - 38);
+  }
+  const netOf = (name) => {
+    const r = (st.results || []).find((x) => x.name === name);
+    return r ? r.amount : 0;
+  };
+  (t.chairs || []).forEach((ch3, ci) => {
+    const cst = st.chairs && st.chairs[ci];
+    if (!cst || !cst.name) return;
     const hand = cst.hand || [];
-    hand.forEach((card, i) => drawCardFace(mx + (i - (hand.length - 1) / 2) * 19, my + 3, 18, 25, card, false));
-    if (hand.length && cst.handTotal != null) {
-      ctx.font = 'bold 9px system-ui'; ctx.fillStyle = cst.handTotal > 21 ? '#ff9a8d' : '#f5f0e6';
-      ctx.fillText(`${cst.handTotal}`, mx, my + 23);
+    if (!hand.length) return;
+    const [cx9, cy9] = proj(ch3.x, ch3.y);
+    // v1.6: 55% in from the chair — the fan sits ON the felt,
+    // clear of the chair back's post strips (at 42% the S
+    // chair's fan clipped them and the Playtest Gate's back-
+    // visibility read diluted below its bar).
+    let mx = cx9 + (tx2 - cx9) * 0.55, my = cy9 + (ty2 - cy9) * 0.55;
+    // The north chair sits where the dealer row lives; its hand
+    // fans on the felt's east rim instead of over the dealer's.
+    if (ch3.dir === 'N') { mx = tx2 + 27; my = ty2 - 2; }
+    fan(mx, my + 2, hand);
+    if (cst.handTotal != null) {
+      ctx.font = 'bold 10px system-ui'; ctx.fillStyle = cst.handTotal > 21 ? '#ff9a8d' : '#f5f0e6';
+      ctx.fillText(`${cst.handTotal}`, mx, my + 27);
     }
     if (st.state === 'payout' && cst.result && BJ_RESULT_LABEL[cst.result]) {
       const [label, color] = BJ_RESULT_LABEL[cst.result];
       const net = netOf(cst.name);
       ctx.font = 'bold 9.5px system-ui'; ctx.fillStyle = color;
-      ctx.fillText(net ? `${label} ${net > 0 ? '+' : ''}${net}z` : label, mx, my - 24);
+      ctx.fillText(net ? `${label} ${net > 0 ? '+' : ''}${net}z` : label, mx, my - 26);
     }
   });
 }
@@ -1241,6 +1308,30 @@ function drawSlotCabinet(sx, sy, idx, facing, machineId) {
   ctx.fillRect(sx - 8, sy - 3.5, 16, 4);
   ctx.fillStyle = '#ffd23f';
   ctx.fillRect(sx - 8, sy - 3.5, 16, 1);
+}
+
+// v1.6 (slot-row fix): the SLOT STOOL — a real backless casino
+// stool (round pad on a pedestal), drawn ONLY for slot seats.
+// Until now kind 'stool' had no art of its own and fell into the
+// generic chair branch: the 60px-wide ladder-back table chair,
+// whose cushion painted over the east-row cabinets (Zan's red
+// circle, "THESE CHAIRS ARE ON THE SLOTS"). The stool's whole
+// solid art is the cushion union (hw 17, hh ~12) — sized for the
+// slot rows' screen pitch, and the validator's Law A models
+// exactly this shape against every cabinet rect.
+function drawStoolAt(x, y) {
+  ctx.beginPath(); ctx.ellipse(x, y + 11, 13, 4.5, 0, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0,0,0,.30)'; ctx.fill();
+  // pedestal: splayed legs + centre post
+  ctx.strokeStyle = '#5a3d1f'; ctx.lineWidth = 2.6;
+  ctx.beginPath();
+  ctx.moveTo(x - 4, y + 4); ctx.lineTo(x - 8, y + 12);
+  ctx.moveTo(x + 4, y + 4); ctx.lineTo(x + 8, y + 12);
+  ctx.moveTo(x, y + 4); ctx.lineTo(x, y + 12);
+  ctx.stroke();
+  diamond(x, y + 3, 17, 9, CHAIR_CUSH_D);   // skirt: the pad's thickness
+  diamond(x, y, 17, 9, CHAIR_CUSH);         // the pad itself
+  diamond(x, y - 2, 12.5, 6.5, CHAIR_CUSH_L); // padded top catching light
 }
 
 // ------------------------------------------------------------------ dom
@@ -2300,6 +2391,9 @@ function deferredSeatBackPos(p) {
   }
   const s = (mapDef.seats || []).find(s2 => s2.id === id);
   if (!s || (s.kind !== 'chair' && s.kind !== 'stool' && s.kind !== 'audience') || s.dir !== 'up') return null;
+  // v1.6: slot stools are BACKLESS now (drawStoolAt) — no near
+  // back exists to replay over their sitters.
+  if (mapDef.casino && mapDef.casino.slots.some((sl) => sl.seatId === id)) return null;
   const pp = proj(s.x, s.y);
   return [pp[0], pp[1], s.kind]; // v1.5.1: kind rides along so the entity pass replays the right back
 }
@@ -3072,6 +3166,15 @@ function draw() {
   // plus the doorway label (same treatment as gateway labels)
   if (mapDef.casino) {
     const cz = mapDef.casino;
+    // v1.6: slot stools draw WITH their cabinets, immediately
+    // BEFORE them — a cabinet always paints over the sliver of
+    // stool that iso depth says is behind it, and a stool never
+    // paints over a cabinet. (The generic seat pass below skips
+    // slot seats entirely.)
+    for (const s of cz.slots) {
+      const [stx, sty] = proj(s.ix, s.iy);
+      drawStoolAt(stx, sty);
+    }
     cz.slots.forEach((s, idx) => {
       const [sx2, sy2] = proj(s.x, s.y);
       // Lane C: arcade cabinets. Facing comes from the stool spot
@@ -3240,7 +3343,12 @@ function draw() {
   // sittable furniture (Phase B): benches, chairs, sofas, café
   // tables baked into the map data. The avatar sprite carries the
   // seated pose; these props are what everyone sees them sit ON.
+  // v1.6: casino slot stools are NOT drawn here — they draw with
+  // their cabinets in the casino pass above (drawStoolAt), so a
+  // stool can never paint over a machine.
+  const slotSeatIdSet = mapDef.casino ? new Set(mapDef.casino.slots.map((s2) => s2.seatId)) : null;
   for (const s of mapDef.seats || []) {
+    if (slotSeatIdSet && slotSeatIdSet.has(s.id)) continue;
     const [sx3, sy3] = proj(s.x, s.y);
     if (s.kind === 'bench') {
       // v1.2 (Items K/Q): a bench has a BACK — slatted, on the side
@@ -3531,11 +3639,12 @@ function draw() {
   // v1.5 (Feature 1): the poker board overlay — plaque + community
   // cards + pot + winners replayed OVER the entities, so a seated
   // player's sprite can never bury the board (see drawBoardOverlay).
+  // v1.6: blackjack tables get their own overlay (drawBlackjackOverlay).
   if (mapDef.casino) {
     for (const t of mapDef.casino.tables) {
-      if (t.game === 'blackjack') continue;
       const [btx, bty] = proj(t.x, t.y);
-      drawBoardOverlay(t, btx, bty);
+      if (t.game === 'blackjack') drawBlackjackOverlay(t, btx, bty);
+      else drawBoardOverlay(t, btx, bty);
     }
   }
 

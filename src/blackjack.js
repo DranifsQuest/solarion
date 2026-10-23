@@ -30,10 +30,14 @@
  *     NO split, NO insurance in v1 — deliberate scope cut.
  *   - Dealer hits until 17 and stands on ALL 17s (soft 17 stands).
  *   - Push returns the bet. Bust loses the bet at once.
- *   - Leaving mid-round never strands chips: before the deal your
- *     bet refunds with your stack; after the deal your hand stands
- *     as-is, settles with the round, and the stack cashes out to
- *     your zcoins when the round closes (ghost seat).
+ *   - Standing (or disconnecting) MID-ROUND with a live bet
+ *     FORFEITS the bet to the house on the spot (v1.6, Order 5 —
+ *     the standing table rule): the hand is removed, the seat
+ *     frees immediately, the stack (minus the bet) cashes out,
+ *     and NO settlement arrives later. This replaces the v1.5
+ *     ghost-seat rule wholesale. Standing during the betting
+ *     window refunds the bet (no cards are out yet); standing
+ *     between rounds costs nothing.
  *
  * Client -> server:
  *   { type:'blackjack', action:'state' | 'sit' | 'stand' | 'rebuy'
@@ -216,7 +220,7 @@ class BlackjackTable {
     const seat = {
       userId: p.userId, name: p.name,
       chips: amount, buyin: amount, bet: 0,
-      hand: [], doubled: false, done: false, result: null, gone: false,
+      hand: [], doubled: false, done: false, result: null,
     };
     this.chairs[i].seat = seat;
     this.reservedBy.delete(i);
@@ -244,10 +248,11 @@ class BlackjackTable {
   }
 
   /**
-   * Leave the table. Mid-round with an unsettled bet the seat
-   * becomes a ghost: the hand stands, settles with the round, and
-   * cashOutSeat() pays the stack when the round closes. Otherwise
-   * the stack cashes out immediately.
+   * Leave the table. v1.6 (Order 5): mid-round with a live bet,
+   * the bet is FORFEITED to the house on the spot — hand removed,
+   * seat freed immediately, stack (without the bet) cashed out,
+   * no settlement later. During the betting window the bet was
+   * never at risk and refunds with the stack.
    */
   stand(p, silent) {
     const found = this.findSeat(p.userId);
@@ -258,13 +263,21 @@ class BlackjackTable {
       if (!silent) this.game.send(p, { type: 'sit-state', seated: false });
       if (!silent) this.system.stepOffChair(p, this);
     }
-    const unsettled = seat.bet > 0 && (this.state === 'playing' || this.state === 'payout');
-    if (unsettled) {
-      seat.gone = true;
-      seat.done = true; // the hand stands as-is
-      if (!silent) this.game.send(p, { type: 'notice', text: 'Your hand plays out — your stack cashes out when the round ends.' });
-      if (this.state === 'playing' && this.actionIdx === idx) this.advance();
-      this.broadcast();
+    const liveBet = seat.bet > 0 && this.state === 'playing';
+    if (liveBet) {
+      const forfeited = seat.bet;
+      const wasAction = this.actionIdx === idx;
+      seat.bet = 0;
+      seat.hand = [];
+      seat.result = null;
+      this.cashOutSeat(idx); // stack only — the bet stays with the house
+      if (!silent && p) {
+        this.game.send(p, { type: 'notice', text: `You stood up mid-round — your ${forfeited}z bet is forfeited.` });
+        this.game.send(p, { type: 'notice', text: 'You leave the blackjack table.' });
+        this.game.send(p, { type: 'zcoins', zcoins: this.zcoinsOf(seat.userId) });
+      }
+      if (wasAction) { this.actionIdx = idx; this.advance(); }
+      this.afterSeatChange();
       return true;
     }
     if (seat.bet > 0) { seat.chips += seat.bet; seat.bet = 0; } // betting window: bet was never at risk
@@ -377,9 +390,8 @@ class BlackjackTable {
       s.hand = [this.deck.pop(), this.deck.pop()];
       s.doubled = false;
       s.result = null;
-      // Naturals have no decision to make; a seat whose player
-      // already left stands on whatever it holds.
-      s.done = handValue(s.hand).blackjack || s.gone;
+      // Naturals have no decision to make.
+      s.done = handValue(s.hand).blackjack;
     }
     // Dealer peek: a dealer natural ends the round at the deal.
     if (handValue(this.dealerHand).blackjack) {
@@ -509,14 +521,9 @@ class BlackjackTable {
       const s = this.chairs[i].seat;
       if (!s) continue;
       s.hand = []; s.bet = 0; s.doubled = false; s.done = false; s.result = null;
-      if (s.gone) {
-        const refund = this.cashOutSeat(i);
-        const p = this.game.getPlayer(s.userId);
-        if (p) {
-          this.game.send(p, { type: 'notice', text: `Your blackjack stack cashed out: ${refund}z.` });
-          this.game.send(p, { type: 'zcoins', zcoins: this.zcoinsOf(s.userId) });
-        }
-      }
+      // v1.6: no ghost seats remain to cash out — a mid-round
+      // leaver's stack was already paid (minus the forfeited bet)
+      // by stand()/handlePlayerGone at the moment they left.
     }
     this.dealerHand = [];
     this.holeHidden = false;
@@ -770,14 +777,18 @@ class BlackjackSystem {
       const found = t.findSeat(userId);
       if (!found) continue;
       const { seat, idx } = found;
-      const unsettled = seat.bet > 0 && (t.state === 'playing' || t.state === 'payout');
-      if (unsettled) {
-        // Ghost: the hand stands, settles with the round, and
-        // cleanupRound cashes the stack out to the ledger.
-        seat.gone = true;
-        seat.done = true;
-        if (t.state === 'playing' && t.actionIdx === idx) t.advance();
-        t.broadcast();
+      // v1.6 (Order 5): disconnect == stand. A live bet mid-round
+      // is forfeited to the house and the stack (minus the bet)
+      // cashes out NOW — the v1.5 ghost settlement is retired.
+      const liveBet = seat.bet > 0 && t.state === 'playing';
+      if (liveBet) {
+        const wasAction = t.actionIdx === idx;
+        seat.bet = 0;
+        seat.hand = [];
+        seat.result = null;
+        t.cashOutSeat(idx);
+        if (wasAction) { t.actionIdx = idx; t.advance(); }
+        t.afterSeatChange();
       } else {
         if (seat.bet > 0) { seat.chips += seat.bet; seat.bet = 0; }
         t.cashOutSeat(idx);

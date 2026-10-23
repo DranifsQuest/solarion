@@ -600,7 +600,13 @@ function checkBackVisibility(ctx) {
   let refChecked = 0, refUnverifiable = 0, refWorst = null;
   for (const map of Object.values(ctx.maps)) {
     const seatLikes = new Map();
-    for (const s of map.seats || []) seatLikes.set(s.id, { id: s.id, x: s.x, y: s.y, kind: s.kind, dir: s.dir });
+    // v1.6: casino slot stools are BACKLESS by design (a pedestal
+    // stool, drawStoolAt) — they resolve to kind 'slotstool' here
+    // so the back windows skip them (backWindow returns null,
+    // "backless by design"). Bar stools keep kind 'stool' and
+    // their chair backs: only SLOT seats change.
+    const slotSeatIds = new Set(((map.casino || {}).slots || []).map((sl) => sl.seatId));
+    for (const s of map.seats || []) seatLikes.set(s.id, { id: s.id, x: s.x, y: s.y, kind: slotSeatIds.has(s.id) ? 'slotstool' : s.kind, dir: s.dir });
     for (const e of ctx.entries) {
       if (e.map !== map.id) continue;
       for (const a of e.actors) {
@@ -649,12 +655,19 @@ function checkBackVisibility(ctx) {
     if (!img || !map) continue;
     for (const actor of entry.actors) {
       if (!actor.seated || !actor.seatKind) continue;
-      if (!backWindow(actor.seatKind, actor.dir, [0, 0])) continue;
-      if (!OCCUPIED_CHECKABLE(actor.seatKind, actor.dir)) { occCovered++; continue; }
-      const seat = (map.seats || []).find(s => s.id === actor.seatId);
+      // v1.6: an actor on a casino SLOT seat sits on the backless
+      // pedestal stool — same resolution as the reference pass
+      // above (kind 'slotstool', backWindow null, skipped). The
+      // harness records the raw seat kind ('stool'), which would
+      // otherwise demand a chair back that no longer exists.
+      const seat0 = (map.seats || []).find(s => s.id === actor.seatId);
+      const effKind = (seat0 && ((map.casino || {}).slots || []).some((sl) => sl.seatId === seat0.id)) ? 'slotstool' : actor.seatKind;
+      if (!backWindow(effKind, actor.dir, [0, 0])) continue;
+      if (!OCCUPIED_CHECKABLE(effKind, actor.dir)) { occCovered++; continue; }
+      const seat = seat0;
       const sl = seat
-        ? { x: seat.x, y: seat.y, kind: actor.seatKind, dir: actor.dir }
-        : { x: actor.x, y: actor.y, kind: actor.seatKind, dir: actor.dir }; // poker pseudo-seat
+        ? { x: seat.x, y: seat.y, kind: effKind, dir: actor.dir }
+        : { x: actor.x, y: actor.y, kind: effKind, dir: actor.dir }; // poker pseudo-seat
       const r = windowFracFor(img, entry, sl);
       if (!r) continue;
       if (!r.ok) {

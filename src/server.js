@@ -617,7 +617,10 @@ if (TEST_MODE) {
             tableFx = [{
               type: 'poker-state', id: t.id, game: 'poker', state: 'flop',
               pot: 75, toCall: 25, dealerChair: 0, actionChair: -1,
-              solo: false, houseMatch: 0, buyin: 100, streetDeadline: 0,
+              // v1.6: the posed board shows a heads-up hand — the
+              // house seat rides along (its cards stay face-down).
+              house: { name: 'House', chips: 140, bet: 25, folded: false, allIn: false, acting: false, cards: 2, x: Math.round(t.x), y: Math.round(t.y - 44) },
+              buyin: 100, streetDeadline: 0,
               community: ['A♠', 'K♥', '7♦'], winners: [],
               chairs: chairStates(t, (c, name) => {
                 const seated = Boolean(name);

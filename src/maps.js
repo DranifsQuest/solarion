@@ -543,7 +543,16 @@ function buildCasino({ id, name, hostId, hostLabel, hostSpawn, floor, floorAlt, 
     id: `${id}-poker-${n}`, game: 'poker', x: cx(tx), y: cy(ty), chairs: chairSet(cx(tx), cy(ty)),
   });
   const tables = [
-    tableAt(1, 5, 5), tableAt(2, 12, 5),
+    tableAt(1, 5, 5),
+    // v1.6 (Order 2): the north-east table converts to blackjack
+    // too — it stands directly north of blackjack-1 in the same
+    // east column, so the two blackjack tables read as one pit.
+    // Result per casino: 4 poker + 2 blackjack (the floor has SIX
+    // tables; the parent brief's "2 blackjack + 2 poker" was an
+    // arithmetic slip — one conversion of one table is what was
+    // ordered, and poker-1 / blackjack-1 keep their ids so the
+    // live-verify harness legs are untouched).
+    { id: `${id}-blackjack-2`, game: 'blackjack', x: cx(12), y: cy(5), chairs: chairSet(cx(12), cy(5)) },
     tableAt(3, 5, 11),
     // v1.5 (Zan, live playtest 2026-10-22): "make a couple tables
     // black jack instead" — ONE table per casino converts: the
@@ -571,17 +580,28 @@ function buildCasino({ id, name, hostId, hostLabel, hostSpawn, floor, floorAlt, 
     });
   }
   for (let i = 0; i < 5; i++) {
-    const ty = 5 + i * 2;
+    const ty = 4 + i * 3;
     slots.push({
       id: `${id}-slot-${i + 6}`, seatId: `${id}-slotseat-${i + 6}`,
-      // v1.4.1 (seat audit): the east-row stool sits 64px west +
-      // 16px south of the cabinet centre (v1.3.1: 52px due west —
-      // in screen space a due-west offset RISES 0.36px per px into
-      // the cabinet's 52px-tall body, and the stool's 60px-wide
-      // cushion painted over the machine: "chairs on top of slot
-      // machines"). The southward step keeps the stool at the
-      // machine's front, the westward step clears its rect.
-      x: cx(34), y: cy(ty), ix: cx(34) - 64, iy: cy(ty) + 16,
+      // v1.6 (slot-row fix): PITCH 3 and a new stool anchor. The
+      // v1.4.1 layout (pitch 2, stool 64 west + 16 south of the
+      // cabinet) passed Law A because the law only ever tested a
+      // stool against ITS OWN cabinet — but east-row cabinets sit
+      // 2 tiles apart = a (46, 23) screen pitch, while the stool
+      // was drawn with the 60px-wide table-chair art: every east
+      // stool's cushion corner landed ~33px inside the NEXT
+      // machine south's screen rect, and the seat's centre sat
+      // inside that rect outright (the chairs Zan circled "ON
+      // THE SLOTS"). No anchor fixes that at pitch 2 with any
+      // seat art — the southern cabinet's 54px-tall billboard
+      // claims the whole north-west quadrant. Pitch 3 (screen
+      // (69, 35)) opens the pocket; the anchor (84 west, 16
+      // north of the cabinet centre) puts the new backless stool
+      // (drawStoolAt, cushion hw 17) clear of EVERY cabinet
+      // rect — the validator's Law A now tests exactly that,
+      // diamond vs every cabinet, for every slot seat whatever
+      // its kind.
+      x: cx(34), y: cy(ty), ix: cx(34) - 84, iy: cy(ty) - 16,
     });
   }
   const seats = [
@@ -608,7 +628,7 @@ function buildCasino({ id, name, hostId, hostLabel, hostSpawn, floor, floorAlt, 
     seats,
     areas: [
       area('Poker Floor', 1, 1, 15, 19),
-      area('The Slots', 17, 1, 18, 13),
+      area('The Slots', 17, 1, 18, 17),
       area('The Bar', 1, 18, 11, 5),
       area('The Foyer', 12, 18, 15, 5),
     ],
@@ -1335,7 +1355,21 @@ function clientMap(map, seasonOverride) {
         id: t.id, game: t.game || 'poker', x: t.x, y: t.y,
         chairs: t.chairs.map(c => ({ dir: c.dir, x: c.x, y: c.y })),
       })),
-      slots: map.casino.slots.map(s => ({ id: s.id, x: s.x, y: s.y, ix: s.ix, iy: s.iy })),
+      // v1.6: seatId MUST ride along — public/client.js keys the
+      // whole slot-stool render path on it (casino-pass stool
+      // art, the seat-pass skip, the deferred-back exclusion).
+      // v1.4.1 shipped that client logic but this serializer
+      // stripped the field, so NO client ever matched a slot
+      // seat: the generic seat pass drew full chairs at every
+      // slot (Zan's live screenshot — backed-up chairs on the
+      // north row, chairs ON the cabinets on the east row) and
+      // occupied slot sitters got phantom chair backs. Every
+      // automated check still passed because they all measure
+      // seat DATA (kind 'stool' from the server-side map),
+      // never the client's seatId-keyed art path — the defect
+      // lived exactly in the gap between the two. One field,
+      // restored.
+      slots: map.casino.slots.map(s => ({ id: s.id, seatId: s.seatId, x: s.x, y: s.y, ix: s.ix, iy: s.iy })),
       bar: map.casino.bar || null,
       bartender: map.casino.bartender || null,
     } : null,

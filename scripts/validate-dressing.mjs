@@ -154,6 +154,29 @@ const SEAT_BBOX = {
 };
 const CABINET_RECT = { x: [-21, 21], y: [-52, 2] };
 const CUSHION_D = { hw: 30, hh: 15.5, dy: 1.75 };
+// v1.6 (slot-row fix): the slot stool's OWN art (client.js
+// drawStoolAt) — a backless pedestal stool whose solid cushion
+// union is a diamond hw=17, hh=12 centred ~+1.5 below the seat
+// point. Law A tests slot seats with the art their KIND actually
+// draws: stools get this diamond, any other kind at a slot seat
+// gets the chair bbox (and fails — see the law itself).
+const STOOL_D = { hw: 17, hh: 12, dy: 1.5 };
+/** Diamond (centre + half-extents) vs axis-aligned rect overlap.
+ * Both shapes are convex; centre-in-rect, closest-point,
+ * vertex-in-rect and corner-in-diamond together decide it. */
+const diamondRectHit = (cx, cy, hw, hh, x0, y0, x1, y1) => {
+  const inD = (x, y) => Math.abs(x - cx) / hw + Math.abs(y - cy) / hh < 1;
+  if (cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1) return true;
+  const px = Math.max(x0, Math.min(cx, x1)), py = Math.max(y0, Math.min(cy, y1));
+  if (inD(px, py)) return true;
+  for (const [vx, vy] of [[cx - hw, cy], [cx + hw, cy], [cx, cy - hh], [cx, cy + hh]]) {
+    if (vx > x0 && vx < x1 && vy > y0 && vy < y1) return true;
+  }
+  for (const [kx, ky] of [[x0, y0], [x1, y0], [x0, y1], [x1, y1]]) {
+    if (inD(kx, ky)) return true;
+  }
+  return false;
+};
 const WALLTOP_D = { hw: 23.04, hh: 11.52, dy: -20 };
 /** Iso-diamond overlap (L1 in scaled space); <1 means the two
  * diamonds' interiors intersect. 0.98 leaves a hair of margin. */
@@ -587,24 +610,44 @@ for (const map of Object.values(MAPS)) {
         if (d < 55 || d > 66) err(map.id, `poker band: ${t.id} chair ${c.dir} sits ${d.toFixed(0)}px from the table centre — poker chairs keep a 55-66px band`);
       }
     }
-    // Slot stools (Item 8; REBUILT v1.4.1 seat audit): the v1.3.1
-    // test modelled the cushion at HALF its drawn size (30x12
-    // total vs drawChairAt's 60px-wide cushion diamonds) in an
-    // unscaled projection, so it passed stools whose art painted
-    // over the cabinets — "chairs on top of slot machines". The
-    // law now uses the client's TRUE screen geometry (see the
-    // SEAT FOOTPRINT LAW constants below): the stool's whole art
-    // bbox must clear the cabinet's screen rect, and the stool
-    // must not float away from its machine.
+    // Slot stools (Item 8; REBUILT v1.4.1 seat audit; EXTENDED
+    // v1.6 slot-row fix): the v1.4.1 law modelled the stool's
+    // true art bbox in true screen geometry — but only ever
+    // tested it against the stool's OWN cabinet. The east row's
+    // cabinets sit at a (46, 23) screen pitch while the seat art
+    // was the 60px-wide table chair, so every east stool's
+    // cushion landed inside the NEXT cabinet south's rect (its
+    // centre included) and the law passed it — Zan's circled
+    // "chairs ON the slots" shipped straight through the gate.
+    // The law now tests EVERY slot seat, with the art bbox of
+    // the kind it actually is (stool diamond / chair bbox),
+    // against EVERY cabinet rect in the map. A slot seat of any
+    // other kind is the same failure by name: slot seats are
+    // stools, sized for the rows, clear of every machine.
     for (const sl of map.casino.slots) {
       const seat = (map.seats || []).find(s => s.id === sl.seatId);
       const dir = seat ? seat.dir : 'up';
+      const kind = seat ? seat.kind : 'stool';
       const [msx, msy] = projS(sl.x, sl.y);
       const [isx, isy] = projS(sl.ix, sl.iy);
-      const bb = SEAT_BBOX[dir] || SEAT_BBOX.up;
-      const hit = (isx + bb.x[1] > msx + CABINET_RECT.x[0]) && (isx + bb.x[0] < msx + CABINET_RECT.x[1])
-        && (isy + bb.y[1] > msy + CABINET_RECT.y[0]) && (isy + bb.y[0] < msy + CABINET_RECT.y[1]);
-      if (hit) err(map.id, `slot footprint: ${sl.id}'s stool (dir '${dir}') intersects its cabinet's screen rect — stools sit IN FRONT of the machine, never on it (v1.4.1)`);
+      for (const other of map.casino.slots) {
+        const [osx, osy] = projS(other.x, other.y);
+        const rx0 = osx + CABINET_RECT.x[0], rx1 = osx + CABINET_RECT.x[1];
+        const ry0 = osy + CABINET_RECT.y[0], ry1 = osy + CABINET_RECT.y[1];
+        let hit;
+        if (kind === 'stool') {
+          hit = diamondRectHit(isx, isy + STOOL_D.dy, STOOL_D.hw, STOOL_D.hh, rx0, ry0, rx1, ry1);
+        } else {
+          const bb = SEAT_BBOX[dir] || SEAT_BBOX.up;
+          hit = (isx + bb.x[1] > rx0) && (isx + bb.x[0] < rx1)
+            && (isy + bb.y[1] > ry0) && (isy + bb.y[0] < ry1);
+        }
+        if (hit) {
+          const whose = other.id === sl.id ? 'its cabinet\'s screen rect' : `${other.id}'s cabinet screen rect`;
+          err(map.id, `slot footprint: ${sl.id}'s seat (kind '${kind}', dir '${dir}') intersects ${whose} — slot seats sit IN FRONT of their machine and clear EVERY cabinet, never on one (v1.6)`);
+          break;
+        }
+      }
       const distS = Math.hypot(isx - msx, isy - msy);
       if (distS > 75) err(map.id, `slot footprint: ${sl.id}'s stool floats ${distS.toFixed(0)} screen-px from its machine (cap 75)`);
     }

@@ -373,8 +373,15 @@ const Casino = {
     const mine = this.mySeat && this.myCards[this.mySeat.tableId];
     const st = this.mySeat ? this.tables.get(this.mySeat.tableId) : null;
     const buyinNote = st && st.buyin ? `Table buy-in ${st.buyin}z · ` : '';
+    // v1.6 (Order 5): the standing table rule, stated while it
+    // can still cost you — a live hand you're dealt into forfeits
+    // its committed chips if you stand.
+    const myChair = st && this.mySeat ? st.chairs[this.mySeat.chairIdx] : null;
+    const inLiveHand = Boolean(st && myChair && myChair.cards > 0 && !myChair.folded
+      && ['preflop', 'flop', 'turn', 'river', 'showdown'].includes(st.state));
     this.el.myCards.innerHTML = this.mySeat
       ? buyinNote + (mine ? `Your cards: ${mine.map((c) => `<span class="card mine">${esc(c)}</span>`).join(' ')}` : 'Seated — good luck!')
+        + (inLiveHand ? ' · ⚠ Standing now forfeits your wager.' : '')
       : '';
     const myTurn = Boolean(st && st.chairs[this.mySeat.chairIdx] && st.chairs[this.mySeat.chairIdx].acting);
     this.el.actions.classList.toggle('hidden', !this.mySeat);

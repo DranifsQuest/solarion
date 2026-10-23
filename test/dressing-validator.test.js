@@ -20,6 +20,15 @@
  *          ("still chairs on top of slot machines"),
  *     plus the north slot row at its old offset (the borderline
  *     back-panel clip the old test modelled away).
+ *   v1.6 (slot-row fix): Law A now tests every slot seat, with
+ *   its own kind's art, against EVERY cabinet — exhibit 3's
+ *   doctoring is the same v1.3.1 offset (it now fails against
+ *   the neighbouring cabinet as well as its own), 3b doctors
+ *   the north seats back to CHAIR art at the old offset (the
+ *   back panel was the violation), and 3c doctors the east
+ *   seats to chair art at the CURRENT offset — the exact class
+ *   Zan circled, which the v1.4.1 law's own-cabinet-only test
+ *   could not see.
  *
  * No server, no ports: pure subprocess runs of the validator.
  */
@@ -101,19 +110,36 @@ test('exhibit 2: an audience seat off the audience-art path fails by name (sprit
 test('exhibit 3: east slot stools at the v1.3.1 offset fail by name (slot footprint)', () => {
   const dir = makeTree();
   doctor(dir, 'src/maps.js',
-    'x: cx(34), y: cy(ty), ix: cx(34) - 64, iy: cy(ty) + 16,',
+    'x: cx(34), y: cy(ty), ix: cx(34) - 84, iy: cy(ty) - 16,',
     'x: cx(34), y: cy(ty), ix: cx(34) - 52, iy: cy(ty),');
   const { code, out } = runValidator(dir);
   assert.equal(code, 1, `doctored tree must fail:\n${out}`);
-  assert.match(out, /slot footprint: .*slot-[6-9]'s stool \(dir 'right'\) intersects its cabinet/);
+  assert.match(out, /slot footprint: .*slot-[6-9]'s seat \(kind 'stool', dir 'right'\) intersects/);
 });
 
-test('exhibit 3b: north slot stools at the old offset fail by name (slot footprint)', () => {
+test('exhibit 3b: north slot seats as CHAIR art at the old offset fail by name (slot footprint)', () => {
   const dir = makeTree();
   doctor(dir, 'src/maps.js',
     'x: cx(tx), y: cy(2) - 10, ix: cx(tx), iy: cy(3) + 28,',
     'x: cx(tx), y: cy(2) - 10, ix: cx(tx), iy: cy(3),');
+  doctor(dir, 'src/maps.js',
+    "...slots.slice(0, 5).map((s, i) => ({ id: s.seatId, x: s.ix, y: s.iy, dir: 'up', kind: 'stool' })),",
+    "...slots.slice(0, 5).map((s, i) => ({ id: s.seatId, x: s.ix, y: s.iy, dir: 'up', kind: 'chair' })),");
   const { code, out } = runValidator(dir);
   assert.equal(code, 1, `doctored tree must fail:\n${out}`);
-  assert.match(out, /slot footprint: .*slot-[1-5]'s stool \(dir 'up'\) intersects its cabinet/);
+  assert.match(out, /slot footprint: .*slot-[1-5]'s seat \(kind 'chair', dir 'up'\) intersects its cabinet/);
+});
+
+test('exhibit 3c: east slot seats as CHAIR art at the CURRENT offset fail by name (slot footprint)', () => {
+  // The v1.6 headline case: even at the fixed anchor, a full
+  // table chair at a slot seat reaches a cabinet — the law sees
+  // it because it tests the seat's actual kind against every
+  // cabinet, not just a stool against its own.
+  const dir = makeTree();
+  doctor(dir, 'src/maps.js',
+    "...slots.slice(5).map((s) => ({ id: s.seatId, x: s.ix, y: s.iy, dir: 'right', kind: 'stool' })),",
+    "...slots.slice(5).map((s) => ({ id: s.seatId, x: s.ix, y: s.iy, dir: 'right', kind: 'chair' })),");
+  const { code, out } = runValidator(dir);
+  assert.equal(code, 1, `doctored tree must fail:\n${out}`);
+  assert.match(out, /slot footprint: .*slot-(?:[6-9]|10)'s seat \(kind 'chair', dir 'right'\) intersects/);
 });

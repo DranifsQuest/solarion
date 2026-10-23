@@ -149,6 +149,9 @@ const Blackjack = {
       info = mine.acting
         ? `${buyinNote}Your ${mine.handTotal} vs dealer ${dv || '?'} — hit, stand${mine.hand.length === 2 ? ' or double' : ''}.`
         : `${buyinNote}Hand in play — dealer shows ${dv || '?'}. Your stack ${mine.chips}z`;
+      // v1.6 (Order 5): the standing table rule, stated while it
+      // can still cost you.
+      if (mine.bet > 0) info += ' Standing now forfeits your bet.';
     } else if (st.state === 'payout') {
       const label = {
         blackjack: '★ BLACKJACK!', win: 'You win!', 'dealer-bust': 'Dealer busts — you win!',

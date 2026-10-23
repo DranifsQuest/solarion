@@ -370,12 +370,12 @@ test('poker: double-sit impossible, no cross-account chip leak, totals conserved
   a.client.send({ type: 'debug-teleport', x: T1.x, y: T1.y });
   await sleep(300);
   for (let i = 0; i < 10; i++) a.client.send({ type: 'poker', action: 'sit', table: T1.id, chair: 'N' });
-  a.client.send({ type: 'poker', action: 'sit', table: 'casino-lounge-poker-2', chair: 'N' }); // other table too
+  a.client.send({ type: 'poker', action: 'sit', table: 'casino-lounge-poker-3', chair: 'N' }); // other table too
   await sleep(800);
   const allStates = a.client.msgs.filter(m => m.type === 'poker-state');
   const lastT1 = allStates.filter(m => m.id === T1.id).pop();
   assert.equal(lastT1.chairs.filter(c => c.name === 'sec_pk_a').length, 1, 'A occupies exactly one chair');
-  const lastT2 = allStates.filter(m => m.id === 'casino-lounge-poker-2').pop();
+  const lastT2 = allStates.filter(m => m.id === 'casino-lounge-poker-3').pop();
   assert.equal(lastT2.chairs.filter(c => c.name === 'sec_pk_a').length, 0, 'A is not also at table 2');
   assert.equal(await balanceOf(a.token), 4800, 'A debited exactly one 200z buy-in (the max stack)');
   assert.equal(lastT1.chairs.find(c => c.name === 'sec_pk_a').chips, 200, 'A holds exactly 200 chips');
