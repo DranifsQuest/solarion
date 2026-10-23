@@ -12,7 +12,7 @@
  * The daily +100z login bonus is claimed atomically in the DB (see db.js).
  */
 
-const { MAPS, TILE, collides, gatewayAt, doorAt } = require('./maps');
+const { MAPS, TILE, collides, gatewayAt } = require('./maps');
 const { db, q } = require('./db');
 // The screen<->world direction mapping lives in the shared client
 // module (single source for the input + facing rules; it is written
@@ -38,6 +38,26 @@ function studioOf(sceneId) {
 const PLAYER_RADIUS = 12;
 const SPEED = 175;              // px per second
 const RUN_MULT = 1.55;          // Phase 9: run-toggle speed multiplier
+// UX overhaul — door affordance: a door's drawn frame is ~47px tall
+// on screen but its trigger was the single 32px tile beneath it, so
+// walking "through the doorway" often missed. The walk-in trigger
+// grows the tile by this pad on every side, and a player standing
+// within DOOR_CLICK_RANGE of a door's centre may click it to enter
+// ({type:'enter-door'} — the server re-validates the range).
+const DOOR_TRIGGER_PAD = 14;    // px grown around the door tile
+const DOOR_CLICK_RANGE = 190;   // px from door centre for click-to-enter
+
+function pointInPaddedRect(x, y, r, pad) {
+  return x >= r.x - pad && x < r.x + r.w + pad && y >= r.y - pad && y < r.y + r.h + pad;
+}
+
+/** Nearest door whose padded rect holds the point (or null). */
+function doorNear(map, x, y, pad) {
+  for (const d of map.doors || []) {
+    if (pointInPaddedRect(x, y, d, pad)) return d;
+  }
+  return null;
+}
 // Phase 9 — the world clock: a 12-minute day/night cycle, anchored
 // to a fixed epoch so every client (and the server) agrees on the
 // phase from the payload alone. Phase 0.0 = sunrise, 0.5 = sunset.
@@ -211,6 +231,7 @@ class Game {
       emote: null,        // Phase 9: { name, until } while emoting
       chatTimes: [],
       lastGatewayAt: 0,
+      doorPadKey: null,   // door edge-trigger state (see syncDoorPad)
       transferUntil: 0,   // Phase B: movement locked until this epoch-ms (load screen)
       seated: null,       // Phase B: { id, dir, kind } while sitting, else null
       vice: { drinks: { count: 0, at: 0 }, puffs: { count: 0, at: 0 } }, // Phase B amendment
@@ -223,6 +244,9 @@ class Game {
       fishForce: null,    // TEST ONLY: debug-fish outcome override
       returnTo: null,   // Phase 4: public map/pos to return to from a studio
     };
+    // (Re)connect: sync the door edge-trigger state from the spawn
+    // position, so a respawn on/near a doorstep can't fire it.
+    this.syncDoorPad(p);
     this.players.set(user.id, p);
     // Fresh session: no last-saved entry, so the first savePosition
     // for this login always writes (even if it matches the spot a
@@ -609,6 +633,60 @@ class Game {
     }
   }
 
+  // ---------------------------------------------------------- door edges
+  /**
+   * Doors are EDGE-TRIGGERED (v1.7.2): walking into a door's padded
+   * rect fires its transfer only on an outside→inside transition.
+   * p.doorPadKey holds the key of the padded door the player was in
+   * at the previous check (null = outside all pads) and is updated
+   * on EVERY checkPortals, so the level can never re-fire while the
+   * player is merely still inside — or still crossing — the pad.
+   * (The pre-fix level trigger trapped players leaving home: the
+   * Gateway landing sits 2px below the home door's pad, and the
+   * natural diagonal step off the doorstep clips the pad corner.)
+   * Gateways stay level-triggered, deliberately untouched.
+   */
+  doorKey(map, d) { return `${map.id}|${d.label || 'door'}|${d.x},${d.y}`; }
+
+  /** State key of the padded door holding (x, y) in `map`, or null. */
+  doorPadKeyAt(map, x, y) {
+    if (!map) return null;
+    if (map.isStudio) {
+      const d = map.studio && map.studio.door;
+      return d && pointInPaddedRect(x, y, d, DOOR_TRIGGER_PAD) ? `${map.id}|__exit__` : null;
+    }
+    const d = doorNear(map, x, y, DOOR_TRIGGER_PAD);
+    return d ? this.doorKey(map, d) : null;
+  }
+
+  /**
+   * Re-sync the edge-trigger state from the player's ACTUAL landing
+   * position. Called on (re)connect (addPlayer) and at the end of
+   * EVERY switchScene — gateways, doors, studio enter/leave/kick
+   * and invite-accept all funnel through switchScene, so no transfer
+   * can leave a stale flag behind. A landing inside a pad starts
+   * "inside" that door. A landing on the door's DOORSTEP — within
+   * one more pad-width of the rect, which is exactly where transfers
+   * deposit you (the home exit lands one tile south of the rect,
+   * 2px clear of the pad) — latches that door too: it cannot fire
+   * until the player has genuinely left its pad and come back.
+   */
+  syncDoorPad(p) {
+    const map = this.sceneFor(p.mapId);
+    let key = this.doorPadKeyAt(map, p.x, p.y);
+    if (key === null && map) {
+      if (map.isStudio) {
+        const d = map.studio && map.studio.door;
+        if (d && pointInPaddedRect(p.x, p.y, d, DOOR_TRIGGER_PAD * 2)) key = `${map.id}|__exit__`;
+      } else {
+        for (const d of map.doors || []) {
+          if (pointInPaddedRect(p.x, p.y, d, DOOR_TRIGGER_PAD * 2)) { key = this.doorKey(map, d); break; }
+        }
+      }
+    }
+    p.doorPadKey = key;
+  }
+
   /**
    * Portal check after movement (also called by the test-only
    * debug-teleport hook): gateway arches (hub<->cities) and doors
@@ -622,23 +700,36 @@ class Game {
     // onto its tile walks you out (the studio system handles the
     // return trip). Studio scenes have no other portals.
     if (map.isStudio) {
-      const d = map.studio && map.studio.door;
-      if (d && p.x >= d.x && p.x < d.x + d.w && p.y >= d.y && p.y < d.y + d.h) {
+      const keyNow = this.doorPadKeyAt(map, p.x, p.y);
+      const entered = p.doorPadKey == null && keyNow !== null;
+      if (entered) {
         if (Date.now() - p.lastGatewayAt >= 1500 && this.studioSystem) {
+          p.doorPadKey = keyNow;
           this.studioSystem.handleLeave(p);
         }
+        // Debounce-blocked: the transition is NOT consumed (state
+        // left outside) — standing on the tile fires once it lapses.
+        return;
       }
+      p.doorPadKey = keyNow;
       return;
     }
     const gw = gatewayAt(map, p.x, p.y);
-    const dr = gw ? null : doorAt(map, p.x, p.y);
-    if (!gw && !dr) return;
+    // UX overhaul: doors were a single exact tile — easy to brush
+    // past without triggering. The walk-in check uses the door rect
+    // grown by DOOR_TRIGGER_PAD on every side (map data unchanged;
+    // this runs only after real movement, so nobody idles through).
+    const dr = gw ? null : doorNear(map, p.x, p.y, DOOR_TRIGGER_PAD);
+    const keyNow = dr ? this.doorKey(map, dr) : null;
+    const entered = p.doorPadKey == null && keyNow !== null;
+    if (!gw && !entered) { p.doorPadKey = keyNow; return; }
     // Debounce so a player standing on a spot can't bounce between maps.
     if (Date.now() - p.lastGatewayAt < 1500) return;
     if (gw) {
       const target = MAPS[gw.target];
       if (!target) {
         p.lastGatewayAt = Date.now();
+        p.doorPadKey = keyNow; // on the arch, not in any door pad
         this.send(p, { type: 'notice', text: `${gw.label} isn't open yet — coming in a later phase.` });
         return;
       }
@@ -650,6 +741,18 @@ class Game {
       this.switchScene(p, target, back && back.spawnOut ? { spawn: back.spawnOut } : {});
       return;
     }
+    // Only an outside→inside transition reaches here (see the edge
+    // trigger above); consume it, then run the door's transfer.
+    p.doorPadKey = keyNow;
+    this.enterDoor(p, dr);
+  }
+
+  /**
+   * Run a door's transfer for a player — shared by the walk-in
+   * trigger (checkPortals) and click-to-enter (handleEnterDoor), so
+   * both paths behave identically (same debounce, same spawns).
+   */
+  enterDoor(p, dr) {
     // Phase 10: the Gateway's "My Home" door — its target is the
     // walker's OWN studio, resolved by the studio system.
     if (dr.target === 'studio:self') {
@@ -659,6 +762,34 @@ class Game {
     const target = MAPS[dr.target];
     if (!target) return;
     this.switchScene(p, target, { spawn: dr.targetSpawn || target.spawn });
+  }
+
+  /**
+   * { type:'enter-door' } — click/tap on a nearby door. The client
+   * hit-tests the DRAWN door (much bigger than its tile); the server
+   * trusts nothing: it finds the nearest door in the player's scene
+   * and only fires when the player stands within DOOR_CLICK_RANGE
+   * of its centre. Same transfer lock + debounce as walking in.
+   */
+  handleEnterDoor(p) {
+    if (p.transferUntil && Date.now() < p.transferUntil) return;
+    if (p.passedOutUntil && Date.now() < p.passedOutUntil) return;
+    if (Date.now() - p.lastGatewayAt < 1500) return;
+    const map = this.sceneFor(p.mapId);
+    if (!map) return;
+    if (map.isStudio) {
+      const d = map.studio && map.studio.door;
+      if (d && Math.hypot(p.x - (d.x + d.w / 2), p.y - (d.y + d.h / 2)) <= DOOR_CLICK_RANGE && this.studioSystem) {
+        this.studioSystem.handleLeave(p);
+      }
+      return;
+    }
+    let best = null, bestD = DOOR_CLICK_RANGE;
+    for (const d of map.doors || []) {
+      const dist = Math.hypot(p.x - (d.x + d.w / 2), p.y - (d.y + d.h / 2));
+      if (dist <= bestD) { bestD = dist; best = d; }
+    }
+    if (best) this.enterDoor(p, best);
   }
 
   // Back-compat alias (older callers/tests used the gateway name).
@@ -691,6 +822,9 @@ class Game {
     p.y = spawn.y;
     if (collides(scene, p.x, p.y, PLAYER_RADIUS)) { p.x = scene.spawn.x; p.y = scene.spawn.y; }
     p.keys = {};
+    // Every transfer re-syncs the door edge-trigger state from the
+    // landing position (see syncDoorPad) — a stale flag is impossible.
+    this.syncDoorPad(p);
     this.savePosition(p);
     const { clientMap } = require('./maps');
     const { seasonAt } = require('./seasons');

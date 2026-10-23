@@ -188,6 +188,140 @@ function drawDoor(d, open) {
   ctx.fillText(label, cx, top - 12);
 }
 
+// ------------------------------------------------------------------ UX overhaul: panel motion + dragging
+// Motion is a budget, not a garnish (X's spec): panels opened by a
+// CLICK get one small ease-out settle (translate + fade); closing is
+// softer and shorter. Scene-driven panels (stage, trays) never come
+// through here — they stay instant. Nothing animates on first
+// render: every panel starts .hidden in the markup, and PanelFx
+// only ever runs in response to a user action. All transitions name
+// their properties; the standalone `translate` property is used so
+// the motion composes with a panel's own `transform` (the mixer's
+// centring, the profile card's) instead of fighting it.
+const PanelFx = {
+  timers: new WeakMap(),
+  show(el, opts = {}) {
+    if (!el) return;
+    if (!el.classList.contains('hidden') && !el.classList.contains('panel-leaving')) return; // already open
+    const t = this.timers.get(el);
+    if (t) { clearTimeout(t); this.timers.delete(el); }
+    el.classList.remove('hidden', 'panel-leaving');
+    el.classList.add('panel-enter');
+    // Optional one-time stagger (spec: ONLY for a rare staged
+    // entrance — the studio panel's sections, first open per
+    // session; sequence there teaches the panel's layout).
+    let sections = null;
+    if (opts.staggerOnce && !el.dataset.staggered) {
+      el.dataset.staggered = '1';
+      sections = [...el.querySelectorAll(':scope .spSection')];
+      sections.forEach((s, i) => {
+        s.style.transitionDelay = `${i * 100}ms`;
+        s.classList.add('fx-pre');
+      });
+    }
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      el.classList.add('panel-in');
+      if (sections) sections.forEach((s) => s.classList.remove('fx-pre'));
+      const done = setTimeout(() => {
+        el.classList.remove('panel-enter', 'panel-in');
+        if (sections) sections.forEach((s) => { s.style.transitionDelay = ''; });
+      }, 420);
+      this.timers.set(el, done);
+    }));
+  },
+  hide(el) {
+    if (!el || el.classList.contains('hidden') || el.classList.contains('panel-leaving')) return;
+    const t = this.timers.get(el);
+    if (t) { clearTimeout(t); this.timers.delete(el); }
+    el.classList.remove('panel-enter', 'panel-in');
+    el.classList.add('panel-leaving');
+    const done = setTimeout(() => {
+      el.classList.add('hidden');
+      el.classList.remove('panel-leaving');
+    }, 180);
+    this.timers.set(el, done);
+  },
+  toggle(el, opts) {
+    if (!el) return false;
+    const opening = el.classList.contains('hidden') || el.classList.contains('panel-leaving');
+    if (opening) this.show(el, opts); else this.hide(el);
+    return opening;
+  },
+};
+window.PanelFx = PanelFx;
+
+// Drag-by-header for the floating panels (mixer, studio). Position
+// persists for the session (a module-level map — a reload resets to
+// the CSS default on purpose). The panel is clamped so its header
+// can never be lost off-screen, and clicks on controls inside the
+// header (the ✕, inputs) never start a drag.
+const DragPanels = (() => {
+  const saved = new Map(); // key -> { left, top } in px
+  function place(panel, left, top) {
+    panel.classList.add('dragPos');
+    panel.style.left = `${left}px`;
+    panel.style.top = `${top}px`;
+    panel.style.right = 'auto';
+    panel.style.bottom = 'auto';
+    panel.style.transform = 'none';
+  }
+  function restore(panel, key) {
+    const s = saved.get(key);
+    if (s) place(panel, s.left, s.top);
+  }
+  function attach(panel, handle, key) {
+    if (!panel || !handle || panel.dataset.dragWired) return;
+    panel.dataset.dragWired = '1';
+    handle.classList.add('dragHandle');
+    handle.addEventListener('pointerdown', (e) => {
+      if (e.button !== undefined && e.button !== 0) return;
+      if (e.target.closest('button, input, select, textarea, a, label')) return;
+      const rect = panel.getBoundingClientRect();
+      place(panel, rect.left, rect.top);
+      const dx = e.clientX - rect.left, dy = e.clientY - rect.top;
+      const move = (ev) => {
+        const w = panel.offsetWidth;
+        const x = Math.max(-w + 80, Math.min(window.innerWidth - 80, ev.clientX - dx));
+        const y = Math.max(0, Math.min(window.innerHeight - 40, ev.clientY - dy));
+        panel.style.left = `${x}px`;
+        panel.style.top = `${y}px`;
+      };
+      const up = () => {
+        removeEventListener('pointermove', move);
+        removeEventListener('pointerup', up);
+        saved.set(key, { left: panel.offsetLeft, top: panel.offsetTop });
+      };
+      addEventListener('pointermove', move);
+      addEventListener('pointerup', up);
+      e.preventDefault();
+    });
+  }
+  return { attach, restore };
+})();
+window.SolarionDrag = DragPanels;
+
+/**
+ * Click-to-enter for doors (UX overhaul): the DRAWN door is ~47px
+ * tall with a frame and mat — a much bigger target than its tile.
+ * A click inside the door's padded rect, while I stand within the
+ * server's click range of its centre, sends enter-door (the server
+ * re-validates). A click on a far door returns false so the normal
+ * walk-to takes me there (and the widened walk-in trigger fires).
+ */
+function tryDoorAt(w) {
+  const mine = me ? renderPos.get(me.id) : null;
+  if (!mine) return false;
+  for (const d of currentDoors()) {
+    const pad = 30;
+    if (w.x < d.x - pad || w.x >= d.x + d.w + pad || w.y < d.y - pad || w.y >= d.y + d.h + pad) continue;
+    const dist = Math.hypot(mine.x - (d.x + d.w / 2), mine.y - (d.y + d.h / 2));
+    if (dist > 190) return false; // a far door: walk there instead
+    send({ type: 'enter-door' });
+    return true;
+  }
+  return false;
+}
+
 // ------------------------------------------------------------------ warm props (Phase 10)
 function drawHearthAt(x, y, seed) {
   // Hearth v3 (v1.2.3, Item 6 — X: "fireplaces need to be big"):
@@ -1841,6 +1975,8 @@ cv.addEventListener('click', (e) => {
   if (window.SolarionStudio && window.SolarionStudio.placeInstanceId != null) return;
   const w = screenToWorld(e);
   if (!w) return;
+  // UX overhaul: a click on a nearby door walks through it.
+  if (tryDoorAt(w)) return;
   // A click ON a player opens their profile (item 7), not a walk.
   if (window.SolarionSocial && window.SolarionSocial.tryProfileAt(w)) return;
   send({ type: 'move-to', x: Math.round(w.x), y: Math.round(w.y) });
@@ -1858,7 +1994,7 @@ $('chatBtn').onclick = () => { $('chatInput').focus(); };
 // Phase 9 — sound settings + UI click sounds + door chime.
 $('soundBtn').onclick = () => {
   const p = $('soundPanel');
-  p.classList.toggle('hidden');
+  PanelFx.toggle(p);
   if (window.SolarionSfx) {
     $('volSlider').value = String(Math.round(window.SolarionSfx.volume * 100));
     $('muteBtn').textContent = window.SolarionSfx.muted ? 'Unmute' : 'Mute';

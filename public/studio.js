@@ -71,6 +71,11 @@ const Studio = {
     this.el.homeLock.onclick = () => {
       if (this.homeMeta) this.hooks.send({ type: 'home-set', locked: !this.homeMeta.locked });
     };
+    // UX overhaul: the studio panel is draggable by its header
+    // (position kept for the session).
+    if (window.SolarionDrag) {
+      window.SolarionDrag.attach(this.el.panel, this.el.panel.querySelector('.spHead'), 'studio');
+    }
     $('studioBtn').onclick = () => {
       this.panelOpen = !this.panelOpen;
       this.renderVisibility();
@@ -102,8 +107,9 @@ const Studio = {
     // Look panel (Phase 6: shared looks.js editor, full axis set)
     this.lookState = null;
     $('lookBtn').onclick = async () => {
-      const opening = this.el.lookPanel.classList.contains('hidden');
-      this.el.lookPanel.classList.toggle('hidden', !opening);
+      const opening = this.el.lookPanel.classList.contains('hidden') || this.el.lookPanel.classList.contains('panel-leaving');
+      if (window.PanelFx) window.PanelFx.toggle(this.el.lookPanel);
+      else this.el.lookPanel.classList.toggle('hidden', !opening);
       if (!opening) return;
       const me = this.hooks.getMe();
       if (!me || !window.SolarionLooks) return;
@@ -120,7 +126,10 @@ const Studio = {
         $('lookErr').textContent = 'Could not load look options.';
       }
     };
-    $('lookClose').onclick = () => this.el.lookPanel.classList.add('hidden');
+    $('lookClose').onclick = () => {
+      if (window.PanelFx) window.PanelFx.hide(this.el.lookPanel);
+      else this.el.lookPanel.classList.add('hidden');
+    };
     $('lookApply').onclick = () => {
       if (!this.lookState) return;
       this.hooks.send({ type: 'avatar-update', ...this.lookState });
@@ -172,7 +181,21 @@ const Studio = {
   },
 
   renderVisibility() {
-    this.el.panel.classList.toggle('hidden', !(this.inStudio || this.panelOpen));
+    // UX overhaul: visibility rides PanelFx (settle-in on open,
+    // softer close; its guards make repeat calls cheap no-ops).
+    // The studio's sections stagger ONCE per session on first open
+    // — the one staged entrance in the UI (see PanelFx).
+    const want = this.inStudio || this.panelOpen;
+    if (window.PanelFx) {
+      if (want) {
+        if (window.SolarionDrag) window.SolarionDrag.restore(this.el.panel, 'studio');
+        window.PanelFx.show(this.el.panel, { staggerOnce: true });
+      } else {
+        window.PanelFx.hide(this.el.panel);
+      }
+    } else {
+      this.el.panel.classList.toggle('hidden', !want);
+    }
     this.el.leaveBtn.classList.toggle('hidden', !this.inStudio);
   },
 
