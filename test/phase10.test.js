@@ -225,6 +225,88 @@ test('home door round trip: Gateway front door -> own home (1.5s lock) -> out th
   u.client.ws.close();
 });
 
+// ------------------------------------------------------------------ b2
+// v1.7.2 regression: door transfers are EDGE-TRIGGERED. The ux
+// overhaul's DOOR_TRIGGER_PAD grew the home door's trigger to y<750
+// while the exit landing is (240,752) — 2px clear — so the natural
+// diagonal step off the doorstep clipped the pad corner and the old
+// LEVEL trigger yanked the player straight back inside, repeatedly.
+// These three tests pin the fix: escape works, entry still works,
+// and only a genuine outside->inside crossing fires (exactly once).
+
+test('door edge trigger: diagonal walk off the home doorstep never bounces back inside', { timeout: 60000 }, async () => {
+  const u = await makeUser('escape_eda');
+  teleport(u, 240, 720); // onto the My Home pad -> own studio
+  await arriveMap(u, `studio:${u.id}`);
+  const t0 = Date.now();
+  await waitFor(() => Date.now() - t0 > 3400, 6000, 'entry transfer window elapsed');
+  await sleep(1600); // portal debounce from the entry hop
+  teleport(u, 336, 432); // out through the home's own door tile
+  const back = await arriveMap(u, 'the-gateway');
+  assert.ok(Math.abs(back.you.x - 240) < 2 && Math.abs(back.you.y - 752) < 2,
+    `lands on the doorstep (got ${back.you.x},${back.you.y})`);
+  const t1 = Date.now();
+  await waitFor(() => Date.now() - t1 > 1700, 4000, 'exit transfer + debounce elapsed');
+  // Hold right+up — the natural plaza vector, straight across the
+  // pad's south-east corner — for a full second.
+  u.client.send({ type: 'input', keys: { right: true, up: true } });
+  await sleep(1000);
+  u.client.send({ type: 'input', keys: {} });
+  const me = selfIn(u.client, u.id);
+  assert.ok(me, 'snapshot present after the diagonal walk');
+  assert.ok(me.x > 300, `moved clear of the doorstep (x=${me.x}, y=${me.y})`);
+  const homes = u.client.msgs.filter(x => x.type === 'map' && x.map.id === `studio:${u.id}`);
+  assert.equal(homes.length, 1, 'exactly one home entry — no bounce back inside');
+  u.client.ws.close();
+});
+
+test('door edge trigger: walking into the home pad from the plaza still enters', { timeout: 60000 }, async () => {
+  const u = await makeUser('enter_eli');
+  teleport(u, 240, 830); // plaza, well south of pad AND doorstep latch
+  await sleep(300);
+  u.client.send({ type: 'input', keys: { up: true } }); // walk north into the pad
+  const home = await arriveMap(u, `studio:${u.id}`);
+  u.client.send({ type: 'input', keys: {} });
+  assert.ok(home.map.studio && home.map.studio.door, 'walked in through the front door');
+  u.client.ws.close();
+});
+
+test('door edge trigger: doorstep-row walk-past is inert; genuine re-entry fires exactly once', { timeout: 90000 }, async () => {
+  const u = await makeUser('past_pia');
+  const homeEntries = () => u.client.msgs.filter(x => x.type === 'map' && x.map.id === `studio:${u.id}`).length;
+  // Walk west along the doorstep row itself (y=752 — 2px below the
+  // pad's south edge): passes directly under the door, never in it,
+  // until the home's facade wall stops the walk.
+  teleport(u, 330, 752);
+  await sleep(300);
+  u.client.send({ type: 'input', keys: { left: true } });
+  await sleep(1500);
+  u.client.send({ type: 'input', keys: {} });
+  const me = selfIn(u.client, u.id);
+  assert.ok(me && me.x < 260, `crossed the pad's whole x-span along its doorstep (x=${me && me.x}, y=${me && me.y})`);
+  assert.equal(homeEntries(), 0, 'no home entry from the doorstep row');
+  // Genuinely enter: walk north into the pad from the plaza.
+  teleport(u, 240, 800);
+  await sleep(300);
+  u.client.send({ type: 'input', keys: { up: true } });
+  await arriveMap(u, `studio:${u.id}`);
+  u.client.send({ type: 'input', keys: {} });
+  // Straight back out and diagonally away — no bounce loop.
+  const t0 = Date.now();
+  await waitFor(() => Date.now() - t0 > 3400, 6000, 'entry transfer window elapsed');
+  await sleep(1600);
+  teleport(u, 336, 432);
+  await arriveMap(u, 'the-gateway');
+  const t1 = Date.now();
+  await waitFor(() => Date.now() - t1 > 1700, 4000, 'exit transfer + debounce elapsed');
+  u.client.send({ type: 'input', keys: { right: true, up: true } });
+  await sleep(1000);
+  u.client.send({ type: 'input', keys: {} });
+  await sleep(300);
+  assert.equal(homeEntries(), 1, 'exactly one home entry across walk-past + re-entry + escape');
+  u.client.ws.close();
+});
+
 // ------------------------------------------------------------------ c
 
 test('warm furniture: fireplace, string lights and lantern buy at exact prices and place', { timeout: 60000 }, async () => {
