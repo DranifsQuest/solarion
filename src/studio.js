@@ -12,9 +12,11 @@
  * studios never see or hear each other.
  *
  * Furniture: a fixed original catalog (this module owns it). Buying is
- * an atomic z-coin debit (`UPDATE ... WHERE zcoins >= price`) inside a
- * transaction with the inventory insert — a failed guard means "not
- * enough funds", never a negative balance and never a free item.
+ * an atomic z-coin debit (`UPDATE ... WHERE zcoins >= price`) followed
+ * by the inventory insert, with a compensating refund if the insert
+ * fails — a failed guard means "not enough funds", never a negative
+ * balance and never a free item. (v1.7.1: no manual transaction wraps
+ * the pair — BEGIN/COMMIT does not hold over the remote driver.)
  * Placement is owner-only, in your own studio only, inside the room,
  * never on the door tile, rotations 0–3, max 100 placed items
  * (soul doc §5). Everything persists in the `studio_items` table, so
@@ -329,6 +331,7 @@ function init() {
   };
   SQ = {
     debit: db.prepare('UPDATE avatars SET zcoins = zcoins - ? WHERE user_id = ? AND zcoins >= ?'),
+    addZ: db.prepare('UPDATE avatars SET zcoins = zcoins + ? WHERE user_id = ?'),
     zOf: db.prepare('SELECT zcoins FROM avatars WHERE user_id = ?'),
     insertItem: db.prepare('INSERT INTO studio_items (owner_id, item_id, x, y, rot, created_at) VALUES (?, ?, NULL, NULL, 0, ?)'),
     allFor: db.prepare('SELECT * FROM studio_items WHERE owner_id = ? ORDER BY id'),
@@ -744,25 +747,33 @@ class StudioSystem {
       this.game.send(p, { type: 'notice', text: `🏆 The ${item.name} is earned on stage — 25 lifetime 👍 on one mix for Gold, 100 for Platinum — not bought.` });
       return;
     }
-    // Atomic debit + insert: the WHERE guard is the funds check, and
-    // the transaction makes debit and delivery indivisible.
-    let inserted = false;
+    // v1.7.1: guarded atomic debit + single insert + compensating
+    // refund — NO manual transaction (BEGIN/COMMIT does not hold
+    // over the remote Hrana driver, and the old catch then mapped
+    // EVERY failure, driver errors included, to "not enough
+    // coins"). "Not enough" is reported ONLY when the guarded
+    // debit itself changed 0 rows; a driver error is logged and
+    // reported honestly; an insert that fails after the debit
+    // landed is refunded before the player hears about it.
+    let debited;
     try {
-      db.exec('BEGIN IMMEDIATE');
-      const debited = SQ.debit.run(item.price, p.userId, item.price);
-      if (debited.changes === 1) {
-        SQ.insertItem.run(p.userId, item.id, Date.now());
-        inserted = true;
-        db.exec('COMMIT');
-      } else {
-        db.exec('ROLLBACK');
-      }
+      debited = SQ.debit.run(item.price, p.userId, item.price);
     } catch (e) {
-      try { db.exec('ROLLBACK'); } catch (e2) { /* ignore */ }
-      inserted = false;
+      console.error(`[studio] buy debit failed for user ${p.userId} (${item.id}):`, e && e.message ? e.message : e);
+      this.game.send(p, { type: 'notice', text: `Buying the ${item.name} hit a snag — no coins were spent. Please try again.` });
+      return;
     }
-    if (!inserted) {
+    if (debited.changes !== 1) {
       this.game.send(p, { type: 'notice', text: `Not enough z coins — the ${item.name} costs ${item.price}z.` });
+      return;
+    }
+    try {
+      SQ.insertItem.run(p.userId, item.id, Date.now());
+    } catch (e) {
+      console.error(`[studio] buy insert failed for user ${p.userId} (${item.id}) after the debit landed — refunding:`, e && e.message ? e.message : e);
+      try { SQ.addZ.run(item.price, p.userId); }
+      catch (e2) { console.error(`[studio] buy REFUND failed for user ${p.userId} (${item.price}z, ${item.id}):`, e2 && e2.message ? e2.message : e2); }
+      this.game.send(p, { type: 'notice', text: `Buying the ${item.name} hit a snag — your coins were refunded. Please try again.` });
       return;
     }
     this.game.send(p, { type: 'zcoins', zcoins: zcoinsOf(p.userId) });
@@ -1056,19 +1067,32 @@ class StudioSystem {
       this.game.send(p, { type: 'notice', text: 'Your home is already at the largest size — the Penthouse.' });
       return;
     }
-    let paid = false;
+    // v1.7.1: one guarded atomic debit, no manual transaction
+    // (see handleBuy). changes === 0 is the ONLY "can't afford
+    // it" path — the old code reported the price message for
+    // driver errors too. If the tier write fails after the debit
+    // landed, the debit is refunded before reporting.
+    let debited;
     try {
-      db.exec('BEGIN IMMEDIATE');
-      const debited = SQ.debit.run(next.price, p.userId, next.price);
-      if (debited.changes === 1) { paid = true; db.exec('COMMIT'); } else { db.exec('ROLLBACK'); }
+      debited = SQ.debit.run(next.price, p.userId, next.price);
     } catch (e) {
-      try { db.exec('ROLLBACK'); } catch (e2) { /* ignore */ }
+      console.error(`[studio] home-expand debit failed for user ${p.userId}:`, e && e.message ? e.message : e);
+      this.game.send(p, { type: 'notice', text: 'Expanding hit a snag — no coins were spent. Please try again.' });
+      return;
     }
-    if (!paid) {
+    if (debited.changes !== 1) {
       this.game.send(p, { type: 'notice', text: `Expanding to the ${next.name} (${next.w}×${next.h}) costs ${next.price}z.` });
       return;
     }
-    setHomeMeta(p.userId, { tier: meta.tier + 1 });
+    try {
+      setHomeMeta(p.userId, { tier: meta.tier + 1 });
+    } catch (e) {
+      console.error(`[studio] home-expand tier write failed for user ${p.userId} after the debit landed — refunding:`, e && e.message ? e.message : e);
+      try { SQ.addZ.run(next.price, p.userId); }
+      catch (e2) { console.error(`[studio] home-expand REFUND failed for user ${p.userId} (${next.price}z):`, e2 && e2.message ? e2.message : e2); }
+      this.game.send(p, { type: 'notice', text: 'Expanding hit a snag — your coins were refunded. Please try again.' });
+      return;
+    }
     this.game.send(p, { type: 'zcoins', zcoins: zcoinsOf(p.userId) });
     this.game.send(p, { type: 'notice', text: `🏠 Welcome to your ${next.name} — ${next.w}×${next.h} tiles! Your furniture stayed right where it was.` });
     this.sendHomeMeta(p);

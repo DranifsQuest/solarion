@@ -47,7 +47,6 @@
  *   { type:'blackjack-offer', ...buy-in offer }
  */
 
-const { db } = require('./db');
 const { collides } = require('./maps');
 const casino = require('./casino');
 const { newDeck, cardStr, BUYIN_PRESETS, CHIP_BUYIN_MIN } = casino;
@@ -258,52 +257,67 @@ class BlackjackTable {
     const found = this.findSeat(p.userId);
     if (!found) return false;
     const { seat, idx } = found;
+    const liveBet = seat.bet > 0 && this.state === 'playing';
+    const wasAction = liveBet && this.actionIdx === idx;
+    // v1.7.1: the bet/stack are adjusted to the cash-out shape
+    // FIRST (a live bet is forfeited to the house; a betting-window
+    // bet folds back into the stack), then cashOutSeat credits with
+    // ONE atomic statement — and only if that credit verifiably
+    // lands does the stand complete. On failure the snapshot is
+    // restored: the seat, its hand, and its bet are exactly as
+    // they were, the player is told, and standing again retries.
+    // (The old code freed the seat first, wrapped the credit in a
+    // BEGIN/COMMIT the remote driver cannot hold, swallowed the
+    // error, and announced the leave regardless.)
+    const snap = { chips: seat.chips, bet: seat.bet, hand: seat.hand, result: seat.result };
+    const forfeited = liveBet ? seat.bet : 0;
+    if (liveBet) {
+      seat.bet = 0;
+      seat.hand = [];
+      seat.result = null;
+    } else if (seat.bet > 0) {
+      seat.chips += seat.bet; // betting window: bet was never at risk
+      seat.bet = 0;
+    }
+    const refund = this.cashOutSeat(idx); // stack only when liveBet — the bet stays with the house
+    if (refund === null) {
+      seat.chips = snap.chips; seat.bet = snap.bet; seat.hand = snap.hand; seat.result = snap.result;
+      if (!silent && p) {
+        this.game.send(p, { type: 'notice', text: `Cash-out failed — your chips are safe at the table. Please try standing again.` });
+      }
+      return true;
+    }
     if (p && p.seated && p.seated.kind === 'blackjack') {
       p.seated = null;
       if (!silent) this.game.send(p, { type: 'sit-state', seated: false });
       if (!silent) this.system.stepOffChair(p, this);
     }
-    const liveBet = seat.bet > 0 && this.state === 'playing';
-    if (liveBet) {
-      const forfeited = seat.bet;
-      const wasAction = this.actionIdx === idx;
-      seat.bet = 0;
-      seat.hand = [];
-      seat.result = null;
-      this.cashOutSeat(idx); // stack only — the bet stays with the house
-      if (!silent && p) {
-        this.game.send(p, { type: 'notice', text: `You stood up mid-round — your ${forfeited}z bet is forfeited.` });
-        this.game.send(p, { type: 'notice', text: 'You leave the blackjack table.' });
-        this.game.send(p, { type: 'zcoins', zcoins: this.zcoinsOf(seat.userId) });
-      }
-      if (wasAction) { this.actionIdx = idx; this.advance(); }
-      this.afterSeatChange();
-      return true;
-    }
-    if (seat.bet > 0) { seat.chips += seat.bet; seat.bet = 0; } // betting window: bet was never at risk
-    this.cashOutSeat(idx);
     if (!silent && p) {
+      if (liveBet) {
+        this.game.send(p, { type: 'notice', text: `You stood up mid-round — your ${forfeited}z bet is forfeited.` });
+      }
       this.game.send(p, { type: 'notice', text: 'You leave the blackjack table.' });
       this.game.send(p, { type: 'zcoins', zcoins: this.zcoinsOf(seat.userId) });
     }
+    if (wasAction) { this.actionIdx = idx; this.advance(); }
     this.afterSeatChange();
     return true;
   }
 
-  /** Pay a seat's stack back to zcoins and free the chair. */
+  /**
+   * Pay a seat's stack (chips + bet, as adjusted by the caller)
+   * back to zcoins and free the chair. v1.7.1: the credit is ONE
+   * atomic statement (casino.creditTableCashOut) and the chair is
+   * freed only once it has verifiably landed. Returns the refund
+   * on success, null on failure — on failure the seat and its
+   * chips are untouched and the caller decides how to proceed.
+   */
   cashOutSeat(idx) {
     const seat = this.chairs[idx].seat;
     if (!seat) return 0;
     const refund = seat.chips + seat.bet;
+    if (!casino.creditTableCashOut(seat.userId, refund)) return null;
     this.chairs[idx].seat = null;
-    try {
-      db.exec('BEGIN IMMEDIATE');
-      CQ().addZ.run(refund, seat.userId);
-      CQ().setCasinoChips.run(0, seat.userId);
-      db.exec('COMMIT');
-    } catch (e) {
-      try { db.exec('ROLLBACK'); } catch (e2) { /* ignore */ }
-    }
     return refund;
   }
 
@@ -781,19 +795,32 @@ class BlackjackSystem {
       // is forfeited to the house and the stack (minus the bet)
       // cashes out NOW — the v1.5 ghost settlement is retired.
       const liveBet = seat.bet > 0 && t.state === 'playing';
+      const wasAction = liveBet && t.actionIdx === idx;
       if (liveBet) {
-        const wasAction = t.actionIdx === idx;
         seat.bet = 0;
         seat.hand = [];
         seat.result = null;
-        t.cashOutSeat(idx);
-        if (wasAction) { t.actionIdx = idx; t.advance(); }
-        t.afterSeatChange();
-      } else {
-        if (seat.bet > 0) { seat.chips += seat.bet; seat.bet = 0; }
-        t.cashOutSeat(idx);
-        t.afterSeatChange();
+      } else if (seat.bet > 0) {
+        seat.chips += seat.bet;
+        seat.bet = 0;
       }
+      const refund = t.cashOutSeat(idx);
+      if (refund === null) {
+        // v1.7.1: the credit failed and the player is gone — the
+        // chair cannot stay occupied, and the full ledger mirror
+        // must not survive either (login recovery would refund
+        // the forfeited bet on top of it). Free the chair and
+        // strand exactly the uncommitted stack in the mirror;
+        // recoverStrandedChips credits it exactly once at the
+        // next login (same contract as casino's disconnect path).
+        const stranded = seat.chips + seat.bet;
+        t.chairs[idx].seat = null;
+        try { CQ().setCasinoChips.run(stranded, userId); }
+        catch (e) { console.error(`[blackjack] stranded-chips ledger fix for user ${userId} (${stranded}z) failed:`, e && e.message ? e.message : e); }
+        if (gp) t.game.send(gp, { type: 'notice', text: `Your table cash-out hit a snag — ${stranded}z in chips will be back in your balance when you next log in.` });
+      }
+      if (wasAction) { t.actionIdx = idx; t.advance(); }
+      t.afterSeatChange();
     }
   }
 

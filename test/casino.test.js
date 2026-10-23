@@ -1137,7 +1137,22 @@ test('house hand unit: two humans dealt in — NO house seat', { timeout: 30000 
   assert.equal(total, 400, 'chips conserved exactly — the house added nothing');
 });
 
+// v1.7.1: table cash-outs credit the avatars row with ONE atomic
+// UPDATE whose .changes is verified before the seat is freed —
+// the hand-placed unit seats below belong to synthetic users, so
+// give those users real ledger rows or the (correct) verification
+// refuses to pay out to nobody. Balances default to 0; tests that
+// assert on them set exact values first.
+function ensureAvatarRow(userId, zcoins = 0) {
+  const { db } = require('../src/db');
+  db.prepare('INSERT OR IGNORE INTO users (id, username, pass_hash, created_at) VALUES (?, ?, ?, 0)')
+    .run(userId, `unit_${userId}`, 'x');
+  db.prepare('INSERT OR IGNORE INTO avatars (user_id, name, zcoins, casino_chips, created_at) VALUES (?, ?, ?, 0, 0)')
+    .run(userId, `unit_${userId}`, zcoins);
+}
+
 test('poker unit (Order 5): standing mid-hand forfeits committed chips to the pot; solo, the house takes the pot', { timeout: 30000 }, () => {
+  ensureAvatarRow(1); ensureAvatarRow(2);
   const sent = [];
   const recGame = { getPlayer: () => null, send: (p, m) => sent.push(m), broadcastToMap: () => {}, savePosition: () => {} };
   const fakeCasino = { mapId: 'casino-lounge', stepOffChair: () => {} };
@@ -1168,6 +1183,45 @@ test('poker unit (Order 5): standing mid-hand forfeits committed chips to the po
   const hs = t2.chairs[t2.houseIdx].seat;
   assert.equal(t2.state, 'done');
   assert.equal(hs.chips, 205, 'the house collects the 7z pot (its 2z blind + the forfeited 5z)');
+});
+
+test('poker unit (v1.7.1): a failing cash-out credit keeps the seat + chips and announces NO success; the retry lands', { timeout: 30000 }, () => {
+  ensureAvatarRow(77001);
+  const { db } = require('../src/db');
+  db.prepare('UPDATE avatars SET zcoins = 1000, casino_chips = 175 WHERE user_id = 77001').run();
+  const sent = [];
+  const recGame = { getPlayer: () => null, send: (p, m) => sent.push(m), broadcastToMap: () => {}, savePosition: () => {} };
+  const fakeCasino = { mapId: 'casino-lounge', stepOffChair: () => {} };
+  const def = { id: 'unit-cashout-fail', x: 0, y: 0, chairs: ['N', 'E', 'S', 'W'].map((dir, i) => ({ dir, x: i * 10, y: 0 })) };
+  const t = new casino.PokerTable(recGame, fakeCasino, def);
+  t.chairs[0].seat = { userId: 77001, name: 'Fragile', chips: 175, buyin: 200, bet: 0, committed: 0, hole: [], inHand: false, folded: false, allIn: false, sittingOut: false };
+  const p = { userId: 77001, name: 'Fragile', x: 0, y: 0, mapId: 'casino-lounge', seated: { id: 'poker:unit-cashout-fail:N', dir: 'down', kind: 'poker' } };
+  // Fault injection: the ledger's cash-out statement throws, the
+  // way the remote driver failed in production.
+  const ledger = casino.getLedger();
+  const realCashOut = ledger.cashOut;
+  ledger.cashOut = { run: () => { throw new Error('injected driver failure'); } };
+  try {
+    t.stand(p);
+  } finally {
+    ledger.cashOut = realCashOut;
+  }
+  assert.ok(t.chairs[0].seat, 'the seat is KEPT when the credit fails');
+  assert.equal(t.chairs[0].seat.chips, 175, 'the chips are untouched');
+  assert.ok(sent.some(m => m.type === 'notice' && /Cash-out failed/.test(m.text)), 'the player is told the cash-out failed');
+  assert.ok(!sent.some(m => m.type === 'notice' && /cashed out/.test(m.text)), 'NO success is announced for a credit that never landed');
+  assert.ok(!sent.some(m => m.type === 'zcoins'), 'no balance update is sent');
+  let row = db.prepare('SELECT zcoins, casino_chips FROM avatars WHERE user_id = 77001').get();
+  assert.equal(row.zcoins, 1000, 'balance unchanged by the failed cash-out');
+  assert.equal(row.casino_chips, 175, 'ledger mirror unchanged by the failed cash-out');
+  // Retry with a healthy driver: the same stand now completes.
+  sent.length = 0;
+  t.stand(p);
+  assert.equal(t.chairs[0].seat, null, 'the retry frees the seat');
+  assert.ok(sent.some(m => m.type === 'notice' && /175z cashed out/.test(m.text)), 'the retry announces the real cash-out');
+  row = db.prepare('SELECT zcoins, casino_chips FROM avatars WHERE user_id = 77001').get();
+  assert.equal(row.zcoins, 1175, 'the credit landed exactly once');
+  assert.equal(row.casino_chips, 0, 'the ledger mirror cleared with the credit');
 });
 
 test('poker live: lone player plays a real heads-up hand against the HOUSE (Order 3)', { timeout: 120000 }, async () => {

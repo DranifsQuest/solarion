@@ -13,9 +13,21 @@
  * never duplicate or destroy chips).
  *
  * Currency safety model:
- *   - Every z-coin debit is an atomic `UPDATE ... WHERE zcoins >= n`
- *     (or a BEGIN IMMEDIATE transaction); a failed guard means "not
- *     enough funds", never a negative balance.
+ *   - Every z-coin debit is an atomic `UPDATE ... WHERE zcoins >= n`;
+ *     a failed guard means "not enough funds", never a negative
+ *     balance. Cash-outs are likewise ONE atomic UPDATE (credit +
+ *     ledger clear in a single statement) whose .changes is verified
+ *     BEFORE the seat is freed — a failed credit keeps the seat and
+ *     its chips, and success is never announced for a credit that
+ *     did not land.
+ *   - Manual BEGIN/COMMIT transactions are NEVER used on money
+ *     paths (v1.7.1): over the remote libSQL/Hrana driver they do
+ *     not hold an interactive transaction across calls — in
+ *     production the statements ran unwrapped and the catch-block
+ *     ROLLBACK errored with "cannot rollback - no transaction is
+ *     active", while the code went on to announce cash-outs that
+ *     had never happened. Single statements + verified .changes +
+ *     compensating credits are the whole toolkit now.
  *   - Table equity (chips + street bet + committed) is mirrored to
  *     avatars.casino_chips on every mutation. On login, any stranded
  *     chips (crash mid-hand) are refunded to zcoins exactly once.
@@ -440,13 +452,26 @@ class PokerTable {
     // if this stand takes the player out of a live hand with money
     // already committed, say so with the amount (no silent losses).
     const forfeitAmt = (seat.inHand && !seat.folded) ? seat.committed : 0;
+    const refund = seat.chips;
+    // v1.7.1: credit FIRST (one atomic statement, verified) and
+    // mutate the seat only once the money has verifiably landed.
+    // On failure the seat, its chips, and the hand are exactly as
+    // they were — the player is told the cash-out failed and
+    // standing again retries. (The old code freed the seat first,
+    // then ran a BEGIN/COMMIT the remote driver cannot hold, and
+    // announced the cash-out regardless of the swallowed error.)
+    if (!creditTableCashOut(seat.userId, refund)) {
+      if (!silent && p) {
+        this.game.send(p, { type: 'notice', text: `Cash-out failed — your ${refund}z in chips is safe at the table. Please try standing again.` });
+      }
+      return true;
+    }
     if (seat.inHand && !seat.folded) seat.folded = true;
     // The committed chips stay in the pot (Order 5) — move them
     // to the table's dead money before the seat goes, or
     // potTotal() would lose them with the seat. (Live states
     // only: in the 'done' window the pot is already settled.)
     if (seat.inHand && seat.committed > 0 && this.inHandState()) this.deadCommitted += seat.committed;
-    const refund = seat.chips;
     this.chairs[idx].seat = null;
     if (p && p.seated && p.seated.kind === 'poker') {
       p.seated = null;
@@ -454,14 +479,6 @@ class PokerTable {
       // Item 6: standing leaves the avatar BESIDE the chair, clear
       // of the felt — never standing on the table graphic.
       if (!silent) this.casino.stepOffChair(p, this);
-    }
-    try {
-      db.exec('BEGIN IMMEDIATE');
-      CQ.addZ.run(refund, seat.userId);
-      CQ.setCasinoChips.run(0, seat.userId);
-      db.exec('COMMIT');
-    } catch (e) {
-      try { db.exec('ROLLBACK'); } catch (e2) { /* ignore */ }
     }
     if (!silent) {
       if (forfeitAmt > 0) {
@@ -1130,6 +1147,13 @@ function initLedger() {
     // Atomic debit: changes === 1 iff the balance covered the amount.
     debit: db.prepare('UPDATE avatars SET zcoins = zcoins - ? WHERE user_id = ? AND zcoins >= ?'),
     addZ: db.prepare('UPDATE avatars SET zcoins = zcoins + ? WHERE user_id = ?'),
+    // v1.7.1: the cash-out credit — ONE atomic statement moves the
+    // uncommitted stack back to zcoins AND clears the crash-safety
+    // ledger, so the credit can never half-land (coins without the
+    // ledger clear would double-pay at login recovery; the clear
+    // without the coins would destroy them). Callers check
+    // .changes === 1 before freeing any seat.
+    cashOut: db.prepare('UPDATE avatars SET zcoins = zcoins + ?, casino_chips = 0 WHERE user_id = ?'),
     zOf: db.prepare('SELECT zcoins FROM avatars WHERE user_id = ?'),
     setCasinoChips: db.prepare('UPDATE avatars SET casino_chips = ? WHERE user_id = ?'),
     getCasinoChips: db.prepare('SELECT casino_chips FROM avatars WHERE user_id = ?'),
@@ -1137,6 +1161,27 @@ function initLedger() {
     jackpotGet: db.prepare('SELECT pool_h FROM slots_jackpot WHERE id = 1'),
     jackpotSet: db.prepare('UPDATE slots_jackpot SET pool_h = ? WHERE id = 1'),
   };
+}
+
+/**
+ * v1.7.1 — credit a table cash-out for `userId`: ONE atomic UPDATE
+ * (zcoins += refund, casino_chips = 0), verified via .changes.
+ * Returns true only when the credit verifiably landed. On any
+ * failure the error is logged with the user id and false is
+ * returned; the caller keeps the seat (player present) or strands
+ * the refund in the ledger mirror (player gone) — success is
+ * never faked. Shared by poker, blackjack, and both disconnect
+ * paths (blackjack reaches it via the casino module).
+ */
+function creditTableCashOut(userId, refund) {
+  try {
+    const r = CQ.cashOut.run(refund, userId);
+    if (r && r.changes === 1) return true;
+    console.error(`[casino] cash-out credit for user ${userId} (${refund}z) matched ${r ? r.changes : 'no'} rows — credit did not land`);
+  } catch (e) {
+    console.error(`[casino] cash-out credit for user ${userId} (${refund}z) failed:`, e && e.message ? e.message : e);
+  }
+  return false;
 }
 
 /** Current jackpot pool in whole z (display + payout unit). */
@@ -1551,15 +1596,21 @@ class CasinoSystem {
       // like stand() (disconnect == stand).
       if (seat.inHand && seat.committed > 0 && t.inHandState()) t.deadCommitted += seat.committed;
       const refund = seat.chips;
-      t.chairs[idx].seat = null;
-      try {
-        db.exec('BEGIN IMMEDIATE');
-        CQ.addZ.run(refund, userId);
-        CQ.setCasinoChips.run(0, userId);
-        db.exec('COMMIT');
-      } catch (e) {
-        try { db.exec('ROLLBACK'); } catch (e2) { /* ignore */ }
+      if (!creditTableCashOut(userId, refund)) {
+        // The player is gone, so the seat cannot stay: it would
+        // block the chair — and worse, the login recovery would
+        // later refund the FULL ledger mirror (forfeited committed
+        // chips included) on top of a still-live seat. Free the
+        // chair and narrow the mirror to exactly the uncommitted
+        // refund, so recoverStrandedChips credits it exactly once
+        // at the next login. The fold / dead-money bookkeeping
+        // above already ran, so the pot keeps the forfeit and
+        // nothing is paid twice.
+        try { CQ.setCasinoChips.run(refund, userId); }
+        catch (e) { console.error(`[casino] stranded-chips ledger fix for user ${userId} (${refund}z) failed:`, e && e.message ? e.message : e); }
+        if (gp) this.game.send(gp, { type: 'notice', text: `Your table cash-out hit a snag — ${refund}z in chips will be back in your balance when you next log in.` });
       }
+      t.chairs[idx].seat = null;
       t.afterSeatChange();
     }
     this.slotCd.delete(userId);
@@ -1596,7 +1647,7 @@ class CasinoSystem {
 }
 
 module.exports = {
-  CasinoSystem, PokerTable, initLedger,
+  CasinoSystem, PokerTable, initLedger, creditTableCashOut,
   // v1.5: the blackjack system shares the casino ledger (the CQ
   // prepared statements over avatars.casino_chips / zcoins) — it
   // calls getLedger() lazily at runtime, after initLedger().

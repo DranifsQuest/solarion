@@ -37,6 +37,14 @@
  * raw BEGIN IMMEDIATE/COMMIT, .changes, .lastInsertRowid) that the rest
  * of the server already uses against `db` / `q`.
  *
+ * v1.7.1 WARNING: raw BEGIN IMMEDIATE/COMMIT is part of the exposed
+ * surface but must NOT be used on money paths — over Hrana it does
+ * not hold an interactive transaction across separate calls
+ * (production error: "cannot rollback - no transaction is active";
+ * statements ran unwrapped and partial effects committed). Money
+ * moves as single atomic statements with verified .changes, plus
+ * compensating credits where a second step can fail.
+ *
  * Schema v2 (Phase 6 — character creation):
  *   meta      — schema version + bookkeeping
  *   users     — accounts (bcrypt password hashes)
