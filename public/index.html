@@ -70,18 +70,33 @@
     <!-- fishing proximity prompt (v1.2 Item O): appears only while
          standing at a fishable bank; tappable for touch players -->
     <button id="fishHint" class="hidden">🎣 Press E to fish</button>
-    <!-- stage panel (shown only in maps with a stage) -->
+    <!-- stage panel (shown only in maps with a stage) — UX
+         overhaul: clear semantic sections instead of one crammed
+         stack. Every element ID is unchanged (mixer.js hooks). -->
     <div id="stagePanel" class="hidden">
-      <div class="spTitle">🎤 STAGE</div>
-      <div id="queueList"></div>
-      <div class="spRow">
-        <select id="joinMixSel"></select>
-        <button id="stageJoinBtn">Perform</button>
-        <button id="stageLeaveBtn" class="hidden">Leave queue</button>
+      <div class="spHead">
+        <span class="spTitle">🎤 STAGE</span>
+        <span class="spHeadSub">live music</span>
       </div>
-      <div id="cdBox"></div>
+      <section class="spSection">
+        <div class="spSectionTitle">🎙️ On stage &amp; up next</div>
+        <div id="queueList"></div>
+      </section>
+      <section class="spSection">
+        <div class="spSectionTitle">🎵 Perform</div>
+        <div class="spRow">
+          <select id="joinMixSel"></select>
+          <button id="stageJoinBtn" class="spPrimary">Perform</button>
+          <button id="stageLeaveBtn" class="hidden">Leave queue</button>
+        </div>
+        <div class="spHint">Pick one of your CDs and take the stage.</div>
+      </section>
+      <section class="spSection">
+        <div class="spSectionTitle">💿 CDs &amp; mixes</div>
+        <div id="cdBox"></div>
+      </section>
       <div id="tipBox" class="hidden">
-        <div class="spTitle">💸 TIP THE ARTIST</div>
+        <div class="spSectionTitle">💸 Tip the artist</div>
         <div class="spRow">
           <select id="tipAmt">
             <option value="5">5z</option>
@@ -93,10 +108,12 @@
           <button id="tipBtn">💰 Tip</button>
         </div>
       </div>
-      <div class="spRow">
-        <button id="chartBtn">🏆 Top 40 Chart</button>
-      </div>
-      <div id="chartBox"></div>
+      <section class="spSection">
+        <div class="spRow">
+          <button id="chartBtn">🏆 Top 40 Chart</button>
+        </div>
+        <div id="chartBox"></div>
+      </section>
     </div>
     <!-- casino tray (v1.1.1: NO sidebar — poker plays on the
          felt and slots on the cabinet; this is only a compact
@@ -227,53 +244,71 @@
         </div>
       </div>
     </div>
-    <!-- studio panel (Phase 4: private studios) -->
+    <!-- studio panel (Phase 4: private studios) — UX overhaul:
+         relocated to the top-left (it no longer sits on the chat),
+         draggable by its header, and laid out as clear sections —
+         Go / room / devices / home / items. Every element ID is
+         unchanged (studio.js hooks). -->
     <div id="studioPanel" class="hidden">
-      <div class="spTitle">🏠 STUDIO</div>
+      <div class="spHead">
+        <span class="spTitle">🏠 STUDIO</span>
+        <span class="spHeadSub">drag to move</span>
+      </div>
       <div id="studioTitle" class="pkDim">Your private room — decorate it, invite people over.</div>
-      <div class="spRow">
-        <button id="enterMyStudio">Enter my studio</button>
-        <button id="leaveStudio" class="hidden">Leave studio</button>
-      </div>
-      <div class="spRow">
-        <input id="visitName" placeholder="Visit username…" maxlength="20">
-        <button id="visitGo">Visit</button>
-      </div>
-      <div class="spRow">
-        <input id="inviteName" placeholder="Invite username…" maxlength="20">
-        <button id="inviteGo">📩 Invite to my studio</button>
-      </div>
-      <div id="studioFurnList"></div>
+      <section class="spSection">
+        <div class="spSectionTitle">🚪 Go</div>
+        <div class="spRow">
+          <button id="enterMyStudio">Enter my studio</button>
+          <button id="leaveStudio" class="hidden">Leave studio</button>
+        </div>
+        <div class="spRow">
+          <input id="visitName" placeholder="Visit username…" maxlength="20">
+          <button id="visitGo">Visit</button>
+        </div>
+        <div class="spRow">
+          <input id="inviteName" placeholder="Invite username…" maxlength="20">
+          <button id="inviteGo">📩 Invite to my studio</button>
+        </div>
+      </section>
+      <section class="spSection">
+        <div class="spSectionTitle">🛋️ In this room</div>
+        <div id="studioFurnList"></div>
+      </section>
       <div id="studioDevices" class="hidden">
-        <div class="spTitle">📺📻 ROOM DEVICES — anyone in the room can use these</div>
+        <div class="spSectionTitle">📺📻 Room devices — anyone here can use these</div>
         <div id="deviceList"></div>
       </div>
       <div id="studioOwner" class="hidden">
-        <div class="spTitle">🎨 HOME — name, paint, floors, size, lock</div>
-        <div id="homeSettings">
-          <div class="spRow">
-            <input id="homeName" placeholder="Home name…" maxlength="30">
-            <button id="homeNameGo">Set name</button>
+        <section class="spSection">
+          <div class="spSectionTitle">🎨 Home</div>
+          <div id="homeSettings">
+            <div class="spRow">
+              <input id="homeName" placeholder="Home name…" maxlength="30">
+              <button id="homeNameGo">Set name</button>
+            </div>
+            <div class="spRow spPair">
+              <label>Walls <select id="homeWall"></select></label>
+              <label>Floor <select id="homeFloor"></select></label>
+            </div>
+            <div class="spRow spRoomCtl">
+              <span id="homeSize" class="pkDim"></span>
+              <button id="homeExpand">Expand</button>
+              <button id="homeLock">🔓 Lock home</button>
+            </div>
           </div>
           <div class="spRow">
-            <label>Walls <select id="homeWall"></select></label>
-            <label>Floor <select id="homeFloor"></select></label>
+            <button id="storeOpen">🛒 Furniture Store — browse &amp; buy</button>
           </div>
+        </section>
+        <section class="spSection">
+          <div class="spSectionTitle">🎒 My items</div>
+          <div class="spHint">Drag one into the room to place it (or Place, then click a tile).</div>
+          <div id="inventoryList" class="scroll-slim"></div>
           <div class="spRow">
-            <span id="homeSize" class="pkDim"></span>
-            <button id="homeExpand">Expand</button>
-            <button id="homeLock">🔓 Lock home</button>
+            <select id="kickSel"></select>
+            <button id="kickBtn">Kick visitor</button>
           </div>
-        </div>
-        <div class="spRow">
-          <button id="storeOpen">🛒 Furniture Store — browse &amp; buy</button>
-        </div>
-        <div class="spTitle">🎒 MY ITEMS — drag one into the room to place it (or Place, then click a tile)</div>
-        <div id="inventoryList"></div>
-        <div class="spRow">
-          <select id="kickSel"></select>
-          <button id="kickBtn">Kick visitor</button>
-        </div>
+        </section>
       </div>
     </div>
     <!-- furniture store window (v1.2 Item C): a real shop popup —

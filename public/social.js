@@ -38,17 +38,21 @@ const Social = {
       friendIncoming: $('friendIncoming'), friendAdd: $('friendAddName'),
       profileCard: $('profileCard'), profileBody: $('profileBody'),
     };
+    // UX overhaul: nav buttons toggle their panels (PanelFx gives
+    // the settle-in / softer-close motion; falls back to the plain
+    // class toggle if client.js's FX helpers are unavailable).
+    const fxShow = (el) => { if (window.PanelFx) window.PanelFx.show(el); else el.classList.remove('hidden'); };
+    const fxHide = (el) => { if (window.PanelFx) window.PanelFx.hide(el); else el.classList.add('hidden'); };
+    const isClosed = (el) => el.classList.contains('hidden') || el.classList.contains('panel-leaving');
     $('navBtn').onclick = () => {
-      const opening = this.el.navPanel.classList.contains('hidden');
-      this.el.navPanel.classList.toggle('hidden', !opening);
-      this.el.friendsPanel.classList.add('hidden');
-      if (opening) this.hooks.send({ type: 'navigator' });
+      const opening = isClosed(this.el.navPanel);
+      if (opening) { fxShow(this.el.navPanel); fxHide(this.el.friendsPanel); this.hooks.send({ type: 'navigator' }); }
+      else fxHide(this.el.navPanel);
     };
     $('friendsBtn').onclick = () => {
-      const opening = this.el.friendsPanel.classList.contains('hidden');
-      this.el.friendsPanel.classList.toggle('hidden', !opening);
-      this.el.navPanel.classList.add('hidden');
-      if (opening) this.hooks.send({ type: 'friend-list' });
+      const opening = isClosed(this.el.friendsPanel);
+      if (opening) { fxShow(this.el.friendsPanel); fxHide(this.el.navPanel); this.hooks.send({ type: 'friend-list' }); }
+      else fxHide(this.el.friendsPanel);
     };
     $('friendAddGo').onclick = () => {
       const name = this.el.friendAdd.value.trim();
