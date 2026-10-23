@@ -61,6 +61,17 @@ function init() {
   SQ = {
     stock: db.prepare('SELECT blanks FROM cd_stock WHERE user_id = ?'),
     setStock: db.prepare('INSERT INTO cd_stock (user_id, blanks) VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE SET blanks = excluded.blanks'),
+    // v1.7.1: the money/stock moves are single atomic statements —
+    // a guarded relative debit (changes === 1 iff the balance
+    // covered the price), a relative credit (compensating refunds),
+    // a relative stock increment (upsert), and a guarded stock
+    // decrement (changes === 1 iff a blank was really there). No
+    // manual BEGIN/COMMIT anywhere: that pattern does not hold
+    // over the remote Hrana driver (see buyBlanks).
+    debitZ: db.prepare('UPDATE avatars SET zcoins = zcoins - ? WHERE user_id = ? AND zcoins >= ?'),
+    addZ: db.prepare('UPDATE avatars SET zcoins = zcoins + ? WHERE user_id = ?'),
+    addStock: db.prepare('INSERT INTO cd_stock (user_id, blanks) VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE SET blanks = blanks + excluded.blanks'),
+    decStock: db.prepare('UPDATE cd_stock SET blanks = blanks - 1 WHERE user_id = ? AND blanks >= 1'),
     addCd: db.prepare('INSERT INTO cds (user_id, mix_id, created_at) VALUES (?, ?, ?)'),
     cdById: db.prepare('SELECT * FROM cds WHERE id = ?'),
     cdsOf: db.prepare('SELECT * FROM cds WHERE user_id = ? ORDER BY id'),
@@ -93,42 +104,77 @@ function blankCount(userId) {
 
 /**
  * Buy a pack of blanks. Returns { ok, blanks, balance } or
- * { ok:false, error }. Coin debit + stock credit are one transaction.
+ * { ok:false, error }.
+ *
+ * v1.7.1: NO manual transaction. The old BEGIN IMMEDIATE sat
+ * OUTSIDE the try, and over the remote (Hrana) driver the whole
+ * BEGIN…COMMIT sequence does not hold an interactive transaction
+ * anyway — production logged `cannot rollback - no transaction is
+ * active` while the statements ran unwrapped, and the throw
+ * escaped to the WS handler so the client heard silence. Now: one
+ * guarded atomic debit (its .changes IS the funds check), one
+ * relative stock upsert, and — if the credit step fails after the
+ * debit landed — a compensating credit makes the player whole.
+ * Every failure returns { ok:false } (never throws) so stage.js
+ * always has an error to show the player; the real error is
+ * logged server-side.
  */
 function buyBlanks(userId) {
   const avatar = q.avatarByUser.get(userId);
   if (!avatar) return { ok: false, error: 'no avatar' };
-  if (avatar.zcoins < BLANK_PACK_PRICE) return { ok: false, error: `A pack of ${BLANK_PACK_COUNT} blank CDs costs ${BLANK_PACK_PRICE}z.` };
-  db.exec('BEGIN IMMEDIATE');
+  let debited;
   try {
-    q.setZCoins.run(avatar.zcoins - BLANK_PACK_PRICE, userId);
-    SQ.setStock.run(userId, blankCount(userId) + BLANK_PACK_COUNT);
-    db.exec('COMMIT');
+    debited = SQ.debitZ.run(BLANK_PACK_PRICE, userId, BLANK_PACK_PRICE);
   } catch (e) {
-    db.exec('ROLLBACK');
-    throw e;
+    console.error(`[records] buyBlanks debit failed for user ${userId}:`, e && e.message ? e.message : e);
+    return { ok: false, error: 'Buying blanks hit a snag — no coins were spent. Please try again.' };
   }
-  return { ok: true, blanks: blankCount(userId), balance: avatar.zcoins - BLANK_PACK_PRICE };
+  if (debited.changes !== 1) {
+    return { ok: false, error: `A pack of ${BLANK_PACK_COUNT} blank CDs costs ${BLANK_PACK_PRICE}z.` };
+  }
+  try {
+    SQ.addStock.run(userId, BLANK_PACK_COUNT);
+  } catch (e) {
+    console.error(`[records] buyBlanks stock credit failed for user ${userId} after the debit landed — refunding:`, e && e.message ? e.message : e);
+    try { SQ.addZ.run(BLANK_PACK_PRICE, userId); }
+    catch (e2) { console.error(`[records] buyBlanks REFUND failed for user ${userId} (${BLANK_PACK_PRICE}z):`, e2 && e2.message ? e2.message : e2); }
+    return { ok: false, error: 'Buying blanks hit a snag — your coins were refunded. Please try again.' };
+  }
+  const fresh = q.avatarByUser.get(userId);
+  return { ok: true, blanks: blankCount(userId), balance: fresh ? fresh.zcoins : avatar.zcoins - BLANK_PACK_PRICE };
 }
 
 /**
  * Burn one blank into a CD of `mixId`. Ownership is the caller's
  * job — music.getMix(userId, mixId) is already user-scoped, so a
  * non-null mix there IS the user's own.
+ *
+ * v1.7.1: same no-manual-transaction pattern as buyBlanks — one
+ * guarded decrement consumes the blank (changes === 1 iff one was
+ * really there), one insert mints the CD, and a failed mint is
+ * compensated by returning the blank. Failures return
+ * { ok:false } instead of throwing into the WS handler.
  */
 function burnCd(userId, mixId) {
-  const blanks = blankCount(userId);
-  if (blanks <= 0) return { ok: false, error: `No blank CDs — a pack of ${BLANK_PACK_COUNT} is ${BLANK_PACK_PRICE}z.` };
-  db.exec('BEGIN IMMEDIATE');
+  let consumed;
   try {
-    SQ.setStock.run(userId, blanks - 1);
-    SQ.addCd.run(userId, mixId, Date.now());
-    db.exec('COMMIT');
+    consumed = SQ.decStock.run(userId);
   } catch (e) {
-    db.exec('ROLLBACK');
-    throw e;
+    console.error(`[records] burnCd stock decrement failed for user ${userId}:`, e && e.message ? e.message : e);
+    return { ok: false, error: 'Burning hit a snag — no blank CD was used. Please try again.' };
   }
-  return { ok: true, blanks: blanks - 1 };
+  if (consumed.changes !== 1) {
+    return { ok: false, error: `No blank CDs — a pack of ${BLANK_PACK_COUNT} is ${BLANK_PACK_PRICE}z.` };
+  }
+  try {
+    SQ.addCd.run(userId, mixId, Date.now());
+  } catch (e) {
+    console.error(`[records] burnCd mint failed for user ${userId} after a blank was consumed — restoring it:`, e && e.message ? e.message : e);
+    try { SQ.addStock.run(userId, 1); }
+    catch (e2) { console.error(`[records] burnCd blank RESTORE failed for user ${userId}:`, e2 && e2.message ? e2.message : e2); }
+    return { ok: false, error: 'Burning hit a snag — your blank CD was restored. Please try again.' };
+  }
+  return { ok: true, blanks: blankCount(userId) };
 }
 
 function listCds(userId, mixNameOf) {

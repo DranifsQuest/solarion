@@ -271,6 +271,12 @@ async function main() {
   say(`# Solarion Gatekeeper — ${tier.toUpperCase()} gate`);
   say(`- HEAD: \`${head}\` · base ref: \`${baseRef}\` · concurrency: ${concurrency} shards`);
   say(`- Changed files (${changed.length}): ${changed.length ? changed.map(f => `\`${f}\``).join(', ') : '_none_'}`);
+  // The db-persistence remote probe runs whenever its env vars are
+  // present in the gate's shell (shards inherit process.env). Say
+  // so in the report either way — a silent skip here is the gap
+  // that let the v1.7 transaction bug ship.
+  const REMOTE_PROBE_SET = !!(process.env.SOLARION_TEST_REMOTE_DB_URL && process.env.SOLARION_TEST_REMOTE_DB_TOKEN);
+  say(`- Remote DB probe: ${REMOTE_PROBE_SET ? 'CONFIGURED — the db-persistence remote legs will run against the live endpoint' : 'not configured (SOLARION_TEST_REMOTE_DB_URL/TOKEN unset) — the remote legs will skip; CI runs them and fails if the secrets are missing'}`);
 
   let verdict = 'PASS';
   const skipped = [];
@@ -292,6 +298,10 @@ async function main() {
     say('\n## Selection');
     for (const n of notes) say(`- \`${n.file}\` — ${n.detail}`);
     if (!changed.length) say('- No changes vs base — nothing to run.');
+    if (REMOTE_PROBE_SET && !selected.has('test/db-persistence.test.js')) {
+      selected.set('test/db-persistence.test.js', ['SOLARION_TEST_REMOTE_DB_URL/TOKEN present in the gate env — the remote probe runs whenever it is configured']);
+      say('- Remote probe configured: added `test/db-persistence.test.js` so its remote legs run for real.');
+    }
     const files = [...selected.keys()];
     if (codeChanges > 0 && files.length === 0) {
       verdict = 'FAIL';
@@ -330,6 +340,9 @@ async function main() {
     const passes = tier === 'release' ? 3 : 1;
     for (let i = 1; i <= passes; i++) {
       await suitePass(`${tier.toUpperCase()} — full suite pass ${i}/${passes} (all ${ALL_TESTS.length} files)`, ALL_TESTS);
+    }
+    if (!REMOTE_PROBE_SET) {
+      skipped.push('Remote DB probe legs SKIPPED in this run: SOLARION_TEST_REMOTE_DB_URL/TOKEN are not set in this shell, so the Turso persistence + money-pattern legs of test/db-persistence.test.js skipped cleanly. Set both env vars to run them locally; CI (live-verify) runs them with the repo secrets and FAILS if they are missing.');
     }
     say('\n## Load smoke (50 bots, 40s)');
     const load = await runLoadTest();

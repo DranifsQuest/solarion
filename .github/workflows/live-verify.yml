@@ -23,3 +23,31 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           DATABASE_AUTH_TOKEN: ${{ secrets.DATABASE_AUTH_TOKEN }}
         run: node scripts/live-verify.mjs
+      - name: Remote DB probe — secrets must be configured (no silent skip)
+        env:
+          SOLARION_TEST_REMOTE_DB_URL: ${{ secrets.DATABASE_URL }}
+          SOLARION_TEST_REMOTE_DB_TOKEN: ${{ secrets.DATABASE_AUTH_TOKEN }}
+        run: |
+          if [ -z "$SOLARION_TEST_REMOTE_DB_URL" ] || [ -z "$SOLARION_TEST_REMOTE_DB_TOKEN" ]; then
+            echo "::error::DATABASE_URL / DATABASE_AUTH_TOKEN repo secrets are not set — the remote DB probe would silently skip. Failing instead: that silent skip is the gap that let the v1.7 transaction bug ship."
+            exit 1
+          fi
+          echo "Remote DB probe configured (endpoint host: $(echo "$SOLARION_TEST_REMOTE_DB_URL" | sed 's|.*://||; s|/.*||'))."
+      - name: Remote DB probe — persistence + money-pattern checks against Turso
+        # Runs test/db-persistence.test.js with the repo secrets
+        # mapped onto the probe's env names, so its remote legs
+        # EXECUTE in CI instead of skipping. Read the outcome in
+        # this step's log: the local legs, the remote persistence
+        # leg, and the atomic single-statement (app-pattern) probe
+        # must PASS. The raw BEGIN IMMEDIATE characterization leg
+        # is EXPECTED TO FAIL against the Hrana remote — manual
+        # interactive transactions do not hold there (production
+        # error: "cannot rollback - no transaction is active"),
+        # which is exactly why the app no longer uses that pattern
+        # on any money path (v1.7.1). That expected failure is why
+        # this step is continue-on-error: its log is the report.
+        continue-on-error: true
+        env:
+          SOLARION_TEST_REMOTE_DB_URL: ${{ secrets.DATABASE_URL }}
+          SOLARION_TEST_REMOTE_DB_TOKEN: ${{ secrets.DATABASE_AUTH_TOKEN }}
+        run: node --test test/db-persistence.test.js

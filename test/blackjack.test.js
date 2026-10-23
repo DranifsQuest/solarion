@@ -326,7 +326,21 @@ test('blackjack unit: multi-seat independence + solo-seat round + conservation',
 
 // ------------------------------------------------------------------ v1.6 Order 5
 
+// v1.7.1: table cash-outs credit the avatars row with ONE atomic
+// UPDATE whose .changes is verified before the seat is freed —
+// the hand-placed unit seats below belong to synthetic users, so
+// give those users real ledger rows or the (correct) verification
+// refuses to pay out to nobody.
+function ensureAvatarRow(userId, zcoins = 0) {
+  const { db } = require('../src/db');
+  db.prepare('INSERT OR IGNORE INTO users (id, username, pass_hash, created_at) VALUES (?, ?, ?, 0)')
+    .run(userId, `unit_${userId}`, 'x');
+  db.prepare('INSERT OR IGNORE INTO avatars (user_id, name, zcoins, casino_chips, created_at) VALUES (?, ?, ?, 0, 0)')
+    .run(userId, `unit_${userId}`, zcoins);
+}
+
 test('blackjack unit: standing mid-round forfeits exactly the bet, seat frees at once, no settlement later', () => {
+  ensureAvatarRow(1); ensureAvatarRow(2);
   const sent = [];
   const recGame = { getPlayer: () => null, send: (p, m) => sent.push(m), broadcastToMap: () => {}, savePosition: () => {} };
   const t = new bj.BlackjackTable(recGame, fakeSys, bjDef);
@@ -358,6 +372,7 @@ test('blackjack unit: standing mid-round forfeits exactly the bet, seat frees at
 });
 
 test('blackjack unit: disconnect mid-round == stand (forfeit), betting-window stand refunds', () => {
+  ensureAvatarRow(1); ensureAvatarRow(2);
   const recGame = { getPlayer: () => null, send: () => {}, broadcastToMap: () => {}, savePosition: () => {} };
   const sys = new bj.BlackjackSystem(recGame);
   const t = new bj.BlackjackTable(recGame, sys, bjDef);
@@ -381,6 +396,50 @@ test('blackjack unit: disconnect mid-round == stand (forfeit), betting-window st
   t2.cashOutSeat = (i) => { const s = t2.chairs[i].seat; if (s) paid2 = s.chips + s.bet; return orig2(i); };
   t2.stand(P(1));
   assert.equal(paid2, 200, 'a betting-window stand returns the bet with the stack');
+});
+
+test('blackjack unit (v1.7.1): a failing cash-out credit restores the seat, hand and bet, and announces NO leave; the retry lands', () => {
+  ensureAvatarRow(77002);
+  const { db } = require('../src/db');
+  db.prepare('UPDATE avatars SET zcoins = 1000, casino_chips = 200 WHERE user_id = 77002').run();
+  const sent = [];
+  const recGame = { getPlayer: () => null, send: (p, m) => sent.push(m), broadcastToMap: () => {}, savePosition: () => {} };
+  const t = new bj.BlackjackTable(recGame, fakeSys, bjDef);
+  // Dealer 10♠ 7♥ (17); player 10♦ 9♣ (19), 25z bet, action on them.
+  t.nextDeck = () => [C(10, 's'), C(7, 'h'), C(10, 'd'), C(9, 'c')].reverse();
+  unitSeat(t, 0, 77002, 'Fragile'); unitBet(t, 0, 25);
+  t.startRound();
+  assert.equal(t.state, 'playing');
+  assert.equal(t.actionIdx, 0);
+  // Fault injection: the shared ledger's cash-out statement throws,
+  // the way the remote driver failed in production.
+  const ledger = casino.getLedger();
+  const realCashOut = ledger.cashOut;
+  ledger.cashOut = { run: () => { throw new Error('injected driver failure'); } };
+  try {
+    t.stand(P(77002));
+  } finally {
+    ledger.cashOut = realCashOut;
+  }
+  const seat = t.chairs[0].seat;
+  assert.ok(seat, 'the seat is KEPT when the credit fails');
+  assert.equal(seat.bet, 25, 'the bet is restored — NOT forfeited by a failed cash-out');
+  assert.equal(seat.chips, 175, 'the stack is restored');
+  assert.equal(seat.hand.length, 2, 'the hand is restored');
+  assert.ok(sent.some(m => m.type === 'notice' && /Cash-out failed/.test(m.text)), 'the player is told the cash-out failed');
+  assert.ok(!sent.some(m => m.type === 'notice' && /leave the blackjack table/.test(m.text)), 'NO leave is announced for a credit that never landed');
+  assert.ok(!sent.some(m => m.type === 'zcoins'), 'no balance update is sent');
+  let row = db.prepare('SELECT zcoins, casino_chips FROM avatars WHERE user_id = 77002').get();
+  assert.equal(row.zcoins, 1000, 'balance unchanged by the failed cash-out');
+  assert.equal(row.casino_chips, 200, 'ledger mirror unchanged by the failed cash-out');
+  // Retry with a healthy driver: the stand completes, the live
+  // bet forfeits, and exactly the stack lands in the balance.
+  sent.length = 0;
+  t.stand(P(77002));
+  assert.equal(t.chairs[0].seat, null, 'the retry frees the seat');
+  row = db.prepare('SELECT zcoins, casino_chips FROM avatars WHERE user_id = 77002').get();
+  assert.equal(row.zcoins, 1175, 'stack credited exactly once (the 25z bet stayed with the house)');
+  assert.equal(row.casino_chips, 0, 'the ledger mirror cleared with the credit');
 });
 
 // ------------------------------------------------------------------ live

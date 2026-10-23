@@ -34,15 +34,27 @@
  *      (DATABASE_URL file exists, non-empty) AND (data survived the
  *      restart) can only hold if the libsql driver served both
  *      boots. Test 2 pins the selection directly via DB_DRIVER.
- *   4. REMOTE (Turso) — SKIP-CLEAN unless BOTH
+ *   4. REMOTE (Turso) — SKIP-CLEAN locally unless BOTH
  *      SOLARION_TEST_REMOTE_DB_URL (libsql://…) and
- *      SOLARION_TEST_REMOTE_DB_TOKEN are set. When set, it repeats
- *      the two-boot persistence flow against the real endpoint AND
- *      runs the transaction-atomicity probe (the pre-friends
- *      go/no-go check): two connections interleave the casino-style
- *      guarded debit (BEGIN IMMEDIATE; UPDATE … WHERE balance >= x;
- *      COMMIT) and the final balance must equal the serialized
- *      outcome, with a failed guard leaving NO partial write behind.
+ *      SOLARION_TEST_REMOTE_DB_TOKEN are set; in CI (the live-verify
+ *      workflow maps the DATABASE_URL / DATABASE_AUTH_TOKEN repo
+ *      secrets onto these names) a missing configuration FAILS
+ *      instead of skipping — that silent skip is the gap that let
+ *      the v1.7 transaction bug ship. When set, three legs run:
+ *      a. persistence: the two-boot flow against the real endpoint.
+ *      b. the APP-PATTERN probe (go/no-go for the app): the money
+ *         moves the code actually makes since v1.7.1 — single
+ *         atomic guarded debits / relative credits from two
+ *         connections, NO manual transactions. Must pass.
+ *      c. the RAW-PATTERN characterization (go/no-go for the
+ *         PATTERN): the pre-v1.7.1 casino pattern — BEGIN
+ *         IMMEDIATE; UPDATE … WHERE balance >= x; COMMIT across
+ *         two connections. Over Hrana this is EXPECTED TO FAIL:
+ *         the sync driver does not hold an interactive transaction
+ *         across calls (production: "cannot rollback - no
+ *         transaction is active"; partial effects committed). Its
+ *         failure is the standing proof that the app must never
+ *         depend on that pattern — not an app regression.
  *
  * Run:  TEST_RUN=<n> node --test test/db-persistence.test.js
  * Remote: SOLARION_TEST_REMOTE_DB_URL=libsql://… \
@@ -331,11 +343,22 @@ test('libsql local file: account + character survive a full server restart', { t
 const REMOTE_URL = process.env.SOLARION_TEST_REMOTE_DB_URL || '';
 const REMOTE_TOKEN = process.env.SOLARION_TEST_REMOTE_DB_TOKEN || '';
 const REMOTE_SET = /^libsql:\/\//.test(REMOTE_URL) && REMOTE_TOKEN.length > 0;
+const REMOTE_SKIP_REASON = 'SKIPPED — remote DB test not configured: set SOLARION_TEST_REMOTE_DB_URL (libsql://…) and SOLARION_TEST_REMOTE_DB_TOKEN to run the remote persistence + money-pattern probes';
+// CI must NEVER silently skip the remote legs: the live-verify
+// workflow maps the repo secrets onto the probe env names, so a
+// CI run without them is a wiring failure, not a skip. (This
+// silence is exactly what let the v1.7 transaction bug ship.)
+const IN_CI = !!process.env.CI;
 
-test('remote (Turso): persistence across restart + transaction atomicity probe', {
+test('remote probe configuration: required in CI (never a silent skip)', { timeout: 10000 }, (t) => {
+  if (!IN_CI) { t.skip('local run — the remote probe is opt-in via SOLARION_TEST_REMOTE_DB_URL/TOKEN'); return; }
+  assert.ok(REMOTE_SET,
+    'CI run WITHOUT SOLARION_TEST_REMOTE_DB_URL / SOLARION_TEST_REMOTE_DB_TOKEN — the remote persistence + pattern probes would silently skip. The live-verify workflow must map the DATABASE_URL / DATABASE_AUTH_TOKEN repo secrets onto these names.');
+});
+
+test('remote (Turso): persistence across restart', {
   timeout: 240000,
-  skip: REMOTE_SET ? false
-    : 'SKIPPED — remote DB test not configured: set SOLARION_TEST_REMOTE_DB_URL (libsql://…) and SOLARION_TEST_REMOTE_DB_TOKEN to run the remote persistence + transaction-atomicity go/no-go probe',
+  skip: REMOTE_SET ? false : REMOTE_SKIP_REASON,
 }, async () => {
   // ---- persistence against the real endpoint (two real boots)
   const dir = mkTmpDir('remote-persist');
@@ -349,15 +372,85 @@ test('remote (Turso): persistence across restart + transaction atomicity probe',
     },
     username,
   });
+});
 
-  // ---- transaction-atomicity probe — THE PRE-FRIENDS GO/NO-GO CHECK.
+test('remote (Turso): atomic single-statement money pattern (the app pattern since v1.7.1) — go/no-go', {
+  timeout: 120000,
+  skip: REMOTE_SET ? false : REMOTE_SKIP_REASON,
+}, async () => {
+  // The pattern the app actually uses on every money path since
+  // v1.7.1: ONE atomic statement per move, the guard in the WHERE
+  // clause, .changes as the verdict, a compensating relative
+  // credit when a later step fails. No BEGIN/COMMIT anywhere. Two
+  // connections interleave debits against one balance: the guards
+  // alone must serialize them — no overdraw, a failed guard moves
+  // nothing, compensation restores exactly, and the cash-out
+  // shape (credit + ledger clear in one statement) lands together
+  // or not at all.
+  const FAIL = (msg) => assert.fail(
+    `\n*** REMOTE APP-PATTERN PROBE FAILED — NO-GO for the remote DB ***\n*** ${msg}\n*** The app's money pattern (single atomic statements) does not hold on this endpoint. Do NOT run money features against it. ***`);
+  let Libsql;
+  try {
+    Libsql = require('libsql');
+  } catch (e) {
+    FAIL(`the sync 'libsql' package is not resolvable from the test process (${e.message})`);
+  }
+  const DbClass = Libsql.Database || Libsql.default || Libsql;
+  const openRemote = () => new DbClass(REMOTE_URL, { authToken: REMOTE_TOKEN });
+  const runChanges = (conn, sql, ...params) => {
+    const r = conn.prepare(sql).run(...params);
+    if (r && typeof r.changes === 'number') return r.changes;
+    const c = conn.prepare('SELECT changes() AS c').get();
+    return c ? Number(c.c) : NaN;
+  };
+  const tbl = `app_probe_${SFX.replace(/[^a-z0-9]/gi, '')}`;
+  const DEBIT = `UPDATE ${tbl} SET balance = balance - ? WHERE id = 1 AND balance >= ?`;
+  const CREDIT = `UPDATE ${tbl} SET balance = balance + ? WHERE id = 1`;
+  let A = null; let B = null;
+  try {
+    A = openRemote();
+    B = openRemote();
+    A.exec(`DROP TABLE IF EXISTS ${tbl}`);
+    A.exec(`CREATE TABLE ${tbl} (id INTEGER PRIMARY KEY, balance INTEGER NOT NULL)`);
+    A.prepare(`INSERT INTO ${tbl} (id, balance) VALUES (1, 100)`).run();
+    const balance = () => A.prepare(`SELECT balance FROM ${tbl} WHERE id = 1`).get().balance;
+
+    if (runChanges(A, DEBIT, 60, 60) !== 1) FAIL('A guarded debit of 60 against 100 did not change exactly 1 row');
+    if (runChanges(B, DEBIT, 60, 60) !== 0) FAIL('B guarded debit of 60 against the remaining 40 changed rows — the WHERE guard did not hold; overdraw possible');
+    if (balance() !== 40) FAIL(`balance after interleaved debits = ${balance()}, expected exactly 40`);
+
+    if (runChanges(B, CREDIT, 60) !== 1) FAIL('compensating credit of 60 did not change exactly 1 row');
+    if (balance() !== 100) FAIL(`balance after compensating credit = ${balance()}, expected exactly 100`);
+
+    A.exec(`ALTER TABLE ${tbl} ADD COLUMN chips INTEGER NOT NULL DEFAULT 175`);
+    const CASHOUT = `UPDATE ${tbl} SET balance = balance + ?, chips = 0 WHERE id = 1`;
+    if (runChanges(A, CASHOUT, 175) !== 1) FAIL('cash-out statement did not change exactly 1 row');
+    const row = A.prepare(`SELECT balance, chips FROM ${tbl} WHERE id = 1`).get();
+    if (!row || row.balance !== 275 || row.chips !== 0) {
+      FAIL(`cash-out row = balance ${row && row.balance}, chips ${row && row.chips} — expected 275 / 0 (credit and ledger clear must land together or not at all)`);
+    }
+  } catch (e) {
+    if (e && e.code === 'ERR_ASSERTION') throw e;
+    FAIL(`probe errored: ${e && e.message}`);
+  } finally {
+    try { if (A) A.exec(`DROP TABLE IF EXISTS ${tbl}`); } catch (e) { /* ignore */ }
+    try { if (A && typeof A.close === 'function') A.close(); } catch (e) { /* ignore */ }
+    try { if (B && typeof B.close === 'function') B.close(); } catch (e) { /* ignore */ }
+  }
+});
+
+test('remote (Turso): raw BEGIN IMMEDIATE pattern characterization — go/no-go for the PATTERN', {
+  timeout: 120000,
+  skip: REMOTE_SET ? false : REMOTE_SKIP_REASON,
+}, async () => {
+  // ---- transaction-atomicity probe — THE PATTERN GO/NO-GO CHECK.
   // Two independent connections to the remote endpoint interleave
   // the casino pattern (BEGIN IMMEDIATE; conditional UPDATE …
   // WHERE balance >= x; COMMIT). The guarded debits must behave
   // exactly as if serialized: no double-spend across connections,
   // and a debit whose guard fails must leave NO partial write.
   const FAIL = (msg) => assert.fail(
-    `\n*** REMOTE TRANSACTION ATOMICITY PROBE FAILED — NO-GO for friends/casino on the remote DB ***\n*** ${msg}\n*** Do NOT ship the remote DB for money-moving features until this passes. ***`);
+    `\n*** RAW BEGIN-PATTERN CHARACTERIZATION: NO-GO — manual BEGIN IMMEDIATE/COMMIT does not provide interactive transactions on this endpoint ***\n*** ${msg}\n*** Expected against Hrana remotes. The APP must never depend on this pattern (v1.7.1 removed it from every money path); this test is the standing characterization of the pattern, not an app regression. ***`);
 
   let Libsql;
   try {
