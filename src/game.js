@@ -93,6 +93,13 @@ class Game {
     this.tickTimer = null;
     this.snapTimer = null;
     this.saveTimer = null;
+    // Last position actually persisted per userId ({ mapId, x, y },
+    // rounded exactly as written) — savePosition() skips the UPDATE
+    // when a player hasn't moved since the last write, so the 15s
+    // flush costs nothing for stationary players. Entries are
+    // dropped on login and on disconnect, so the first save of a
+    // session always writes.
+    this.lastSavedPos = new Map();
     // Phase 5: tick health (surfaced on /health): how many sim ticks
     // ran, the worst tick duration, and how many ticks/snapshots fired
     // >1.5 intervals late (event-loop stalls) since boot.
@@ -217,6 +224,10 @@ class Game {
       returnTo: null,   // Phase 4: public map/pos to return to from a studio
     };
     this.players.set(user.id, p);
+    // Fresh session: no last-saved entry, so the first savePosition
+    // for this login always writes (even if it matches the spot a
+    // previous session ended on).
+    this.lastSavedPos.delete(user.id);
     return p;
   }
 
@@ -226,6 +237,7 @@ class Game {
     p.performing = false;
     if (this.onPlayerGone) this.onPlayerGone(userId);
     this.savePosition(p);
+    this.lastSavedPos.delete(userId);
     this.players.delete(userId);
   }
 
@@ -238,7 +250,18 @@ class Game {
     // disconnects mid-visit re-enters at their last public position
     // (the row still holds it, untouched, from before they entered).
     if (this.isStudioScene(p.mapId)) return;
-    q.saveAvatarPos.run(p.mapId, Math.round(p.x), Math.round(p.y), p.userId);
+    const x = Math.round(p.x), y = Math.round(p.y);
+    // Dirty check: skip the UPDATE when the rounded position is the
+    // one already persisted for this player — in remote-DB mode each
+    // skipped write is a network round-trip (and row quota) saved,
+    // and the common case (the 15s flush over idle players, a
+    // disconnect right after a flush) is exactly this one. A player
+    // who HAS moved still writes, disconnect included: their entry
+    // only ever records what was actually written.
+    const last = this.lastSavedPos.get(p.userId);
+    if (last && last.mapId === p.mapId && last.x === x && last.y === y) return;
+    q.saveAvatarPos.run(p.mapId, x, y, p.userId);
+    this.lastSavedPos.set(p.userId, { mapId: p.mapId, x, y });
   }
 
   saveAllPositions() {

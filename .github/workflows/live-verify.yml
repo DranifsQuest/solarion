@@ -14,4 +14,12 @@ jobs:
       - name: Run live verification harness against production
         env:
           SOLARION_BASE: https://solarion.onrender.com
+          # Optional remote-DB verification: when these secrets are
+          # set, the harness runs its extra "remote persistence" leg
+          # (the deployed service is expected to use the same values
+          # as its DATABASE_URL / DATABASE_AUTH_TOKEN). When unset,
+          # GitHub passes empty strings and the leg reports SKIPPED.
+          # Secret values are never echoed by the workflow or harness.
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_AUTH_TOKEN: ${{ secrets.DATABASE_AUTH_TOKEN }}
         run: node scripts/live-verify.mjs

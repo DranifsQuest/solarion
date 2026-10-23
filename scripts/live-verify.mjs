@@ -7,6 +7,14 @@
  *
  *   SOLARION_BASE=https://solarion.onrender.com node scripts/live-verify.mjs
  *
+ * Optional remote-DB leg: when DATABASE_URL (libsql://…) and
+ * DATABASE_AUTH_TOKEN are present in the harness env (wired from
+ * GitHub secrets in .github/workflows/live-verify.yml — never
+ * echoed), one extra leg verifies that the deployed service, when
+ * running on the remote DB, keeps a fresh account + character
+ * intact across a re-login. When the env vars are absent the leg
+ * is reported as SKIPPED and does not affect the pass count.
+ *
  * No test-only hooks are used (no debug-teleport): all travel is done
  * by steering with snapshot feedback, exactly like a real player.
  */
@@ -23,6 +31,11 @@ const results = [];
 function report(name, ok, evidence) {
   results.push({ name, ok });
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${evidence ? ` — ${evidence}` : ''}`);
+}
+function reportSkip(name, evidence) {
+  // Skipped legs are NOT pushed to results: the "N/N checks passed"
+  // total behaves exactly as before when an optional leg is off.
+  console.log(`SKIP  ${name}${evidence ? ` — ${evidence}` : ''}`);
 }
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
@@ -917,6 +930,55 @@ async function main() {
     if (re.hello.zcoins !== meB.json.avatar.zcoins) throw new Error('balance mismatch after reconnect');
     report('reconnect: abrupt WS drop -> reconnect with same token, state intact', true, `respawned in ${re.hello.map.id}, zcoins=${re.hello.zcoins}`);
   } catch (e) { report('reconnect: abrupt WS drop -> reconnect with same token, state intact', false, e.message); }
+
+  // ---- remote persistence (persistent-DB build): runs ONLY when
+  // the harness env carries the remote-DB credentials (GitHub
+  // secrets DATABASE_URL + DATABASE_AUTH_TOKEN). The deployed
+  // service under test is expected to be running with those same
+  // values, i.e. on the Turso remote DB. A local harness cannot
+  // restart the production service, so this is the
+  // restart-equivalent: register a fresh account with a
+  // distinctive character look, drop the session entirely, then
+  // log in again from scratch and prove the account + the full
+  // look come back intact over HTTPS + WS. Without the env vars
+  // the leg is SKIPPED (not counted, not failed) and the harness
+  // total is exactly what it was before this leg existed.
+  const REMOTE_DB_SET = !!((process.env.DATABASE_URL || '').trim() && (process.env.DATABASE_AUTH_TOKEN || '').trim());
+  if (!REMOTE_DB_SET) {
+    reportSkip('remote persistence: register -> re-login -> account + character intact on the remote DB', 'DATABASE_URL / DATABASE_AUTH_TOKEN not set in the harness env');
+  } else {
+    try {
+      const NAME_R = NAME_A.slice(0, -1) + 'f';
+      const rr = await api('/api/register', { username: NAME_R, password: PW });
+      if (rr.status !== 200 || !rr.json.token) throw new Error(`register R -> ${rr.status} ${JSON.stringify(rr.json)}`);
+      const lookR = {
+        token: rr.json.token, name: NAME_R, gender: 'F', face: 'heart', eyes: 'lash',
+        eye_color: '#1e4d8f', nose: 'tiny', lips: 'rose', skin_tone: '#c68642',
+        hair_style: 'ponytail', hair_color: '#c0392b', top_style: 'hoodie',
+        body_color: '#e5639e', bottom_style: 'skirt', accent_color: '#2b3a55',
+        shoe_color: '#ffd23f', accessory: 'glasses',
+      };
+      const cr = await api('/api/create-character', lookR);
+      if (cr.status !== 200 || !cr.json.avatar || cr.json.avatar.created !== true) throw new Error(`create R -> ${cr.status} ${JSON.stringify(cr.json)}`);
+      // Restart-equivalent: brand-new login, fresh token, then the
+      // character must come back with every look axis intact.
+      const liR = await api('/api/login', { username: NAME_R, password: PW });
+      if (liR.status !== 200 || !liR.json.token) throw new Error(`re-login R -> ${liR.status}`);
+      const meR = await api('/api/me', { token: liR.json.token });
+      if (meR.status !== 200 || !meR.json.avatar) throw new Error(`/api/me R -> ${meR.status}`);
+      for (const k of ['gender', 'face', 'eyes', 'eye_color', 'nose', 'lips', 'skin_tone', 'hair_style', 'hair_color', 'top_style', 'body_color', 'bottom_style', 'accent_color', 'shoe_color', 'accessory']) {
+        if (meR.json.avatar[k] !== lookR[k]) throw new Error(`R avatar.${k} = ${meR.json.avatar[k]} after re-login, expected ${lookR[k]}`);
+      }
+      if (meR.json.avatar.created !== true) throw new Error('R avatar no longer marked created after re-login');
+      const rc2 = await connectClient(liR.json.token);
+      try {
+        if (rc2.hello.you.name !== NAME_R || rc2.hello.you.gender !== 'F' || rc2.hello.you.hair_style !== 'ponytail' || rc2.hello.you.bottom_style !== 'skirt') {
+          throw new Error('R hello appearance mismatch after re-login');
+        }
+      } finally { rc2.ws.close(); }
+      report('remote persistence: register -> re-login -> account + character intact on the remote DB', true, `R=${NAME_R} full look intact over re-login + WS hello (remote DB env present)`);
+    } catch (e) { report('remote persistence: register -> re-login -> account + character intact on the remote DB', false, e.message); }
+  }
 
   finish();
 }

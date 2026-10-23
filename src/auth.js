@@ -192,7 +192,20 @@ const auth = {
     const d = appearance.defaultsFor('M');
     const now = Date.now();
     const hash = bcrypt.hashSync(password, BCRYPT_ROUNDS);
-    const r = q.insertUser.run(username, hash, now);
+    let r;
+    try {
+      r = q.insertUser.run(username, hash, now);
+    } catch (e) {
+      // Backstop for the check-then-insert above: the users table's
+      // UNIQUE COLLATE NOCASE constraint is the real duplicate guard.
+      // In this single-process sync flow the pre-check always wins the
+      // race, but if an insert ever does collide, answer "taken"
+      // instead of throwing (which Express would surface as a 500).
+      if (e && /UNIQUE constraint failed/.test(String(e.message || e))) {
+        return { ok: false, error: 'That username is already taken.' };
+      }
+      throw e;
+    }
     q.insertAvatar.run(r.lastInsertRowid, username, d.body_color, d.accent_color, d.skin_tone,
       d.hair_style, d.hair_color, DEFAULT_SPAWN.map_id, DEFAULT_SPAWN.x, DEFAULT_SPAWN.y, now);
     noteRegistration(ipKey);

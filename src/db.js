@@ -3,9 +3,39 @@
 /**
  * Solarion — database layer (Phase 1).
  *
- * SQLite via built-in node:sqlite (zero native deps), same proven approach
- * as Kingdom of Goleon. Sessions live in the DB, never in memory: a server
- * restart / crash / redeploy can never log anyone out.
+ * SQLite via built-in node:sqlite (zero native deps) by default, same
+ * proven approach as Kingdom of Goleon. Sessions live in the DB, never
+ * in memory: a server restart / crash / redeploy can never log anyone out.
+ *
+ * Driver selection (persistent-DB env contract):
+ *   DATABASE_URL        — unset: local file via node:sqlite (the default,
+ *                         unchanged). A `libsql://` or `https://` URL:
+ *                         remote libSQL/Turso via the `libsql` package,
+ *                         pure remote (no embedded-replica/sync mode).
+ *                         A `file:<path>` value or a plain filesystem
+ *                         path: the `libsql` driver against that local
+ *                         file (the dev/test exercise of that code path).
+ *   DATABASE_AUTH_TOKEN — auth token for a remote DATABASE_URL; ignored
+ *                         for local files.
+ *   SOLARION_DB_DRIVER  — set to 'libsql' (with DATABASE_URL unset) to
+ *                         force the `libsql` driver against the local
+ *                         SOLARION_DB_PATH file.
+ *   SOLARION_DB_PATH    — local file path (default data/solarion.db).
+ *                         In remote mode the exported DB_PATH is the
+ *                         DATABASE_URL string instead of a file path.
+ *
+ * Remote mode skips `PRAGMA journal_mode = WAL` — journaling is managed
+ * by the libSQL server, not the client; `PRAGMA foreign_keys = ON` is
+ * still attempted inside try/catch (harmless if the server rejects it).
+ * Local libsql keeps WAL exactly like node:sqlite. If DATABASE_URL is
+ * set but the driver cannot open / first-exec, this module throws at
+ * require time — there is deliberately NO silent fallback to a local
+ * file, which would silently lose persistence.
+ *
+ * All callers stay synchronous and unchanged: both drivers expose the
+ * same better-sqlite3-style sync surface (.prepare/.get/.run/.all/.exec,
+ * raw BEGIN IMMEDIATE/COMMIT, .changes, .lastInsertRowid) that the rest
+ * of the server already uses against `db` / `q`.
  *
  * Schema v2 (Phase 6 — character creation):
  *   meta      — schema version + bookkeeping
@@ -27,12 +57,65 @@ const { DatabaseSync } = require('node:sqlite');
 const path = require('path');
 const fs = require('fs');
 
-const DB_PATH = process.env.SOLARION_DB_PATH || path.join(__dirname, '..', 'data', 'solarion.db');
-fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
+// ------------------------------------------------------- driver selection
+// Select `db` first; the schema / migration / statement-map boot code
+// below then runs identically against whichever driver was chosen.
+// `libsql` is required lazily, only in a libsql branch, so the default
+// node:sqlite path never depends on the package being installed.
 
-const db = new DatabaseSync(DB_PATH);
-db.exec('PRAGMA journal_mode = WAL;');
-db.exec('PRAGMA foreign_keys = ON;');
+const DATABASE_URL = process.env.DATABASE_URL || '';
+const FORCE_LIBSQL = (process.env.SOLARION_DB_DRIVER || '').toLowerCase() === 'libsql';
+const LOCAL_DB_PATH = process.env.SOLARION_DB_PATH || path.join(__dirname, '..', 'data', 'solarion.db');
+const IS_REMOTE_URL = /^(libsql|https?|wss?):\/\//i.test(DATABASE_URL);
+
+// A `file:` DATABASE_URL names a local file: strip the scheme (and the
+// empty-host `//` of file:///abs/path) down to the filesystem path.
+function localPathFromDatabaseUrl(url) {
+  if (!url.startsWith('file:')) return url;
+  let p = url.slice('file:'.length);
+  if (p.startsWith('//')) p = p.slice(2);
+  try { p = decodeURIComponent(p); } catch (e) { /* keep the raw path */ }
+  return p;
+}
+
+let DB_DRIVER;
+let DB_REMOTE;
+let DB_PATH;
+let db;
+
+if (DATABASE_URL && IS_REMOTE_URL) {
+  // Remote libSQL/Turso: pure remote — the URL is the database address,
+  // never a local path, so no mkdir and no WAL (server-managed, above).
+  // Construction / first exec throws at require time on failure: fail
+  // loud, never fall back to a local file (see header).
+  const LibsqlDatabase = require('libsql');
+  DB_DRIVER = 'libsql';
+  DB_REMOTE = true;
+  DB_PATH = DATABASE_URL;
+  db = new LibsqlDatabase(DB_PATH, { authToken: process.env.DATABASE_AUTH_TOKEN || '' });
+  try { db.exec('PRAGMA foreign_keys = ON;'); } catch (e) { /* server may reject it; the schema exec below still fails loud if the DB is unreachable */ }
+} else if (DATABASE_URL || FORCE_LIBSQL) {
+  // libsql driver against a LOCAL file: an explicit DATABASE_URL
+  // (`file:<path>` or a plain filesystem path), or SOLARION_DB_DRIVER=libsql
+  // forcing this code path against SOLARION_DB_PATH.
+  const LibsqlDatabase = require('libsql');
+  DB_DRIVER = 'libsql';
+  DB_REMOTE = false;
+  DB_PATH = DATABASE_URL ? localPathFromDatabaseUrl(DATABASE_URL) : LOCAL_DB_PATH;
+  if (DB_PATH !== ':memory:') fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
+  db = new LibsqlDatabase(DB_PATH);
+  db.exec('PRAGMA journal_mode = WAL;');
+  db.exec('PRAGMA foreign_keys = ON;');
+} else {
+  // Default: today's behaviour exactly — node:sqlite at SOLARION_DB_PATH.
+  DB_DRIVER = 'sqlite';
+  DB_REMOTE = false;
+  DB_PATH = LOCAL_DB_PATH;
+  fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
+  db = new DatabaseSync(DB_PATH);
+  db.exec('PRAGMA journal_mode = WAL;');
+  db.exec('PRAGMA foreign_keys = ON;');
+}
 
 const SCHEMA_VERSION = 2;
 
@@ -169,4 +252,4 @@ const q = {
   ),
 };
 
-module.exports = { db, q, DB_PATH, SCHEMA_VERSION };
+module.exports = { db, q, DB_PATH, SCHEMA_VERSION, DB_DRIVER, DB_REMOTE };

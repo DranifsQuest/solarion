@@ -112,21 +112,34 @@ function buildStudioRows(w, h) {
 }
 
 let SQ_META = null;
+// v1.7 (persistent DB): home meta is read on the 20Hz tick path
+// (game.sceneFor -> studioMapFor -> getHomeMeta) for every studio
+// occupant. Against a network DB that was ~40 round-trips/sec per
+// occupant, so reads are cached in memory. setHomeMeta below is
+// the ONLY writer of studio_meta, and it refreshes the cache in
+// the same call — single-process coherence is exact. Returned
+// objects are copies so callers can never mutate the cache.
+const homeMetaCache = new Map();
 function getHomeMeta(ownerId) {
+  const hit = homeMetaCache.get(ownerId);
+  if (hit) return { ...hit };
   const row = SQ_META ? SQ_META.get.get(ownerId) : null;
-  return {
+  const meta = {
     name: row && row.name ? row.name : null,
     wall: row ? Math.min(WALL_STYLES.length - 1, Math.max(0, row.wall)) : 0,
     floor: row ? Math.min(FLOOR_STYLES.length - 1, Math.max(0, row.floor)) : 0,
     tier: row ? Math.min(HOME_TIERS.length - 1, Math.max(0, row.tier)) : 0,
     locked: row ? Boolean(row.locked) : false,
   };
+  homeMetaCache.set(ownerId, meta);
+  return { ...meta };
 }
 
 function setHomeMeta(ownerId, patch) {
   const cur = getHomeMeta(ownerId);
   const next = { ...cur, ...patch };
   SQ_META.set.run(ownerId, next.name, next.wall, next.floor, next.tier, next.locked ? 1 : 0);
+  homeMetaCache.set(ownerId, next);
   return next;
 }
 
@@ -158,9 +171,17 @@ function isStudioId(sceneId) {
   return parseStudioId(sceneId) !== null;
 }
 
+// v1.7: usernames are immutable (no rename feature), so the
+// tick-path lookup in studioMapFor is cached after first read.
+const ownerNameCache = new Map();
+
 /** Build the scene object for one owner's studio (data-shaped like a map). */
 function studioMapFor(ownerId, ownerName) {
-  const name = ownerName || (q.userById.get(ownerId) || {}).username || 'Private';
+  let name = ownerName || ownerNameCache.get(ownerId);
+  if (!name) {
+    name = (q.userById.get(ownerId) || {}).username || 'Private';
+    ownerNameCache.set(ownerId, name);
+  }
   const meta = getHomeMeta(ownerId);
   const tier = HOME_TIERS[meta.tier];
   const fl = FLOOR_STYLES[meta.floor];

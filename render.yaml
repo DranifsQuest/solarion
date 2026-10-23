@@ -9,6 +9,16 @@ services:
     envVars:
       - key: SOLARION_DB_PATH
         value: ./data/solarion.db
+      # Persistent database (v1.7): Turso/libSQL. Set BOTH values in
+      # the Render dashboard (sync: false = never stored in git).
+      # DATABASE_URL looks like libsql://solarion-<org>.turso.io and
+      # DATABASE_AUTH_TOKEN is the read/write DB token. While these
+      # are unset the game falls back to the local SQLite file above
+      # (ephemeral on Render — accounts wipe every redeploy).
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_AUTH_TOKEN
+        sync: false
       # SOLARION_TEST is intentionally NOT set: unset (the default) is
       # what keeps the test-only debug WS messages (debug-teleport,
       # debug-seed-perf, debug-casino) unreachable in production.

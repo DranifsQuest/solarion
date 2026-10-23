@@ -79,6 +79,7 @@ const TEST_FILES = [
   ['test/club.test.js',      50700, 20,    0,     0],   // 50700 (Club Mirage, v1.4)
   ['test/blackjack.test.js', 50900, 20,    0,     0],   // 50900 (blackjack + solo poker, v1.5)
   ['test/dressing-validator.test.js', null, 0, 0, 0],   // no server (v1.4.1 seat audit: validator negative tests)
+  ['test/db-persistence.test.js', 51100, 20, 1, 0],   // 51100-51101 (persistent DB driver/persistence, v1.7)
 ].map(([file, base, stride, extra, run]) => ({ file, base, stride, extra, run }));
 
 const ALL_TESTS = TEST_FILES.map(t => t.file);
@@ -99,7 +100,7 @@ const MAPPING = [
   { match: /^src\/club\.js$/,                     tests: ['test/club.test.js'], why: 'Club Mirage dancer tips (v1.4)' },
   { match: /^src\/studio\.js$/,                   tests: ['test/studios.test.js', 'test/homes.test.js'], why: 'studios/homes engine' },
   { match: /^src\/appearance\.js$/,               tests: ['test/creation.test.js', 'test/sprites.test.js'], why: 'appearance options feed creation + sprite rendering' },
-  { match: /^src\/(game|maps|server|db)\.js$/,    tests: [...CORE_SET, 'test/dressing-validator.test.js'], why: 'core engine/map/server — broad protocol set (+ validator negative tests: map data is the validator\'s input)' },
+  { match: /^src\/(game|maps|server|db)\.js$/,    tests: [...CORE_SET, 'test/dressing-validator.test.js', 'test/db-persistence.test.js'], why: 'core engine/map/server — broad protocol set (+ validator negative tests: map data is the validator\'s input; + DB persistence: db.js is its subject)' },
   { match: /^scripts\/validate-dressing\.mjs$/,    tests: ['test/dressing-validator.test.js'], why: 'the dressing validator itself (v1.4.1: its laws are negative-tested)' },
   { match: /^public\/sprites\.js$/,                tests: ['test/sprites.test.js', 'test/creation.test.js'], why: 'sprite renderer' },
   { match: /^public\/input-guard\.js$/,           tests: ['test/input-guard.test.js'], why: 'keyboard input guard' },

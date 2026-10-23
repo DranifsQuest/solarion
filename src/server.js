@@ -77,6 +77,16 @@ const PORT = parseInt(process.env.SOLARION_PORT || process.env.PORT || '3000', 1
 const TEST_MODE = process.env.SOLARION_TEST === '1';
 
 const app = express();
+// Friend-launch fix: the production host (Render) fronts this process
+// with ONE proxy hop that sets X-Forwarded-For. Without trusting that
+// hop, req.ip is the proxy's own address for EVERY visitor, so
+// auth.js's per-IP registration throttle and per-IP login lockout
+// would lump all players into a single shared bucket — 20
+// registrations/hr TOTAL across all friends, and one person's typos
+// locking everyone out for 5 minutes. Trust exactly one hop (the
+// platform proxy); direct local/test traffic sends no XFF and is
+// unaffected.
+app.set('trust proxy', 1);
 app.use(express.json({ limit: '16kb' }));
 app.use(express.static(path.join(__dirname, '..', 'public')));
 // Phase 5: malformed / oversized JSON bodies get a clean JSON 4xx,
@@ -162,6 +172,17 @@ app.post('/api/login', (req, res) => {
   const r = auth.login(username, password, req.ip);
   if (!r.ok) return res.status(r.code || 401).json({ ok: false, error: r.error });
   return sendAvatar(res, r);
+});
+
+// Friend-launch fix: auth.logout() existed but no route ever called
+// it, so a session token could never be invalidated before its
+// 30-day expiry (a "log out" that only clears localStorage leaves the
+// token live for anyone who copied it). Idempotent and always 200 —
+// no oracle about whether the token ever existed.
+app.post('/api/logout', (req, res) => {
+  const body = (req.body && typeof req.body === 'object' && !Array.isArray(req.body)) ? req.body : {};
+  if (typeof body.token === 'string' && body.token) auth.logout(body.token);
+  return res.json({ ok: true });
 });
 
 app.post('/api/me', (req, res) => {
@@ -1105,6 +1126,18 @@ wss.on('connection', (ws, req) => {
 
 server.listen(PORT, () => {
   console.log(`[solarion] listening on http://localhost:${PORT} (test-mode: ${TEST_MODE})`);
+  // Friend-launch fix: q.deleteExpiredSessions existed but was never
+  // called — resolveSession only deletes a token when it is presented
+  // again, so abandoned/expired tokens would pile up in the sessions
+  // table forever (every login mints a fresh 30-day row). Sweep once
+  // at boot, then hourly. unref'd so the timer never keeps a test
+  // process alive on its own; failures are non-fatal by design.
+  const sweepExpiredSessions = () => {
+    try { q.deleteExpiredSessions.run(Date.now()); } catch (e) { /* non-fatal */ }
+  };
+  sweepExpiredSessions();
+  const sessionSweep = setInterval(sweepExpiredSessions, 60 * 60 * 1000);
+  if (typeof sessionSweep.unref === 'function') sessionSweep.unref();
   game.start();
   stages.start();
   casino.start();
