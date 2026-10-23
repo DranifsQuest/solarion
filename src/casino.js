@@ -162,7 +162,7 @@ class PokerTable {
     this.chairs = def.chairs.map((c) => ({
       dir: c.dir, x: c.x, y: c.y, seat: null,
     }));
-    // v1.6 (Order 3, Zan live playtest 2026-10-22: "make poker
+    // v1.6 (Order 3, X live playtest 2026-10-22: "make poker
     // have a house hand that you play againist"): a VIRTUAL fifth
     // chair on the dealer's side (north, inside the ring) that no
     // human can sit in. When exactly one human is dealt in, the

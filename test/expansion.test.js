@@ -587,7 +587,7 @@ test('fishing: the math contract + pond geography', () => {
   assert.equal(new Set(FISHING.FISH.map(f => f.id)).size, 10);
   assert.equal(new Set(FISHING.FISH.map(f => f.name)).size, 10);
   assert.equal(FISHING.PAYOUT_Z, 1);
-  // Zan's contract: a fish every 3–6 casts on average.
+  // X's contract: a fish every 3–6 casts on average.
   const mean = 1 / FISHING.CATCH_P;
   assert.ok(mean >= 3 && mean <= 6, `mean casts per fish ${mean.toFixed(2)} within [3, 6]`);
   // Seeded RNG: the roll + pick honour the contract deterministically.

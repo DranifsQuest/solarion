@@ -69,7 +69,7 @@ Live at https://solarion.onrender.com
       occasionally chat. Do they add life or get in the way?
 - [ ] Day/night: ~12-minute cycle — at night the world tints WARM
       (plum + amber lamp glow, golden washes at sunrise/sunset —
-      Zan's cozy direction). Cold or cozy? Water shimmers.
+      X's cozy direction). Cold or cozy? Water shimmers.
 - [ ] Sounds: UI clicks, door chime, applause on a strong set,
       zone ambience (surf at the Bay!). 🔊 panel: volume + mute stick
       between visits?

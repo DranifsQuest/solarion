@@ -562,7 +562,7 @@ otherwise untouched). Declines are reported back to the owner.
 
 ## Phase 9 — the adjustments build
 
-Sixteen items, in the order they were built. Two rulings from Zan
+Sixteen items, in the order they were built. Two rulings from X
 govern the phase: **hosting stays on Render** (no Fly.io move), and
 **when a mix plays — stage or home radio — everyone in the room
 hears it, the creator/performer included.** That second one is now a
@@ -674,7 +674,7 @@ usual 5z; the vice system is untouched.
   snapshot pipeline and can't be friended/profiled.
 - **Day/night**: a server-anchored **12-minute cycle**; nights get a
   world tint with lamp glow at arches, doors, and the stage rig.
-  Water and fountain tiles shimmer. Per Zan's standing aesthetic —
+  Water and fountain tiles shimmer. Per X's standing aesthetic —
   **cozy, warm, golden** — the night tint is warm plum rather than
   cold navy, golden hour washes the world amber at sunrise/sunset,
   and the indoor ambience beds are filtered low and warm. A fuller
@@ -695,7 +695,7 @@ Never a dead page.
 
 ## Phase 10 — the Warm Home pass (real doors + cozy)
 
-Zan's ruling, verbatim in spirit: doors must be REAL doors that
+X's ruling, verbatim in spirit: doors must be REAL doors that
 open — "not lil SPACES that warp" — and the whole place should feel
 like a warm, fun home. Phase 9 tuned the tints; this phase builds
 the substance.
@@ -826,6 +826,6 @@ Built on branch `lanec-worldart`; the parent merges + live-verifies.
 - Late-joiner stage sync: walking into a performance mid-set hears
   it from the next pass on radios (grid-aligned), but stage sets are
   heard from the top only if you were present at the start.
-- Deployment (Fly.io, cheap always-on — per Zan, later)
+- Deployment (Fly.io, cheap always-on — per X, later)
 
 <!-- deploy-refresh 2026-10-20: force fresh Render instance to clear suspected wedged edge/instance state (POST-body hang investigation). No code change. -->

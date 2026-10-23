@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Solarion — MIXER REWORK suite (Zan, 2026-10-21: "click in each
+ * Solarion — MIXER REWORK suite (X, 2026-10-21: "click in each
  * bubble where I want the sounds... fill them in 1 at a time").
  *
  * The old mixer held ONE placement per line, drawn stretched across

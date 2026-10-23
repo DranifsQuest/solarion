@@ -359,7 +359,7 @@ if (TEST_MODE) {
     };
     pushGroup('table', seats.filter(s => s.kind === 'chair' && tableNear(s)), 4);
     pushGroup('hearth', seats.filter(s => (s.kind === 'chair' || s.kind === 'sofa') && nearHearth(s)), 3);
-    // v1.6: bar stools are GONE game-wide (Zan's order) — there is
+    // v1.6: bar stools are GONE game-wide (X's order) — there is
     // no 'bar' sitter group anymore. The casinos' bar is posed as
     // STANDING patrons at the counter instead (see the 'bar' shot
     // below, beside the door/gateway standers).
@@ -814,7 +814,7 @@ wss.on('connection', (ws, req) => {
     if (fresh) session.avatar.zcoins = fresh.zcoins;
   }
 
-  // Owner top-up: Zan's accounts floor at 1,000,000z on every connect
+  // Owner top-up: X's accounts floor at 1,000,000z on every connect
   // (his ruling, 2026-10-21). The owner set lives in src/owners.js —
   // one source of truth, shared with fast-travel enforcement.
   const { ownerFloorFor, isOwnerName } = require('./owners');

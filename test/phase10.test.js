@@ -182,7 +182,7 @@ test('door conversion: every door is labelled, resolvable, and interiors have th
     assert.ok(gwProps.includes(kind), `gateway dressing includes ${kind}`);
   }
   // v1.3.1: the Gateway's only rug was the purposeless fountain-
-  // south cluster Zan ordered deleted (Item 4) — the composed
+  // south cluster X ordered deleted (Item 4) — the composed
   // hearth rug in the café carries the rug check now.
   assert.ok(cafe.props.some(p => p.kind === 'rug'), 'café payload carries its hearth rug');
 });

@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Solarion — blackjack (v1.5, Zan live playtest 2026-10-22:
+ * Solarion — blackjack (v1.5, X live playtest 2026-10-22:
  * "make a couple tables black jack instead").
  *
  * One table per casino (the centre-east table of the shared floor
@@ -13,7 +13,7 @@
  * The differences are the game itself and the seat kinds
  * ('blackjack' / 'blackjack-pending', ids `blackjack:<id>:<dir>`).
  *
- * v1 RULES (tight, deliberate — flagged for Zan in the ship report):
+ * v1 RULES (tight, deliberate — flagged for X in the ship report):
  *   - Server-authoritative; a fresh shuffled deck per ROUND
  *     (casino.js newDeck — same Fisher-Yates/Math.random discipline
  *     as poker), dealt: dealer up-card, dealer hole card, then two

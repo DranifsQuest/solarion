@@ -5,7 +5,7 @@
  * bartender drinks (5z, haze state, pass out at 10), and the Cinder
  * Mesa hookah lounge (5z puffs, hippy at 10). Numbers under test are
  * the documented production rules: drinks 5z, puffs 5z, and the v1.1
- * window model (Zan, 2026-10-21): the ENTIRE drunk / high state —
+ * window model (X, 2026-10-21): the ENTIRE drunk / high state —
  * level, haze, wobble, pass-out, hippy — lives in a 30s window from
  * the LAST drink / puff; each new one refreshes the window and
  * stacks the level; when it lapses the player is simply sober.

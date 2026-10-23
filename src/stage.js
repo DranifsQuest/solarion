@@ -233,7 +233,7 @@ class Stage {
   }
 
   startPerformance(p, entry) {
-    // v1.1 (Zan): CDs are REUSABLE — the set checks the CD is still
+    // v1.1 (X): CDs are REUSABLE — the set checks the CD is still
     // in the collection (it may have been deleted while queued) but
     // never consumes it. The Phase 9 consume-on-perform rule is gone.
     const cd = records.findCd(p.userId, entry.mixId);

@@ -437,7 +437,7 @@ html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; ba
 .invGhost.bad { border-color: #e2543e; opacity: .75; }
 
 /* ------------------------------------------------ Styled scrollbars (v1.6.2)
-   Zan: "Style scrollbars across the full site, make them thin and
+   X: "Style scrollbars across the full site, make them thin and
    clean." ONE recipe for every scrollable surface in the game —
    chat log, stage queue, CD collection, Top-40 chart, Navigator /
    Friends / Sound side panels, studio + look panels, the mixer,

@@ -4,7 +4,7 @@
 /**
  * Solarion Playtest Gate — image-space checker.
  *
- * WHY THIS EXISTS (Zan, 2026-10-21): every defect he caught by eye
+ * WHY THIS EXISTS (X, 2026-10-21): every defect he caught by eye
  * was a RENDER-read problem the dressing validator cannot see —
  * seat rows legal in the data but jumbled on screen, sitters
  * painted over tabletops, chair backs swallowed by their sitters.
@@ -503,7 +503,7 @@ export function backWindow(kind, dir, [sx, sy]) {
     // POST strips only, where posts + slat crossings + rail ends
     // stack wood: the guarantee this check makes is "the back's
     // structure stands in the back region" — a seat rendering
-    // with NO back (bare cushion/plank, the exact read Zan
+    // with NO back (bare cushion/plank, the exact read X
     // circled) still fails, while the open gaps are never
     // measured as missing back. Same strips and bar as the
     // table chair's 'up'/'down'; profile strips as its panels.
@@ -1039,7 +1039,7 @@ export function runSelftest() {
   }
   // BACK VISIBILITY (audience, v1.5.1): the venue chair's back
   // is an OPEN ladder — the checker samples its post strips, so
-  // a seat that renders as the bare plank Zan circled (no back
+  // a seat that renders as the bare plank X circled (no back
   // at all) must FAIL, and the same seat with its posts/slats
   // standing must PASS, in both venue facings. The open gaps
   // are never sampled, so the slatted design can't fail for

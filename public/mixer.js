@@ -688,7 +688,7 @@ const Mixer = {
         let cls = 'gcell', label = '';
         const cell = byBar.get(b);
         if (cell) {
-          // Mixer rework (Zan): a bubble is EXACTLY one cell, always
+          // Mixer rework (X): a bubble is EXACTLY one cell, always
           // — even for a 2- or 4-bar loop. No span underline, no
           // stretched block: one cell, one bubble, one trigger.
           const loop = this.loopsById.get(cell.loopId);
@@ -718,7 +718,7 @@ const Mixer = {
   },
 
   gridClick(row, bar) {
-    // Mixer rework contract (Zan, 2026-10-21): the grid is CELLS,
+    // Mixer rework contract (X, 2026-10-21): the grid is CELLS,
     // filled one at a time.
     //  - click an EMPTY cell with a loop selected → a bubble of that
     //    loop lands in exactly that cell (one cell wide, whatever

@@ -92,7 +92,7 @@ on:
 - props or seats overlapping door/gateway tiles; seats embedded
   in solid tiles; casino slot/bar interact spots in solid tiles.
 
-Warnings (Zan's standing rules, as far as the data supports):
+Warnings (X's standing rules, as far as the data supports):
 an interior map with ≠ 1 inbound door (exactly one facade
 entrance), and an exterior door with no adjacent solid tile (no
 building face — a floating door). The dynamic home door

@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Seasonal themes (Zan's standing annual rule, 2026-10-21):
+ * Seasonal themes (X's standing annual rule, 2026-10-21):
  * Halloween Oct 1 → Nov 1, Christmas Dec 1 → Jan 1, computed by
  * the server in America/Chicago. This suite pins the boundaries
  * EXACTLY — including UTC instants that straddle the local

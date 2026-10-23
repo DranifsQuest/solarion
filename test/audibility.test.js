@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Solarion Phase 9 — MIX AUDIBILITY suite (Zan's hard requirement).
+ * Solarion Phase 9 — MIX AUDIBILITY suite (X's hard requirement).
  *
  * When a mix is played — on a stage OR on a home radio — EVERYONE in
  * the room must hear it, INCLUDING the creator/performer. These tests

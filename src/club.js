@@ -16,7 +16,7 @@
  * cooldown (2.5s) keeps flourish spam — and accidental
  * double-taps — from draining anyone.
  *
- * THE 500z FOLLOW (v1.6, Zan's order): a single 500z tip buys one
+ * THE 500z FOLLOW (v1.6, X's order): a single 500z tip buys one
  * minute of company. The dancer steps off her stage and FOLLOWS
  * the tipper around the club as a server-driven entity — her
  * position streams to the whole room ('dancer-state', snapshot
@@ -27,7 +27,7 @@
  * with the same BFS pathfinder click-to-move uses, and never
  * leaves the club: when the minute ends, or the tipper leaves
  * the club or disconnects, she WALKS back to her stage anchor
- * and resumes her dance loop. Concurrency (flagged to Zan):
+ * and resumes her dance loop. Concurrency (flagged to X):
  *   - one follow per dancer — a 500z tip while she is off her
  *     stage is refused with a notice and NO charge (the busy
  *     check runs BEFORE the debit, always);
@@ -169,7 +169,7 @@ class ClubSystem {
 
   /** game.onPlayerGone: disconnect OR any map change — a tipper
    *  who is no longer in the club loses the follow on the spot
-   *  (Zan: "if you leave the club she automatically goes back"). */
+   *  (X: "if you leave the club she automatically goes back"). */
   handlePlayerGone(userId) {
     for (const [mapId, live] of this.dancers) {
       for (const st of live.values()) {
