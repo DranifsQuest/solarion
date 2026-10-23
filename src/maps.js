@@ -588,9 +588,11 @@ function buildCasino({ id, name, hostId, hostLabel, hostSpawn, floor, floorAlt, 
     // slot stools (sit to spin): north row faces up, east row faces right
     ...slots.slice(0, 5).map((s, i) => ({ id: s.seatId, x: s.ix, y: s.iy, dir: 'up', kind: 'stool' })),
     ...slots.slice(5).map((s) => ({ id: s.seatId, x: s.ix, y: s.iy, dir: 'right', kind: 'stool' })),
-    // bar stools face the counter (south)
-    { id: `${id}-seat-1`, x: cx(4), y: cy(20), dir: 'down', kind: 'stool' },
-    { id: `${id}-seat-2`, x: cx(8), y: cy(20), dir: 'down', kind: 'stool' },
+    // (v1.6: NO bar stools — Zan's order, game-wide. Patrons STAND
+    // at the counter; the drink flow is proximity-based and never
+    // needed the seat. The validator's bar law now FORBIDS bar
+    // stools in bar maps. Slot stools above are machines' seats,
+    // not bar chairs — they stay.)
     // foyer sofas — flanking the open congregation floor inside the door
     { id: `${id}-seat-3`, x: cx(24), y: cy(21), dir: 'up', kind: 'sofa' },
     { id: `${id}-seat-4`, x: cx(28), y: cy(21), dir: 'up', kind: 'sofa' },
@@ -765,11 +767,22 @@ function buildClubMirage() {
     ],
     seats: [
       ...tableChairs.map(([x, y, dir], i) => seat(id, i + 1, x, y, dir, 'chair')),
-      // Bar stools face the counter (south), flanking the patron
-      // spot — the casino bars' exact pattern.
-      seat(id, 13, 5, 22, 'down', 'stool'),
-      seat(id, 14, 9, 22, 'down', 'stool'),
+      // (v1.6: the two bar stools that stood here are GONE — Zan's
+      // order, game-wide. Mira serves patrons standing at the
+      // counter; the drink flow is proximity-based.)
     ],
+    // v1.6 (Zan's order): a REAL player-performance stage in the
+    // club — the full stage complex (platform + standing pit +
+    // speakers) but PIT-ONLY: no 20-chair audience grid (the
+    // ringside tables are the club's seating). Placement: the EAST
+    // wall, facing west into the room ('W' facing: platform cols
+    // 36-38, pit cols 33-35, rows 12-21) — the end of the dance
+    // floor, clear of the dancer stages (north), the bar (SW),
+    // the ringside tables (row 9 and its south chairs end at tile
+    // row 11) and the door/spawn (SE, col 30). The validator holds
+    // this map to the REGISTERED pit-only venue variant; every
+    // city venue still owes its 20 chairs.
+    stage: stageDef(36, 12, 'W'),
     club: {
       stages: [
         clubStage(1, 4, dancers[0]),

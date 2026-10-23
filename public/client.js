@@ -1477,6 +1477,7 @@ function setMap(m, you, chat) {
   if (window.SolarionBlackjack) window.SolarionBlackjack.onMapChanged(m);
   if (window.SolarionStudio) window.SolarionStudio.onMapChanged(m);
   renderPos.clear();
+  dancerLive.clear(); // v1.6: no stale followers across a map change
   for (const c of chat || []) chatLine(`<span class="who">${esc(c.from)}:</span> ${esc(c.text)}`);
   if (you) {
     me = { ...me, ...you };
@@ -1511,6 +1512,16 @@ function handle(m) {
       if (m.playtest && m.playtest.clubFlourish) {
         clubFlourishFx.set(m.playtest.clubFlourish.dancer, { at: Date.now(), amount: 25, from: 'Playtest' });
       }
+      // Playtest Gate (test-mode payloads only): pose a FOLLOW —
+      // seed the live dancer state trailing a posed regular, so
+      // the club-follow capture shows her off-stage mid-follow.
+      if (m.playtest && m.playtest.dancerFollow) {
+        const df = m.playtest.dancerFollow;
+        dancerLive.set(df.dancer, {
+          x: df.x, y: df.y, rx: df.x, ry: df.y, dir: df.dir || 'right',
+          mode: 'follow', withUserId: -1, withName: df.withName || '', endsAt: Date.now() + 60000, moving: false,
+        });
+      }
       chatLine(`<span class="sys">Welcome to ${esc(m.map.name)}.</span>`);
       if (m.bonusGranted) {
         toast(m.bonusAmount >= 5000
@@ -1526,6 +1537,32 @@ function handle(m) {
       // draw pass animates her from this state) and the room hears.
       clubFlourishFx.set(m.dancer, { at: Date.now(), amount: m.amount, from: m.from });
       chatLine(`<span class="sys">💃 ${esc(m.from)} tipped ${esc(m.name)} ${esc(String(m.amount))}z!</span>`);
+      break;
+    }
+    case 'dancer-state': {
+      // v1.6 (the follow): the server streams the dancers' live
+      // positions while any of them is off her stage. A 'stage'
+      // entry hands her back to the fixture draw (delete); follow
+      // and return entries render in the entity pass at player
+      // scale, depth-sorted with everyone else.
+      for (const d of m.dancers || []) {
+        if (d.mode === 'stage') { dancerLive.delete(d.id); continue; }
+        const prev = dancerLive.get(d.id);
+        dancerLive.set(d.id, {
+          x: d.x, y: d.y, dir: d.dir, mode: d.mode,
+          withUserId: d.withUserId, withName: d.withName, endsAt: d.endsAt || 0,
+          rx: prev ? prev.rx : d.x, ry: prev ? prev.ry : d.y,
+          moving: prev ? prev.moving : false,
+        });
+      }
+      break;
+    }
+    case 'dancer-follow': {
+      chatLine(`<span class="sys">💃 ${esc(m.name)} is stepping down for ${esc(m.from)} — a private dance, right here on the floor!</span>`);
+      break;
+    }
+    case 'dancer-return': {
+      chatLine(`<span class="sys">💃 ${esc(m.name)} blows a kiss and heads back to her stage.</span>`);
       break;
     }
     case 'vice-state': {
@@ -2721,6 +2758,12 @@ function spawnPyro(wx, wy) {
 // animated here from that one event.
 const clubFlourishFx = new Map(); // dancerId -> { at, amount, from }
 const FLOURISH_MS = 2600;
+// v1.6 (the follow): live dancer positions, streamed by the
+// server ('dancer-state') while a dancer is off her stage.
+// dancerId -> { x, y, rx, ry, dir, mode, withUserId, withName,
+// endsAt, moving } — rx/ry are the smoothed render coordinates,
+// eased in the draw loop exactly like player renderPos entries.
+const dancerLive = new Map();
 
 function drawClubPass(now) {
   const cl = mapDef.club;
@@ -2765,31 +2808,41 @@ function drawClubPass(now) {
       ctx.beginPath(); ctx.arc(tgtX, tgtY, 74, 0, Math.PI * 2); ctx.fill();
     }
     ctx.restore();
-    // the pole: brass with a bright edge, behind the dancer
+    // the dancer herself — v1.6: drawn at CHAR_SCALE, the SAME
+    // size as player characters (Zan's order; the 'curvy' figure
+    // is her silhouette, not a smaller size). While she is off
+    // her stage (a 500z follow, or walking back) the entity pass
+    // draws her at her streamed position instead — this pass
+    // keeps the platform, pole and lights warm for her return.
+    const d = stg.dancer;
+    const spr = Sprites.makeSprite(d.look, 'down');
+    const dh = spr.height * CHAR_SCALE;
+    // the pole: brass with a bright edge, behind the dancer —
+    // its reach follows her drawn height (she is 1.5x now)
     const [plx, ply] = proj(stg.pole.x, stg.pole.y);
     ctx.strokeStyle = '#8a6a1f'; ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.moveTo(plx, ply - 2); ctx.lineTo(plx, ply - 62); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(plx, ply - 2); ctx.lineTo(plx, ply - (dh + 16)); ctx.stroke();
     ctx.strokeStyle = '#ffd76a'; ctx.lineWidth = 1.6;
-    ctx.beginPath(); ctx.moveTo(plx - 0.8, ply - 2); ctx.lineTo(plx - 0.8, ply - 62); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(plx - 0.8, ply - 2); ctx.lineTo(plx - 0.8, ply - (dh + 16)); ctx.stroke();
     ctx.beginPath(); ctx.ellipse(plx, ply, 7, 3, 0, 0, Math.PI * 2); ctx.fillStyle = '#c99700'; ctx.fill();
-    // the dancer, dancing on loop (the dance emote's bounce
-    // rhythm + a slow sway); a tip makes her twirl
-    const d = stg.dancer;
     const fx = clubFlourishFx.get(d.id);
     const ft = fx ? (now - fx.at) / FLOURISH_MS : 1;
     const flourishing = ft >= 0 && ft < 1;
     if (fx && !flourishing) clubFlourishFx.delete(d.id);
+    if (dancerLive.has(d.id)) return; // off-stage: the entity pass has her
+    // dancing on loop (the dance emote's bounce rhythm + a slow
+    // sway); a tip makes her twirl
     const bob = Math.abs(Math.sin(now / (flourishing ? 90 : 165) + i * 1.7)) * (flourishing ? 6 : 3.5);
     const sway = Math.sin(now / 430 + i * 2.3) * 2.5;
     const [dx, dy] = proj(d.x, d.y);
-    const spr = Sprites.makeSprite(d.look, 'down');
+    const dw = spr.width * CHAR_SCALE;
     ctx.save();
     ctx.translate(dx + sway, dy - bob);
     if (flourishing) {
       const sx = Math.cos(ft * Math.PI * 6);
       ctx.scale(Math.sign(sx) * Math.max(0.25, Math.abs(sx)) || 1, 1);
     }
-    ctx.drawImage(spr, -spr.width / 2, -spr.height + 4);
+    ctx.drawImage(spr, -dw / 2, -dh + 4, dw, dh);
     ctx.restore();
     ctx.font = 'bold 11px system-ui';
     ctx.textAlign = 'center';
@@ -2797,14 +2850,14 @@ function drawClubPass(now) {
     ctx.strokeStyle = 'rgba(0,0,0,.65)';
     ctx.lineWidth = 3;
     const label = `💃 ${d.name}`;
-    ctx.strokeText(label, dx, dy - spr.height - 8 - bob);
-    ctx.fillText(label, dx, dy - spr.height - 8 - bob);
+    ctx.strokeText(label, dx, dy - dh - 8 - bob);
+    ctx.fillText(label, dx, dy - dh - 8 - bob);
     if (flourishing) {
       ctx.font = '13px system-ui';
       for (let hI = 0; hI < 5; hI++) {
         const ph = (ft * 1.4 + hI * 0.19) % 1;
         const hx = dx + Math.sin(ph * 5 + hI * 2.4) * 14;
-        const hy = dy - 46 - ph * 34;
+        const hy = dy - dh * 0.62 - ph * 34;
         ctx.globalAlpha = 0.9 * (1 - ph);
         ctx.fillText(hI % 2 ? '💖' : '✨', hx, hy);
       }
@@ -2834,6 +2887,30 @@ function draw() {
   // v1.4: the club tray lives only inside Club Mirage.
   const clubTrayEl = $('clubTray');
   if (clubTrayEl) clubTrayEl.classList.toggle('hidden', !mapDef.club);
+  // v1.6: the follow countdown — the tipper watches their minute
+  // tick down in the tray; everyone else in the club sees who has
+  // company. Text is set only when it changes (this runs per frame).
+  {
+    const fi = $('clubFollowInfo');
+    if (fi) {
+      let txt = '';
+      if (mapDef.club && me) {
+        for (const [dId, e] of dancerLive) {
+          if (e.mode !== 'follow') continue;
+          const stg = (mapDef.club.stages || []).find(s2 => s2.dancer && s2.dancer.id === dId);
+          const nm = stg ? stg.dancer.name : 'A dancer';
+          if (e.withUserId === me.id) {
+            const left = Math.max(0, Math.ceil((e.endsAt - Date.now()) / 1000));
+            txt = `💃 ${nm} is with you — ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')} left`;
+          } else if (!txt) {
+            txt = `💃 ${nm} is keeping ${e.withName || 'someone'} company`;
+          }
+        }
+      }
+      if (fi.textContent !== txt) fi.textContent = txt;
+      fi.classList.toggle('hidden', !txt);
+    }
+  }
   const W = cv.width, H = cv.height;
   ctx.fillStyle = '#0b0e18';
   ctx.fillRect(0, 0, W, H);
@@ -2874,6 +2951,15 @@ function draw() {
     rp.moving = Math.abs(dx) + Math.abs(dy) > 1.2;
     rp.x += dx * 0.35;
     rp.y += dy * 0.35;
+  }
+  // v1.6: the same easing for live dancers (their renderPos
+  // entries are re-seeded every frame at the entity pass below —
+  // the snapshot pruner doesn't know their npc: ids).
+  for (const e of dancerLive.values()) {
+    const dx = e.x - e.rx, dy = e.y - e.ry;
+    e.moving = Math.abs(dx) + Math.abs(dy) > 1.2;
+    e.rx += dx * 0.35;
+    e.ry += dy * 0.35;
   }
 
   const myRp = me ? renderPos.get(me.id) : null;
@@ -3327,7 +3413,27 @@ function draw() {
 
   // entities, depth-sorted by x+y
   const now = Date.now();
-  const sorted = [...players].sort((a, b) => (a.x + a.y) - (b.x + b.y));
+  // v1.6: dancers off their stage (following / walking back) join
+  // the entity pass as pseudo-players — same sprite pipeline,
+  // same CHAR_SCALE, same depth sort as everyone else. Their
+  // looks ride the pseudo entry flat, exactly like a snapshot
+  // player's public shape.
+  const npcEntities = [];
+  if (mapDef.club) {
+    for (const [dId, e] of dancerLive) {
+      const stg = (mapDef.club.stages || []).find(s2 => s2.dancer && s2.dancer.id === dId);
+      if (!stg) continue;
+      renderPos.set(`npc:${dId}`, { x: e.rx, y: e.ry, moving: e.moving });
+      npcEntities.push({
+        id: `npc:${dId}`, npc: dId, name: `💃 ${stg.dancer.name}`,
+        x: e.x, y: e.y, dir: e.dir,
+        seated: false, seatId: null, drinks: 0, puffs: 0, fallen: false,
+        hippy: false, performing: false, emote: null, casting: false, heldFish: null,
+        ...stg.dancer.look,
+      });
+    }
+  }
+  const sorted = [...players, ...npcEntities].sort((a, b) => (a.x + a.y) - (b.x + b.y));
   for (const p of sorted) {
     const rp = renderPos.get(p.id);
     if (!rp) continue;
@@ -3336,9 +3442,14 @@ function draw() {
     // ride the same nudged point.
     const tbl = p.seated && !p.fallen ? tableSeatInfo(p) : null;
     const [sx, sy] = tbl ? proj(rp.x + tbl.pull[0], rp.y + tbl.pull[1]) : proj(rp.x, rp.y);
-    let bob = rp.moving ? Math.abs(Math.sin(now / 110 + p.id)) * 3 : 0;
+    // (npc pseudo-players carry string ids — keep the phase math numeric)
+    const idPhase = typeof p.id === 'number' ? p.id : 7;
+    let bob = rp.moving ? Math.abs(Math.sin(now / 110 + idPhase)) * 3 : 0;
     // Phase 9: dancing is a whole-body bounce (anywhere, anytime).
-    if (p.emote === 'dance') bob += Math.abs(Math.sin(now / 130 + p.id * 1.3)) * 6;
+    if (p.emote === 'dance') bob += Math.abs(Math.sin(now / 130 + idPhase * 1.3)) * 6;
+    // v1.6: a dancer keeping you company keeps dancing — her
+    // bounce runs even at a standstill beside her tipper.
+    if (p.npc) bob += Math.abs(Math.sin(now / 165 + idPhase)) * 3.5;
     // Fish emote: a little triumph hop while the catch is held high.
     if (p.emote === 'fish') bob += Math.abs(Math.sin(now / 160 + p.id * 1.7)) * 2.5;
 
@@ -3381,9 +3492,37 @@ function draw() {
     } else {
       ctx.translate(sx + sway, sy - bob + (p.seated ? 3 : 0));
       if (p.dir === 'right') ctx.scale(-1, 1); // side sprite faces left natively; flip for right
+      // v1.6: a tip mid-follow twirls her where she stands (the
+      // same flourish the club pass runs on her stage).
+      if (p.npc) {
+        const fx2 = clubFlourishFx.get(p.npc);
+        if (fx2 && now - fx2.at < FLOURISH_MS) {
+          const sxn = Math.cos(((now - fx2.at) / FLOURISH_MS) * Math.PI * 6);
+          ctx.scale(Math.sign(sxn) * Math.max(0.25, Math.abs(sxn)) || 1, 1);
+        }
+      }
       ctx.drawImage(spr, -dw / 2, -dh + 4, dw, dh);
     }
     ctx.restore();
+    // v1.6: flourish hearts for a dancer tipped mid-follow.
+    if (p.npc) {
+      const fx3 = clubFlourishFx.get(p.npc);
+      if (fx3) {
+        const ft3 = (now - fx3.at) / FLOURISH_MS;
+        if (ft3 >= 0 && ft3 < 1) {
+          ctx.font = '13px system-ui';
+          ctx.textAlign = 'center';
+          for (let hI = 0; hI < 5; hI++) {
+            const ph = (ft3 * 1.4 + hI * 0.19) % 1;
+            const hx = sx + Math.sin(ph * 5 + hI * 2.4) * 14;
+            const hy = sy - dh * 0.62 - ph * 34 - bob;
+            ctx.globalAlpha = 0.9 * (1 - ph);
+            ctx.fillText(hI % 2 ? '💖' : '✨', hx, hy);
+          }
+          ctx.globalAlpha = 1;
+        } else if (ft3 >= 1) clubFlourishFx.delete(p.npc);
+      }
+    }
 
     // v1.2.2 (Item 3): an occupied 'up' chair's near-side back is
     // replayed OVER its sitter — from behind, the backrest is what

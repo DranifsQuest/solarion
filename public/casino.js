@@ -145,8 +145,9 @@ const Casino = {
    * v1.2 (Item F2/G): the tray context — exactly one section family
    * at a time. Poker (with table chat) only while seated at a poker
    * table; slots only while seated at a slot stool; the bar only
-   * while at the bar (seated on a bar stool or standing at the
-   * counter spot). Derived fresh each frame from my seat + position
+   * while at the bar (standing at the counter spot — bar stools
+   * were removed game-wide in v1.6; the drink flow is proximity
+   * only). Derived fresh each frame from my seat + position
    * against the map's own machine/stool/bar data — no hardcoded
    * directions or rooms.
    */
@@ -162,13 +163,9 @@ const Casino = {
       for (const s of cz.slots || []) {
         if (Math.hypot(x - s.ix, y - s.iy) < 26) { ctx = 'slots'; slotId = s.id; break; }
       }
-      if (!ctx) {
-        const slotSeatIds = new Set((cz.slots || []).map(s => s.seatId));
-        for (const st of mapDef.seats || []) {
-          if (st.kind !== 'stool' || slotSeatIds.has(st.id)) continue;
-          if (Math.hypot(x - st.x, y - st.y) < 26) { ctx = 'bar'; break; }
-        }
-      }
+      // v1.6: no bar-stool branch anymore (the stools are gone) —
+      // the bar context comes from standing at the counter spot,
+      // the proximity check just below.
     }
     if (!ctx && cz.bar && Math.hypot(x - cz.bar.x, y - cz.bar.y) < 62) ctx = 'bar';
     if (ctx !== this.context || slotId !== this.mySlotId) {
