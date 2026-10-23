@@ -2964,14 +2964,18 @@ function drawClubPass(now) {
     const bt = cl.bartender;
     const [bx, by] = proj(bt.x, bt.y);
     const bspr = Sprites.makeSprite(bt.look, 'down');
-    ctx.drawImage(bspr, bx - bspr.width / 2, by - bspr.height + 4);
+    // v1.6.1: bartenders draw at CHAR_SCALE like every other
+    // person in the world (they read small beside 1.5x patrons
+    // once the dancers were scaled up).
+    const bw = bspr.width * CHAR_SCALE, bh = bspr.height * CHAR_SCALE;
+    ctx.drawImage(bspr, bx - bw / 2, by - bh + 4, bw, bh);
     ctx.font = 'bold 11px system-ui';
     ctx.textAlign = 'center';
     ctx.fillStyle = '#ffd9a0';
     ctx.strokeStyle = 'rgba(0,0,0,.65)';
     ctx.lineWidth = 3;
-    ctx.strokeText(`🍸 ${bt.name}`, bx, by - bspr.height - 4);
-    ctx.fillText(`🍸 ${bt.name}`, bx, by - bspr.height - 4);
+    ctx.strokeText(`🍸 ${bt.name}`, bx, by - bh - 4);
+    ctx.fillText(`🍸 ${bt.name}`, bx, by - bh - 4);
   }
 }
 
@@ -3299,14 +3303,16 @@ function draw() {
       const bt = cz.bartender;
       const [bx, by] = proj(bt.x, bt.y);
       const bspr = Sprites.makeSprite(bt.look, 'down');
-      ctx.drawImage(bspr, bx - bspr.width / 2, by - bspr.height + 4);
+      // v1.6.1: CHAR_SCALE, same as the club bartender above.
+      const bw = bspr.width * CHAR_SCALE, bh = bspr.height * CHAR_SCALE;
+      ctx.drawImage(bspr, bx - bw / 2, by - bh + 4, bw, bh);
       ctx.font = 'bold 11px system-ui';
       ctx.textAlign = 'center';
       ctx.fillStyle = '#ffd9a0';
       ctx.strokeStyle = 'rgba(0,0,0,.65)';
       ctx.lineWidth = 3;
-      ctx.strokeText(`🍸 ${bt.name}`, bx, by - bspr.height - 4);
-      ctx.fillText(`🍸 ${bt.name}`, bx, by - bspr.height - 4);
+      ctx.strokeText(`🍸 ${bt.name}`, bx, by - bh - 4);
+      ctx.fillText(`🍸 ${bt.name}`, bx, by - bh - 4);
     }
     // (the way out is drawn by the generic doors pass below)
     // tell the casino tray whether we are inside the lounge
