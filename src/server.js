@@ -130,7 +130,7 @@ stages.onTrophy = (userId, kind, mixName) => {
     if (target.mapId.startsWith('studio:')) studios.sendState(target);
   }
 };
-game.onPlayerGone = (userId) => { stages.handlePlayerGone(userId); casino.handlePlayerGone(userId); blackjack.handlePlayerGone(userId); };
+game.onPlayerGone = (userId) => { stages.handlePlayerGone(userId); casino.handlePlayerGone(userId); blackjack.handlePlayerGone(userId); club.handlePlayerGone(userId); };
 game.onStandUp = (p, seat, viaMovement) => {
   // v1.5: seat kinds route to their owning system.
   if (seat && (seat.kind === 'blackjack' || seat.kind === 'blackjack-pending')) {
@@ -138,7 +138,7 @@ game.onStandUp = (p, seat, viaMovement) => {
   }
   return casino.releaseSeatStand(p, seat, viaMovement);
 };
-game.onMapEntered = (p) => { stages.syncPlayer(p); casino.syncPlayer(p); blackjack.syncPlayer(p); };
+game.onMapEntered = (p) => { stages.syncPlayer(p); casino.syncPlayer(p); blackjack.syncPlayer(p); club.syncPlayer(p); };
 
 function sendAvatar(res, result) {
   res.json({
@@ -338,17 +338,10 @@ if (TEST_MODE) {
     };
     pushGroup('table', seats.filter(s => s.kind === 'chair' && tableNear(s)), 4);
     pushGroup('hearth', seats.filter(s => (s.kind === 'chair' || s.kind === 'sofa') && nearHearth(s)), 3);
-    if (map.casino) {
-      // v1.4.1 (seat audit): the bar stools get their own posed
-      // group, claimed BEFORE the generic 'stool' group below mixes
-      // them in with the slot stools — the bar (the "chairs ON the
-      // bar" exhibit) was never framed on its own. The data-space
-      // SEAT FOOTPRINT LAW is what catches a stool on its counter;
-      // this shot exists so a human signing the contact sheet SEES
-      // the bar stools seated, at the counter, every run.
-      const slotSeatIds = new Set(map.casino.slots.map(sl => sl.seatId));
-      pushGroup('bar', seats.filter(s => s.kind === 'stool' && !slotSeatIds.has(s.id)), 4);
-    }
+    // v1.6: bar stools are GONE game-wide (Zan's order) — there is
+    // no 'bar' sitter group anymore. The casinos' bar is posed as
+    // STANDING patrons at the counter instead (see the 'bar' shot
+    // below, beside the door/gateway standers).
     for (const kind of ['chair', 'stool', 'sofa', 'bench', 'cafe', 'hookah']) {
       pushGroup(kind, seats.filter(s => s.kind === kind), 4);
     }
@@ -434,12 +427,32 @@ if (TEST_MODE) {
         units: [{ stand: { x: spot.x, y: spot.y, dir: faceToward(spot.x, spot.y, map.tiles.w * TS / 2, map.tiles.h * TS / 2), at: 'gateway', label: gw.label } }],
       });
     }
+    if (map.casino && map.casino.bar) {
+      // v1.6: STANDING patrons at the counter (the bar stools are
+      // gone) — two regulars side by side, facing the bartender
+      // over the flat 'B' counter. This is the frame that proves
+      // standing service: the Drink flow never needed a seat.
+      const b = map.casino.bar;
+      const s1 = previewSpot(map, tileOf(b.x), tileOf(b.y));
+      const s2 = previewSpot(map, tileOf(b.x) + 3, tileOf(b.y));
+      shots.push({
+        id: 'bar',
+        units: [
+          { stand: { x: s1.x, y: s1.y, dir: 'down', at: 'bar', label: 'The Bar' } },
+          { stand: { x: s2.x, y: s2.y, dir: 'down', at: 'bar', label: 'The Bar' } },
+        ],
+      });
+    }
     if (map.club) {
       // v1.4 (Club Mirage): a ringside shot — two standers at the
       // stage fronts facing the dancers, one at the bar facing the
       // bartender. The payload builder flags this shot so the
       // capture catches a dancer-flourish mid-animation (the tip
-      // interaction pose).
+      // interaction pose). v1.6: at the dancers' new player-equal
+      // size this frame is also the SIZE PARITY proof (standers
+      // shoulder-to-shoulder with 1.5x dancers), and the bar unit
+      // is the after shot for the stool removal (Mira serving a
+      // standing patron, counter clear).
       const units = [];
       for (const stg of map.club.stages.slice(0, 2)) {
         const spot = previewSpot(map, tileOf(stg.x + stg.w / 2), tileOf(stg.y + stg.h) + 2);
@@ -451,6 +464,43 @@ if (TEST_MODE) {
         units.push({ stand: { x: spot.x, y: spot.y, dir: 'down', at: 'clubbar', label: 'The Bar' } });
       }
       if (units.length) shots.push({ id: 'club-stage', units });
+      // v1.6: the follow, posed — two regulars mid-dance-floor and
+      // the payload builder seeds a live dancer-state trailing the
+      // first of them, so the capture shows her OFF her stage, at
+      // player size, on his heels (the follow's money shot).
+      const f1 = previewSpot(map, 19, 16);
+      const f2 = previewSpot(map, 22, 18);
+      shots.push({
+        id: 'club-follow',
+        units: [
+          { stand: { x: f1.x, y: f1.y, dir: 'right', at: 'clubfollow', label: 'Dance Floor' } },
+          { stand: { x: f2.x, y: f2.y, dir: 'up', at: 'clubfollow', label: 'Dance Floor' } },
+        ],
+      });
+    }
+    if (map.stage && !aud.length) {
+      // v1.6: a PIT-ONLY venue (Club Mirage's player stage): a
+      // performer mid-set ON the platform (the payload builder
+      // flags the unit + replays a synthetic performance-start so
+      // the lights and speakers run) and two fans standing in the
+      // pit facing the stage. City venues use the 'stage' shot
+      // below (pit-front stander + their audience grid).
+      const st = map.stage;
+      const west = st.pit.x < st.x;
+      const pcx = st.x + st.w / 2, pcy = st.y + st.h / 2;
+      const perf = previewSpot(map, tileOf(pcx), tileOf(pcy));
+      const units = [{
+        stand: { x: perf.x, y: perf.y, dir: west ? 'left' : 'up', at: 'clubperform', label: 'On Stage' },
+        perform: true,
+      }];
+      const pitCx = st.pit.x + st.pit.w / 2, pitCy = st.pit.y + st.pit.h / 2;
+      for (const off of [-0.22, 0.22]) {
+        const px2 = west ? pitCx : pitCx + st.pit.w * off;
+        const py2 = west ? pitCy + st.pit.h * off : pitCy;
+        const spot = previewSpot(map, tileOf(px2), tileOf(py2));
+        units.push({ stand: { x: spot.x, y: spot.y, dir: west ? 'right' : 'up', at: 'clubpit', label: 'The Pit' } });
+      }
+      shots.push({ id: 'club-perform', units });
     }
     if (map.stage && aud.length) {
       const st = map.stage;
@@ -551,6 +601,7 @@ if (TEST_MODE) {
     // client camera centres on them, exactly like a player's.
     let playtest = null;
     let tableFx = null;
+    let fx = null;
     if (req.query.scene === 'playtest') {
       const shots = playtestShots(map);
       const shot = shots.find(s => s.id === req.query.shot) || shots[0];
@@ -559,8 +610,8 @@ if (TEST_MODE) {
         && Math.abs(pr.x - s.x) <= TS * 1.05 && Math.abs(pr.y - s.y) <= TS * 1.05
         && (pr.x !== s.x || pr.y !== s.y));
       const units = shot.units.map(u => u.seat
-        ? { x: u.seat.x, y: u.seat.y, dir: u.seat.dir, seat: u.seat }
-        : { x: u.stand.x, y: u.stand.y, dir: u.stand.dir, stand: u.stand });
+        ? { x: u.seat.x, y: u.seat.y, dir: u.seat.dir, seat: u.seat, perform: Boolean(u.perform) }
+        : { x: u.stand.x, y: u.stand.y, dir: u.stand.dir, stand: u.stand, perform: Boolean(u.perform) });
       const ccx = units.reduce((a, u) => a + u.x, 0) / units.length;
       const ccy = units.reduce((a, u) => a + u.y, 0) / units.length;
       units.sort((a, b) => (Math.abs(a.x - ccx) + Math.abs(a.y - ccy)) - (Math.abs(b.x - ccx) + Math.abs(b.y - ccy)));
@@ -577,6 +628,7 @@ if (TEST_MODE) {
       players = units.map((u, i) => {
         const look = { ...LOOKS[i % LOOKS.length], accent_color: '#2bff5e', bottom_style: 'pants', shoe_color: '#101010' };
         const p = fakePub(900001 + i, NAMES[i % NAMES.length], look, u.x, u.y, u.dir, u.seat || null);
+        if (u.perform) p.performing = true; // v1.6: the club-perform shot's headliner
         let pull = null;
         if (u.seat && u.seat.kind === 'chair') {
           const t = tableNear(u.seat);
@@ -597,6 +649,32 @@ if (TEST_MODE) {
       // exists only in test-mode preview payloads, never live).
       if (shot.id === 'club-stage' && map.club && map.club.stages[0]) {
         playtest.clubFlourish = { dancer: map.club.stages[0].dancer.id };
+      }
+      // v1.6: the follow shot — the client seeds a live dancer
+      // state trailing the first posed regular (Roxy, off her
+      // stage at player size, on his heels mid-dance-floor).
+      if (shot.id === 'club-follow' && map.club && map.club.stages[0]) {
+        const lead = actors[0];
+        playtest.dancerFollow = {
+          dancer: map.club.stages[0].dancer.id,
+          x: lead.x - 54, y: lead.y + 8, dir: 'right', withName: lead.name,
+        };
+      }
+      // v1.6: the club-perform shot runs a synthetic set — a
+      // performance-start replayed through the client's real
+      // handlers (preview.js hello.fx), so the stage lights,
+      // speaker pulse and now-playing UI are the live ones.
+      if (shot.id === 'club-perform') {
+        const head = actors.find(a => a.stand === 'clubperform') || actors[0];
+        fx = [{
+          type: 'performance-start',
+          performerId: head ? head.pid : 900001,
+          performerName: head ? head.name : 'Preview',
+          mixName: 'Playtest Set',
+          mix: { bpm: 124, bars: 8, grid: {} },
+          startAt: Date.now() + 200,
+          durationMs: 15484,
+        }];
       }
       // v1.5: the mid-hand shots carry synthetic table states,
       // fed through the client's real message handlers by
@@ -663,7 +741,7 @@ if (TEST_MODE) {
     res.json({
       type: 'hello', you, map: clientMap(map, season), players, season,
       chat: [], zcoins: 0, bonusGranted: false, bonusAmount: 0, dayCycle,
-      playtest, tableFx,
+      playtest, tableFx, fx,
     });
   });
   app.get('/preview/:mapId', (req, res) => {
@@ -1031,6 +1109,7 @@ server.listen(PORT, () => {
   stages.start();
   casino.start();
   blackjack.start();
+  club.start();
 });
 
 function shutdown() {

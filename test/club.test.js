@@ -161,7 +161,68 @@ test('club mirage: a big room with three stages, blonde curvy dancers, and a bar
   assert.equal(club.club.bartender.name, 'Mira');
   assert.ok(!isSolidTile(club, Math.floor(club.club.bar.x / 32), Math.floor(club.club.bar.y / 32)),
     'the bar patron spot is standable');
-  assert.deepEqual(TIP_AMOUNTS, [5, 10, 25, 50, 100], 'tip presets mirror the stage tip box');
+  assert.deepEqual(TIP_AMOUNTS, [5, 10, 25, 50, 100, 500], 'tip presets: the stage tip box + the 500z follow');
+});
+
+test('club mirage: NO bar stools anywhere (v1.6) — patrons stand at every bar', () => {
+  // Zan's order: bar chairs are gone game-wide. The only stools
+  // left in any map are the slot machines' own seats.
+  for (const map of Object.values(MAPS)) {
+    const slotSeatIds = new Set(map.casino ? map.casino.slots.map(s => s.seatId) : []);
+    for (const s of map.seats || []) {
+      if (s.kind === 'stool') {
+        assert.ok(slotSeatIds.has(s.id), `${map.id}: ${s.id} is a stool but not a slot seat — bar stools were removed`);
+      }
+    }
+  }
+  const club = MAPS['club-mirage'];
+  assert.ok(!(club.seats || []).some(s => s.kind === 'stool'), 'the club bar has no stools');
+});
+
+test('club mirage: the player stage — pit-only data, east wall, registered end to end', () => {
+  const club = MAPS['club-mirage'];
+  assert.ok(club.stage, 'the club has a real player stage (map.stage)');
+  const st = club.stage;
+  // the standard complex, rotated: 3 deep x 10 wide, pit on the
+  // audience (west) side, platform against the east wall
+  assert.equal(st.w, 32 * 3, 'platform is 3 tiles deep (rotated)');
+  assert.equal(st.h, 32 * 10, 'platform is 10 tiles wide (rotated)');
+  assert.equal(st.pit.w, 32 * 3);
+  assert.equal(st.pit.h, 32 * 10);
+  assert.ok(st.pit.x < st.x, 'the pit stands west of the platform — the crowd faces east into the stage');
+  assert.equal(Math.floor((st.x + st.w) / 32), club.tiles.w - 1, 'the platform abuts the east wall');
+  assert.equal((st.speakers || []).length, 2, 'speakers at the front corners');
+  // pit-only BY DESIGN: no audience seats in the club at all
+  assert.ok(!(club.seats || []).some(s => /-seat-(\d+)$/.exec(s.id) && Number(/-seat-(\d+)$/.exec(s.id)[1]) >= 101),
+    'no audience grid in the club — the pit is standing room only');
+  // the stage does not displace the room: dancer stages, bar and
+  // ringside tables untouched; pit/platform clear of every seat
+  const inRect = (r, x, y) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
+  for (const s of club.seats || []) {
+    assert.ok(!inRect(st, s.x, s.y) && !inRect(st.pit, s.x, s.y), `seat ${s.id} stays clear of the stage/pit`);
+  }
+  for (const pr of club.props || []) {
+    assert.ok(!inRect(st, pr.x, pr.y) && !inRect(st.pit, pr.x, pr.y), `prop ${pr.kind} stays clear of the stage/pit`);
+  }
+  // the client payload carries it (the mixer panel + stage draw
+  // key off mapDef.stage)
+  const cm = clientMap(club);
+  assert.ok(cm.stage && cm.stage.pit, 'client payload serializes the club stage + pit');
+});
+
+test('club mirage: dancers render at player scale (v1.6) — the client draw paths', () => {
+  // Size parity is proven in the Playtest captures (a stander
+  // shoulder-to-shoulder with a dancer in the club-stage shot);
+  // this pins the mechanism so a future refactor can't quietly
+  // shrink her back: the club pass must draw the fixture dancer
+  // through CHAR_SCALE (the same 1.5x the entity pass gives
+  // players), and off-stage dancers must join that entity pass.
+  const client = fs.readFileSync(path.join(__dirname, '..', 'public', 'client.js'), 'utf8');
+  const clubPass = client.slice(client.indexOf('function drawClubPass'), client.indexOf('function draw()'));
+  assert.match(clubPass, /const dh = spr\.height \* CHAR_SCALE/, 'on-stage dancer drawn at CHAR_SCALE');
+  assert.match(clubPass, /ctx\.drawImage\(spr, -dw \/ 2, -dh \+ 4, dw, dh\)/, 'on-stage dancer blit is scaled');
+  assert.match(client, /npcEntities/, 'off-stage dancers join the entity pass (same pipeline, same scale)');
+  assert.match(client, /const CHAR_SCALE = 1\.5/, 'the player scale itself is 1.5x');
 });
 
 test('club mirage: the door graph — Neon face door in, club door back out', () => {
@@ -293,6 +354,169 @@ test('club mirage: tips — presets, proximity, cooldown, the sink, the flourish
   assert.equal(await balanceOf(tipper.token), 10, 'broke tip never debited');
 
   tipper.client.ws.close();
+  watcher.client.ws.close();
+});
+
+/** The latest streamed state for one dancer from a client's feed. */
+function latestDancer(user, dancerId) {
+  let found = null;
+  for (const m of user.client.msgs) {
+    if (m.type !== 'dancer-state') continue;
+    const d = (m.dancers || []).find(d2 => d2.id === dancerId);
+    if (d) found = d;
+  }
+  return found;
+}
+
+async function enterClub(u) {
+  teleport(u, 224, 48);
+  await arriveMap(u, 'neon-district');
+  await sleep(1600);
+  teleport(u, 304, 1232);
+  await arriveMap(u, 'club-mirage');
+  await sleep(1600); // arrival transfer lock
+}
+
+test('club mirage: the stage is really registered — stage-join reaches the queue, not a void', async () => {
+  const u = await makeUser('club_rhea');
+  await enterClub(u);
+  u.client.send({ type: 'stage-join', mixId: 999 });
+  const n = await waitFor(() => u.client.msgs.filter(m => m.type === 'notice').pop(),
+    5000, 'a stage-join answer');
+  assert.match(n.text, /Pick one of your saved mixes/,
+    'the club stage answers like every venue stage (a mix problem, not "no stage in this room")');
+  u.client.ws.close();
+});
+
+test('club mirage: the 500z follow — streams, tracks, refuses politely, ends when he leaves', async () => {
+  const tipper = await makeUser('club_marco');
+  const watcher = await makeUser('club_ivan');
+  await fund(tipper, 2000);
+  await fund(watcher, 600);
+  await enterClub(tipper);
+  await enterClub(watcher);
+  const club = MAPS['club-mirage'].club;
+  const [stg1, stg2] = club.stages;
+  const roxy = stg1.dancer, vega = stg2.dancer;
+
+  // ringside at Roxy's stage; the 500z tip starts the follow
+  teleport(tipper, stg1.x + stg1.w / 2, stg1.y + stg1.h + 40);
+  teleport(watcher, stg1.x + stg1.w / 2 + 30, stg1.y + stg1.h + 40);
+  await sleep(300);
+  tipper.client.send({ type: 'tip-dancer', dancer: roxy.id, amount: 500 });
+  await waitFor(() => tipper.client.msgs.filter(m => m.type === 'zcoins' && m.zcoins === 1500).pop(),
+    5000, 'the 500z follow tip debits exactly 500');
+  const fol = await waitFor(() => watcher.client.msgs.filter(m =>
+    m.type === 'dancer-follow' && m.dancer === roxy.id && m.from === 'club_marco').pop(),
+    5000, 'the room hears Roxy step down');
+  assert.ok(fol.endsAt > Date.now(), 'the follow carries its end time (the tray countdown)');
+  const live = await waitFor(() => {
+    const d = latestDancer(watcher, roxy.id);
+    return d && d.mode === 'follow' && d.withUserId === tipper.id ? d : null;
+  }, 5000, 'Roxy streams as following, room-wide');
+  assert.ok(live);
+
+  // she TRACKS a moving tipper across the floor
+  teleport(tipper, 624, 528); // mid dance floor
+  await sleep(300);
+  const tracked = await waitFor(() => {
+    const d = latestDancer(watcher, roxy.id);
+    if (!d || d.mode !== 'follow') return null;
+    const near = Math.hypot(d.x - 624, d.y - 528) < 110;
+    const offStage = Math.hypot(d.x - roxy.x, d.y - roxy.y) > 150;
+    return near && offStage ? d : null;
+  }, 9000, 'Roxy leaves her stage and closes on the tipper');
+  assert.ok(tracked, 'she followed him to the dance floor');
+
+  // a regular tip mid-follow still lands (flourish where she stands)
+  teleport(watcher, tracked.x + 20, tracked.y + 20);
+  await sleep(300);
+  watcher.client.send({ type: 'tip-dancer', dancer: roxy.id, amount: 25 });
+  await waitFor(() => watcher.client.msgs.filter(m => m.type === 'zcoins' && m.zcoins === 575).pop(),
+    5000, 'a 25z tip to a following dancer debits normally');
+  await waitFor(() => tipper.client.msgs.filter(m =>
+    m.type === 'dancer-flourish' && m.dancer === roxy.id && m.amount === 25).pop(),
+    5000, 'the room sees her flourish mid-follow');
+  const still = latestDancer(watcher, roxy.id);
+  assert.equal(still.mode, 'follow', 'a regular tip never starts or breaks a follow');
+
+  // busy dancer: a second 500z for Roxy is refused WITHOUT charge
+  await sleep(2600); // clear the watcher's own tip cooldown first
+  watcher.client.send({ type: 'tip-dancer', dancer: roxy.id, amount: 500 });
+  await waitFor(() => watcher.client.msgs.filter(m => m.type === 'notice' && /off her stage/.test(m.text)).pop(),
+    5000, 'busy-dancer refusal notice');
+  assert.equal(await balanceOf(watcher.token), 575, 'the refused 500z never debited');
+
+  // one dancer per tipper: Marco tries Vega while Roxy is his
+  teleport(tipper, stg2.x + stg2.w / 2, stg2.y + stg2.h + 40);
+  await sleep(2200); // let Roxy trail up to him (and clear his tip cooldown)
+  tipper.client.send({ type: 'tip-dancer', dancer: vega.id, amount: 500 });
+  await waitFor(() => tipper.client.msgs.filter(m => m.type === 'notice' && /already have a dancer/.test(m.text)).pop(),
+    5000, 'one-dancer-per-tipper refusal notice');
+  assert.equal(await balanceOf(tipper.token), 1500, 'the second follow never debited');
+
+  // he LEAVES: the follow ends on the spot and she walks home
+  teleport(tipper, 976, 784); // the club door tile
+  await arriveMap(tipper, 'neon-district');
+  const returning = await waitFor(() => {
+    const d = latestDancer(watcher, roxy.id);
+    return d && d.mode === 'return' ? d : null;
+  }, 6000, 'Roxy turns for home the moment he leaves');
+  assert.ok(returning);
+  await waitFor(() => watcher.client.msgs.filter(m => m.type === 'dancer-return' && m.dancer === roxy.id).pop(),
+    5000, 'the room hears her head back');
+  const home = await waitFor(() => {
+    const d = latestDancer(watcher, roxy.id);
+    return d && d.mode === 'stage' && Math.hypot(d.x - roxy.x, d.y - roxy.y) < 3 ? d : null;
+  }, 20000, 'Roxy walks back to her exact stage anchor and dances again');
+  assert.ok(home, 'she is home, on her stage, at her anchor');
+
+  tipper.client.ws.close();
+  watcher.client.ws.close();
+});
+
+test('club mirage: the follow expires on its own clock (test clock: 12s)', async () => {
+  const u = await makeUser('club_nadia');
+  await fund(u, 600);
+  await enterClub(u);
+  const stg1 = MAPS['club-mirage'].club.stages[0];
+  const roxy = stg1.dancer;
+  teleport(u, stg1.x + stg1.w / 2, stg1.y + stg1.h + 40);
+  await sleep(300);
+  u.client.send({ type: 'tip-dancer', dancer: roxy.id, amount: 500 });
+  await waitFor(() => u.client.msgs.filter(m => m.type === 'zcoins' && m.zcoins === 100).pop(),
+    5000, 'the follow tip debits');
+  // he never moves; the minute (12s on the test clock) runs out
+  // ringside and she walks the few steps home by herself
+  const home = await waitFor(() => {
+    const d = latestDancer(u, roxy.id);
+    return d && d.mode === 'stage' && Math.hypot(d.x - roxy.x, d.y - roxy.y) < 3 ? d : null;
+  }, 30000, 'after expiry she returns to her anchor unaided');
+  assert.ok(home, 'expiry ends the follow and she is home');
+  u.client.ws.close();
+});
+
+test('club mirage: a disconnect ends the follow — she walks home alone', async () => {
+  const tipper = await makeUser('club_omar');
+  const watcher = await makeUser('club_pia');
+  await fund(tipper, 600);
+  await enterClub(tipper);
+  await enterClub(watcher);
+  const stg2 = MAPS['club-mirage'].club.stages[1];
+  const vega = stg2.dancer;
+  teleport(tipper, stg2.x + stg2.w / 2, stg2.y + stg2.h + 40);
+  await sleep(300);
+  tipper.client.send({ type: 'tip-dancer', dancer: vega.id, amount: 500 });
+  await waitFor(() => {
+    const d = latestDancer(watcher, vega.id);
+    return d && d.mode === 'follow' ? d : null;
+  }, 5000, 'Vega is following');
+  tipper.client.ws.close(); // gone, mid-follow
+  const home = await waitFor(() => {
+    const d = latestDancer(watcher, vega.id);
+    return d && d.mode === 'stage' && Math.hypot(d.x - vega.x, d.y - vega.y) < 3 ? d : null;
+  }, 20000, 'Vega walks home after the disconnect');
+  assert.ok(home, 'disconnect ends the follow; she is home');
   watcher.client.ws.close();
 });
 

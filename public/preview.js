@@ -81,6 +81,9 @@
       // fed through the same real handlers, after hello, so the
       // felt renders a frozen live hand.
       if (Array.isArray(hello.tableFx)) for (const m of hello.tableFx) window.handle(m);
+      // v1.6: synthetic stage states (the club-perform shot's live
+      // set) — same treatment, through the real handlers.
+      if (Array.isArray(hello.fx)) for (const m of hello.fx) window.handle(m);
       // Playtest Gate: expose the posed-actor manifest (shot id,
       // camera anchor, per-actor seat/stand data) for the capture
       // driver to record alongside the screenshot.

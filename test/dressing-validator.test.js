@@ -29,6 +29,11 @@
  *   seats to chair art at the CURRENT offset — the exact class
  *   Zan circled, which the v1.4.1 law's own-cabinet-only test
  *   could not see.
+ *   v1.6 (club pass) adds: a reintroduced bar stool fails by name
+ *   (the stools are gone game-wide), a city venue stripped of its
+ *   audience seats fails while the REGISTERED pit-only club does
+ *   not, and a prop inside the club's stage pit fails the pit-only
+ *   purity rule.
  *
  * No server, no ports: pure subprocess runs of the validator.
  */
@@ -76,7 +81,7 @@ test('validator passes on the clean tree', () => {
   assert.match(out, /VERDICT: ✅ PASS/);
 });
 
-test('exhibit 1: an extruded club counter fails by name (bar construction + seat footprint)', () => {
+test('exhibit 1: an extruded club counter fails by name (bar construction)', () => {
   const dir = makeTree();
   doctor(dir, 'src/maps.js',
     "setRect(g, 3, 23, 10, 1, 'B');   // the bar counter (south-west)",
@@ -84,7 +89,41 @@ test('exhibit 1: an extruded club counter fails by name (bar construction + seat
   const { code, out } = runValidator(dir);
   assert.equal(code, 1, `doctored tree must fail:\n${out}`);
   assert.match(out, /\[club-mirage\] bar construction: interior '#'/);
-  assert.match(out, /\[club-mirage\] seat footprint: seat club-mirage-seat-1[34]'s cushion overlaps the raised top face/);
+  // v1.6: the seat-footprint half of this exhibit is retired with
+  // the bar stools themselves — the stools whose cushions landed
+  // on the doctored counter no longer exist (see exhibit 1c).
+});
+
+test('exhibit 1c: a reintroduced bar stool fails by name (v1.6: no bar stools)', () => {
+  const dir = makeTree();
+  doctor(dir, 'src/maps.js',
+    "      // (v1.6: the two bar stools that stood here are GONE — Zan's",
+    "      seat(id, 13, 5, 22, 'down', 'stool'), // doctored back in\n      // (v1.6: the two bar stools that stood here are GONE — Zan's");
+  const { code, out } = runValidator(dir);
+  assert.equal(code, 1, `doctored tree must fail:\n${out}`);
+  assert.match(out, /bar stool club-mirage-seat-13 .* bar stools were removed game-wide/);
+});
+
+test('exhibit 4: a city venue stripped of its audience seats fails (pit-only is registered, not general)', () => {
+  const dir = makeTree();
+  doctor(dir, 'src/maps.js',
+    "out.push(seat(id, n++, tx, ty, dir, 'audience'));",
+    '/* audience seats doctored out */');
+  const { code, out } = runValidator(dir);
+  assert.equal(code, 1, `doctored tree must fail:\n${out}`);
+  assert.match(out, /venue geometry: this stage has NO audience seats/);
+  assert.doesNotMatch(out, /\[club-mirage\] venue geometry: this stage has NO audience seats/,
+    'the registered pit-only club must NOT be flagged for its missing grid');
+});
+
+test('exhibit 5: a prop in the club stage pit fails by name (pit-only purity)', () => {
+  const dir = makeTree();
+  doctor(dir, 'src/maps.js',
+    "prop('lantern', 28, 23), prop('lantern', 33, 23),",
+    "prop('lantern', 28, 23), prop('lantern', 33, 23), prop('lamp', 34, 16),");
+  const { code, out } = runValidator(dir);
+  assert.equal(code, 1, `doctored tree must fail:\n${out}`);
+  assert.match(out, /venue purity \(pit-only\): \[base\] prop "lamp" intrudes into the stage pit \(34,16\)/);
 });
 
 test('exhibit 1b: an extruded casino counter fails by name', () => {

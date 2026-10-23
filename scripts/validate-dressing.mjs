@@ -70,9 +70,23 @@
  *     cushion centre stays outside the felt ellipse; no chair/
  *     stool cushion may overlap the raised top face of a '#'/'W'
  *     tile; bar counters are flat 'B' tiles by construction
- *     (interior 'W'/'#' counters fail) with every bar stool one
- *     tile north of its counter; seat kinds are a closed set and
- *     audience seats are always kind 'chair' (the current art).
+ *     (interior 'W'/'#' counters fail); seat kinds are a closed
+ *     set and audience seats resolve to the audience chair art.
+ *   - NO BAR STOOLS (v1.6, Zan's order): bar stools were removed
+ *     game-wide — patrons STAND at the counter (the drink flow is
+ *     proximity-based). A non-slot 'stool' seat in a bar map
+ *     (casino or club) fails: the only stools left in the game
+ *     are the slot machines' own seats.
+ *   - PIT-ONLY VENUE VARIANT (v1.6, registered): Club Mirage's
+ *     player stage runs stage + standing pit with ZERO audience
+ *     seats BY DESIGN (its ringside tables are the seating). The
+ *     variant is a registry, not a weakening: any OTHER map with
+ *     a stage but no audience seats fails — city venues still
+ *     owe the uniform 20-chair grid. A registered pit-only venue
+ *     is still held to platform/pit purity (no props, no seats,
+ *     no solid dressing on the platform or in the pit, any
+ *     layer), a pit flush against its platform, speakers at the
+ *     platform's front corners, and the platform against a wall.
  *   - ARRANGEMENT LAW (v1.3.1, Item 5): every seat belongs to a
  *     registered arrangement — table group, hearth arc, audience
  *     grid, casino floor, hookah station, beach towel unit, or an
@@ -112,6 +126,14 @@ const notes = [];
 
 const err = (mapId, msg) => errors.push(`[${mapId}] ${msg}`);
 const warn = (mapId, msg) => warnings.push(`[${mapId}] ${msg}`);
+
+// PIT-ONLY VENUES (v1.6, registered variant): maps whose player
+// stage runs a standing PIT with zero audience seats BY DESIGN.
+// Club Mirage is the one entry — its ringside tables are its
+// seating, and Zan ordered "a stage with only a pit" for it.
+// This is a registry, not a general weakening: a stage map NOT
+// listed here with no audience seats fails the venue law below.
+const PIT_ONLY_VENUES = new Set(['club-mirage']);
 
 const tileAt = (map, tx, ty) =>
   (tx < 0 || ty < 0 || tx >= map.tiles.w || ty >= map.tiles.h) ? '#' : map.tiles.rows[ty][tx];
@@ -439,6 +461,65 @@ for (const map of Object.values(MAPS)) {
     const speakerTiles = new Set((st.speakers || []).map(sp => `${tileOfPx(sp.x)},${tileOfPx(sp.y)}`));
     const pitTiles = new Set(rectTiles(st.pit).map(([tx, ty]) => `${tx},${ty}`));
     const stageTiles = new Set(rectTiles(st).map(([tx, ty]) => `${tx},${ty}`));
+    if (!aud.length) {
+      // PIT-ONLY VENUE VARIANT (v1.6): a stage with NO audience
+      // seats is legal ONLY for a registered pit-only venue
+      // (Club Mirage). The full-grid laws below derive their box
+      // from the seats, so they cannot run here; the pit-only
+      // venue is held instead to platform/pit purity, pit flush
+      // against the platform, front-corner speakers, and the
+      // platform against a wall. A city venue that loses its
+      // chairs fails right here — the grid is not optional there.
+      if (!PIT_ONLY_VENUES.has(map.id)) {
+        err(map.id, 'venue geometry: this stage has NO audience seats — only a REGISTERED pit-only venue (Club Mirage) may run stage + pit with no chair grid; city venues carry the uniform 20-chair grid (v1.6)');
+      } else {
+        for (const layer of layers) {
+          for (const pr of layer.props) {
+            const k = `${tileOfPx(pr.x)},${tileOfPx(pr.y)}`;
+            if (pitTiles.has(k)) err(map.id, `venue purity (pit-only): [${layer.label}] prop "${pr.kind}" intrudes into the stage pit (${k})`);
+            if (stageTiles.has(k)) err(map.id, `venue purity (pit-only): [${layer.label}] prop "${pr.kind}" intrudes onto the stage platform (${k})`);
+          }
+        }
+        for (const s of map.seats || []) {
+          const k = `${tileOfPx(s.x)},${tileOfPx(s.y)}`;
+          if (pitTiles.has(k)) err(map.id, `venue purity (pit-only): seat ${s.id} stands in the stage pit (${k})`);
+          if (stageTiles.has(k)) err(map.id, `venue purity (pit-only): seat ${s.id} stands on the stage platform (${k})`);
+        }
+        for (const k of [...pitTiles, ...stageTiles]) {
+          const [tx, ty] = k.split(',').map(Number);
+          const ch = tileAt(map, tx, ty);
+          if (!WALKABLE.has(ch) && !speakerTiles.has(k)) {
+            err(map.id, `venue purity (pit-only): solid/grid dressing '${ch}' inside the ${pitTiles.has(k) ? 'stage pit' : 'stage platform'} (${k})`);
+          }
+        }
+        // The pit touches the platform on the audience side.
+        const flush = (st.pit.x + st.pit.w === st.x) || (st.pit.x === st.x + st.w)
+          || (st.pit.y + st.pit.h === st.y) || (st.pit.y === st.y + st.h);
+        if (!flush) err(map.id, 'venue geometry (pit-only): the pit is not flush against the platform — the crowd stands at the stage lip');
+        // The platform stands against a wall: the side opposite
+        // the pit abuts the map border (within one tile).
+        const west = st.pit.x < st.x, east = st.pit.x > st.x;
+        const north = st.pit.y < st.y, south = st.pit.y > st.y;
+        const abuts = (west && tileOfPx(st.x + st.w - 1) >= map.tiles.w - 2)
+          || (east && tileOfPx(st.x) <= 1)
+          || (north && tileOfPx(st.y + st.h - 1) >= map.tiles.h - 2)
+          || (south && tileOfPx(st.y) <= 1);
+        if (!abuts) err(map.id, 'venue geometry (pit-only): the platform does not stand against a wall on the side opposite its pit');
+        // Speakers: exactly two, at the platform's front corners
+        // (in the pit's platform-side column/row, at its ends).
+        const spk = st.speakers || [];
+        if (spk.length !== 2) {
+          err(map.id, `venue geometry (pit-only): expected exactly 2 stage speakers, found ${spk.length}`);
+        } else if (west || east) {
+          const col = tileOfPx(st.pit.x + (west ? st.pit.w - 1 : 0));
+          const rows = [tileOfPx(st.pit.y), tileOfPx(st.pit.y + st.pit.h - 1)].sort((a, b) => a - b);
+          const got = spk.map(sp => [tileOfPx(sp.x), tileOfPx(sp.y)]).sort((a, b) => a[1] - b[1]);
+          if (got[0][0] !== col || got[1][0] !== col || got[0][1] !== rows[0] || got[1][1] !== rows[1]) {
+            err(map.id, `venue geometry (pit-only): speakers stand at (${got.map(g2 => g2.join(',')).join(' / ')}) — they belong at the pit's front corners (column ${col}, rows ${rows[0]} and ${rows[1]})`);
+          }
+        }
+      }
+    }
     if (aud.length) {
       let x0 = 1e9, x1 = -1, y0 = 1e9, y1 = -1;
       for (const s of aud) {
@@ -681,11 +762,12 @@ for (const map of Object.values(MAPS)) {
   //     their client-derived facing.
   // (C) BAR CONSTRUCTION: in casino maps any interior (non-border)
   //     'W' tile is a counter wearing a wall's extrusion — fail.
-  //     In the club any interior '#' tile likewise. And every bar
-  //     stool (a non-slot 'stool' seat in a casino, every 'stool'
-  //     in the club) must stand exactly one tile north of a 'B'
-  //     counter tile in its own column — the patron side, at the
-  //     counter, never on it or behind it.
+  //     In the club any interior '#' tile likewise. And (v1.6) bar
+  //     stools must NOT exist: Zan ordered them gone game-wide
+  //     after the club's rendered as big flat cushions ON the
+  //     counter. Patrons stand at the counter (the drink flow is
+  //     proximity-based and never needed the seat). The only
+  //     'stool' seats left in the game belong to slot machines.
   // (D) SPRITE PATH: seat kinds are a closed set (an unknown kind
   //     silently falls into the client's chair branch), and
   //     audience seats (ids >= 101) are ALWAYS kind 'audience' —
@@ -740,9 +822,7 @@ for (const map of Object.values(MAPS)) {
       if (s.kind !== 'stool' || slotSeatIds.has(s.id)) continue;
       if (!map.casino && !map.club) continue;
       const tx = tileOfPx(s.x), ty = tileOfPx(s.y);
-      if (tileAt(map, tx, ty + 1) !== 'B') {
-        err(map.id, `bar construction: bar stool ${s.id} at (${tx},${ty}) does not face a 'B' counter one tile south (found '${tileAt(map, tx, ty + 1)}') — bar stools stand on the patron side, one tile north of the counter (v1.4.1)`);
-      }
+      err(map.id, `bar construction: bar stool ${s.id} at (${tx},${ty}) — bar stools were removed game-wide (v1.6, Zan's order); patrons stand at the counter, and the only stools left are the slot machines' seats`);
     }
     // (D) sprite path: closed kind set + audience is always
     // 'audience'. v1.5.1: the pin flips — venue audience seats
@@ -776,11 +856,8 @@ for (const map of Object.values(MAPS)) {
     const n = m ? Number(m[1]) : -1;
     if (n >= 101) return 'audience grid';
     if (map.casino) return 'casino floor';
-    if (map.club && s.kind === 'stool') {
-      // v1.4: the club's bar stools belong to the bar arrangement.
-      const b = map.club.bar;
-      if (b && Math.max(Math.abs(tileOfPx(s.x) - tileOfPx(b.x)), Math.abs(tileOfPx(s.y) - tileOfPx(b.y))) <= 3) return 'club bar';
-    }
+    // v1.6: no 'club bar' arrangement anymore — the club's bar
+    // stools are gone with the rest (bar patrons stand).
     if (s.kind === 'hookah') return 'hookah station';
     if (s.kind === 'towel') {
       const near = (map.props || []).some(pr => pr.kind === 'umbrella'
