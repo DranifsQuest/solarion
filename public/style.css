@@ -390,6 +390,12 @@ html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; ba
   #hud { flex-wrap: wrap; }
 }
 #stageFloats { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 24; }
+/* The CD collection + Top-40 live inside #stagePanel, which grows
+   unbounded — bound both boxes so they scroll in place instead of
+   stretching the panel off-screen (and so the styled scrollbars
+   below have a surface to appear on). */
+#cdBox { max-height: 190px; overflow-y: auto; }
+#chartBox { max-height: 236px; overflow-y: auto; }
 #cdBox button, #chartBtn { padding: 3px 8px; border-radius: 6px; border: 1px solid #8a6a45;
   background: #3a2a18; color: #eef; cursor: pointer; font-size: 11px; margin-left: 6px; }
 #cdBox button:hover, #chartBtn:hover { border-color: #ffd23f; color: #ffd23f; }
@@ -429,3 +435,77 @@ html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; ba
   padding: 6px 12px; font: 600 14px system-ui; box-shadow: 0 6px 18px rgba(0,0,0,.5); }
 .invGhost.ok { border-color: #7dc95e; }
 .invGhost.bad { border-color: #e2543e; opacity: .75; }
+
+/* ------------------------------------------------ Styled scrollbars (v1.6.2)
+   Zan: "Style scrollbars across the full site, make them thin and
+   clean." ONE recipe for every scrollable surface in the game —
+   chat log, stage queue, CD collection, Top-40 chart, Navigator /
+   Friends / Sound side panels, studio + look panels, the mixer,
+   the furniture store grid, the character-creation card, and any
+   future panel that opts in with .scroll-slim.
+   Thin (8px) and quiet: a slim rounded warm-wood thumb on a barely
+   there warm track, a touch brighter on hover. No OS grey, no
+   borders, no buttons, no bulk. Both engines: the ::-webkit-scrollbar
+   family for Chromium, scrollbar-width/color for Firefox. Tunable
+   in one place via the custom properties. scrollbar-gutter: stable
+   reserves the 8px so content never jumps when a bar appears. */
+:root {
+  --sb-size: 8px;
+  --sb-track: rgba(216, 185, 143, .10);
+  --sb-thumb: #a5763f;
+  --sb-thumb-hover: #c08d4e;
+}
+#chatLog, #queueList, #cdBox, #chartBox, #create, #mixerPanel, #mixGrid,
+#studioPanel, #lookPanel, .sidePanel, #storeGrid, .scroll-slim {
+  scrollbar-gutter: stable;
+}
+/* Firefox gets the standard properties — scoped so Chromium never
+   sees them on these elements: where scrollbar-width/color apply,
+   Chromium switches to its own standard rendering and IGNORES the
+   ::-webkit-scrollbar recipe below (some builds even paint theme
+   arrow glyphs at the track ends — verified in the Bake Shop
+   captures). (-moz-appearance in a supports query matches only
+   Firefox.) */
+@supports (-moz-appearance: none) {
+  #chatLog, #queueList, #cdBox, #chartBox, #create, #mixerPanel, #mixGrid,
+  #studioPanel, #lookPanel, .sidePanel, #storeGrid, .scroll-slim {
+    scrollbar-width: thin;
+    scrollbar-color: var(--sb-thumb) var(--sb-track);
+  }
+}
+#chatLog::-webkit-scrollbar, #queueList::-webkit-scrollbar, #cdBox::-webkit-scrollbar,
+#chartBox::-webkit-scrollbar, #create::-webkit-scrollbar, #mixerPanel::-webkit-scrollbar,
+#mixGrid::-webkit-scrollbar, #studioPanel::-webkit-scrollbar, #lookPanel::-webkit-scrollbar,
+.sidePanel::-webkit-scrollbar, #storeGrid::-webkit-scrollbar, .scroll-slim::-webkit-scrollbar {
+  width: var(--sb-size); height: var(--sb-size);
+}
+#chatLog::-webkit-scrollbar-track, #queueList::-webkit-scrollbar-track, #cdBox::-webkit-scrollbar-track,
+#chartBox::-webkit-scrollbar-track, #create::-webkit-scrollbar-track, #mixerPanel::-webkit-scrollbar-track,
+#mixGrid::-webkit-scrollbar-track, #studioPanel::-webkit-scrollbar-track, #lookPanel::-webkit-scrollbar-track,
+.sidePanel::-webkit-scrollbar-track, #storeGrid::-webkit-scrollbar-track, .scroll-slim::-webkit-scrollbar-track {
+  background: var(--sb-track); border-radius: 999px;
+}
+#chatLog::-webkit-scrollbar-thumb, #queueList::-webkit-scrollbar-thumb, #cdBox::-webkit-scrollbar-thumb,
+#chartBox::-webkit-scrollbar-thumb, #create::-webkit-scrollbar-thumb, #mixerPanel::-webkit-scrollbar-thumb,
+#mixGrid::-webkit-scrollbar-thumb, #studioPanel::-webkit-scrollbar-thumb, #lookPanel::-webkit-scrollbar-thumb,
+.sidePanel::-webkit-scrollbar-thumb, #storeGrid::-webkit-scrollbar-thumb, .scroll-slim::-webkit-scrollbar-thumb {
+  background: var(--sb-thumb); border-radius: 999px;
+}
+#chatLog::-webkit-scrollbar-thumb:hover, #queueList::-webkit-scrollbar-thumb:hover, #cdBox::-webkit-scrollbar-thumb:hover,
+#chartBox::-webkit-scrollbar-thumb:hover, #create::-webkit-scrollbar-thumb:hover, #mixerPanel::-webkit-scrollbar-thumb:hover,
+#mixGrid::-webkit-scrollbar-thumb:hover, #studioPanel::-webkit-scrollbar-thumb:hover, #lookPanel::-webkit-scrollbar-thumb:hover,
+.sidePanel::-webkit-scrollbar-thumb:hover, #storeGrid::-webkit-scrollbar-thumb:hover, .scroll-slim::-webkit-scrollbar-thumb:hover {
+  background: var(--sb-thumb-hover);
+}
+#chatLog::-webkit-scrollbar-button, #queueList::-webkit-scrollbar-button, #cdBox::-webkit-scrollbar-button,
+#chartBox::-webkit-scrollbar-button, #create::-webkit-scrollbar-button, #mixerPanel::-webkit-scrollbar-button,
+#mixGrid::-webkit-scrollbar-button, #studioPanel::-webkit-scrollbar-button, #lookPanel::-webkit-scrollbar-button,
+.sidePanel::-webkit-scrollbar-button, #storeGrid::-webkit-scrollbar-button, .scroll-slim::-webkit-scrollbar-button {
+  display: none; width: 0; height: 0; -webkit-appearance: none; appearance: none; background: transparent;
+}
+#chatLog::-webkit-scrollbar-corner, #queueList::-webkit-scrollbar-corner, #cdBox::-webkit-scrollbar-corner,
+#chartBox::-webkit-scrollbar-corner, #create::-webkit-scrollbar-corner, #mixerPanel::-webkit-scrollbar-corner,
+#mixGrid::-webkit-scrollbar-corner, #studioPanel::-webkit-scrollbar-corner, #lookPanel::-webkit-scrollbar-corner,
+.sidePanel::-webkit-scrollbar-corner, #storeGrid::-webkit-scrollbar-corner, .scroll-slim::-webkit-scrollbar-corner {
+  background: transparent;
+}
