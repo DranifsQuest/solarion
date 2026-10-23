@@ -986,16 +986,11 @@ function buildNeonDistrict() {
       area('Casino Row', 52, 26, 18, 14),
     ],
     seats: [
-      seat(id, 1, 20, 13, 'down', 'bench'),
-      seat(id, 2, 50, 13, 'down', 'bench'),
-      // v1.2.2 (Item 1d — plaza scatter round 2): the two solo café
-      // booths (34,20)/(38,24) and the lone chair at (24,22) are
-      // GONE — seating exists only inside composed arrangements
-      // (street benches, the market nook, the venue).
-      // Phase 10: the market nook sofas, facing each other (moved
-      // south with their nook, clear of the venue — Item 1c).
-      seat(id, 6, 33, 25, 'right', 'sofa'),
-      seat(id, 7, 39, 25, 'left', 'sofa'),
+      // v1.7.3 (X, 2026-10-23 — annotated screenshot): the two
+      // street benches (20,13)/(50,13) and the market nook sofas
+      // (33,25)/(39,25) are REMOVED — "get rid of these old
+      // chairs". Plaza seating is the venue grid only now; the
+      // nook's rug + lamp + string lights stay over the stalls.
       // v1.2.2 (Item 1a): the audience grid is UNIFORM — five rows
       // at a strict 2-tile pitch, all south of the north street
       // (the old [10,13,...] split put a 3-gap at the street and
