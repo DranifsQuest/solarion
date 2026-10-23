@@ -511,8 +511,18 @@ const Mixer = {
       cdBox: $('cdBox'), chartBox: $('chartBox'),
       tipBox: $('tipBox'), tipAmt: $('tipAmt'), tipBtn: $('tipBtn'),
     };
-    $('musicBtn').onclick = () => { AE.ensure(); this.openPanel(); };
+    // UX overhaul: the nav button TOGGLES the mixer (it only opened
+    // before), the panel settles in via PanelFx, and it is draggable
+    // by its header (position kept for the session).
+    $('musicBtn').onclick = () => {
+      AE.ensure();
+      if (this.el.panel.classList.contains('hidden')) this.openPanel();
+      else this.closePanel();
+    };
     $('mixerClose').onclick = () => this.closePanel();
+    if (window.SolarionDrag) {
+      window.SolarionDrag.attach(this.el.panel, this.el.panel.querySelector('.mxHead'), 'mixer');
+    }
     $('mixPlay').onclick = () => this.auditionDraft();
     $('mixStop').onclick = () => AE.stop();
     $('mixSave').onclick = () => this.saveDraft();
@@ -550,7 +560,9 @@ const Mixer = {
   },
 
   openPanel() {
-    this.el.panel.classList.remove('hidden');
+    if (window.SolarionDrag) window.SolarionDrag.restore(this.el.panel, 'mixer');
+    if (window.PanelFx) window.PanelFx.show(this.el.panel);
+    else this.el.panel.classList.remove('hidden');
     this.hooks.send({ type: 'mix-list' });
     this.renderSlots();
     if (this.editSlot == null) this.selectSlot(1);
@@ -558,7 +570,8 @@ const Mixer = {
 
   closePanel() {
     AE.stop();
-    this.el.panel.classList.add('hidden');
+    if (window.PanelFx) window.PanelFx.hide(this.el.panel);
+    else this.el.panel.classList.add('hidden');
   },
 
   mixAtSlot(slot) { return this.myMixes.find(m => m.slot === slot) || null; },

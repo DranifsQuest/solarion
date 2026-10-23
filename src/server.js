@@ -882,6 +882,11 @@ wss.on('connection', (ws, req) => {
         // Phase 9: click/tap-to-move (server-routed). Table seats lock it too.
         if (!casino.isSeated(p.userId) && !blackjack.isSeated(p.userId)) game.handleMoveTo(p, msg.x, msg.y);
         break;
+      case 'enter-door':
+        // UX overhaul: click/tap a nearby door to walk through it.
+        // The server re-validates proximity; table seats lock it too.
+        if (!casino.isSeated(p.userId) && !blackjack.isSeated(p.userId)) game.handleEnterDoor(p);
+        break;
       case 'run':
         game.handleRun(p, msg.on);
         break;

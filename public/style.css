@@ -1,5 +1,6 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
-html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; background: #17100a; color: #eef; }
+html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; background: #17100a; color: #eef;
+  -webkit-font-smoothing: antialiased; }
 .hidden { display: none !important; }
 
 #app { height: 100%; }
@@ -117,15 +118,21 @@ html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; ba
    the whole bar. (Base rule here, .active override later — order
    matters.) */
 #hud button { pointer-events: auto; background: rgba(26,16,9,.75); border: 1px solid #6b4a2a;
-  color: #eef; padding: 6px 14px; border-radius: 999px; font-weight: 700; cursor: pointer; }
+  color: #eef; padding: 6px 14px; min-height: 40px; border-radius: 999px; font-weight: 700; cursor: pointer; }
 #hud button:hover { border-color: #ffd23f; color: #ffd23f; }
-#hud button:active { transform: scale(.94); }
+#hud button:active { transform: scale(.96); }
 #chatLog .sing { color: #ffb3e2; font-weight: 700; }
 
-#stagePanel { position: absolute; top: 56px; right: 10px; width: 230px;
-  background: rgba(26,16,9,.82); border: 1px solid #ffd23f; border-radius: 10px; padding: 10px; z-index: 5; }
+/* UX overhaul: the stage panel was one crammed 230px stack (queue,
+   perform row, CDs, tip box, chart all shoulder-to-shoulder). It is
+   now wider, breathes, and groups into headed sections (see the
+   .spSection system below). Bounded + scrollable (styled recipe). */
+#stagePanel { position: absolute; top: 56px; right: 10px; width: 272px; max-width: calc(100vw - 20px);
+  max-height: calc(100vh - 120px); overflow-y: auto;
+  background: rgba(26,16,9,.88); border: 1px solid rgba(255,210,63,.45); border-radius: var(--r-panel);
+  padding: var(--p-panel); z-index: 18; box-shadow: 0 10px 34px rgba(0,0,0,.55); }
 .spTitle { color: #ffd23f; font-weight: 800; letter-spacing: 2px; font-size: 13px; margin-bottom: 6px; }
-#queueList { font-size: 13px; line-height: 1.5; max-height: 130px; overflow-y: auto; margin-bottom: 8px; }
+#queueList { font-size: 13px; line-height: 1.55; max-height: 132px; overflow-y: auto; }
 .qNow { color: #ffb3e2; }
 .qEmpty { color: #cfa879; font-style: italic; }
 .qItem { color: #dfe6f5; }
@@ -190,10 +197,24 @@ html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; ba
 .genreBtn.active { background: #ffd23f; color: #2b1d12; border-color: #ffd23f; }
 /* ------------------------------------------------ Phase 4: studio + look */
 /* (Studio/Look buttons: styled by the shared #hud button pill.) */
-#studioPanel { position: absolute; left: 10px; bottom: 160px; width: 290px; max-height: 62vh; overflow-y: auto;
-  background: rgba(20,16,30,.9); border: 1px solid #ff8bd1; border-radius: 10px; padding: 10px; z-index: 5;
-  box-shadow: 0 8px 30px rgba(0,0,0,.6); }
+/* UX overhaul: the studio panel anchored at bottom:160px, growing
+   up over the top of the chat log. It now opens at the TOP-left
+   under the HUD, capped so its bottom edge can never reach the
+   chat (chat top sits ~166px above the viewport bottom; the cap
+   below reserves 246px for a ~20px air gap at phone heights), and
+   it is draggable by its header. Wider (290 -> 356px) and
+   sectioned — see .spSection below. */
+#studioPanel { position: absolute; left: 10px; top: 56px; width: 356px; max-width: calc(100vw - 20px);
+  max-height: calc(100vh - 246px); overflow-y: auto;
+  background: rgba(24,17,34,.93); border: 1px solid rgba(255,139,209,.45); border-radius: var(--r-panel);
+  padding: var(--p-panel); z-index: 18; box-shadow: 0 10px 34px rgba(0,0,0,.6); }
 #studioPanel .spRow { margin-bottom: 6px; }
+#studioPanel .spRow:last-child { margin-bottom: 0; }
+#studioPanel .spPair label { flex: 1; display: flex; align-items: center; gap: 6px; font-size: 13px; color: #d8b98f; }
+#studioPanel .spPair select { flex: 1; min-width: 0; }
+#studioPanel .spRoomCtl { align-items: center; }
+#studioPanel .spRoomCtl #homeSize { flex: 1; }
+#inventoryList { max-height: 188px; overflow-y: auto; padding-right: 2px; }
 #studioPanel .spRow input { flex: 1; min-width: 0; padding: 6px; border-radius: 6px;
   border: 1px solid #6b4a2a; background: #1d130b; color: #eef; font-size: 13px; }
 #studioFurnList { font-size: 12px; margin: 6px 0; }
@@ -201,9 +222,10 @@ html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; ba
 #inventoryList button { padding: 3px 8px; border-radius: 6px; border: 1px solid #6b4a2a;
   background: #3a2817; color: #eef; cursor: pointer; font-size: 12px; }
 #studioPanel .qItem button { margin-left: 4px; }
-#lookPanel { position: absolute; right: 10px; top: 56px; width: 330px; max-height: 86vh; overflow-y: auto;
-  background: rgba(43,29,18,.94); border: 1px solid #ffd23f; border-radius: 10px; padding: 12px; z-index: 20;
-  box-shadow: 0 8px 30px rgba(0,0,0,.6); }
+#lookPanel { position: absolute; right: 10px; top: 56px; width: 330px; max-width: calc(100vw - 20px);
+  max-height: 86vh; overflow-y: auto;
+  background: rgba(43,29,18,.94); border: 1px solid rgba(255,210,63,.45); border-radius: var(--r-panel);
+  padding: 14px; z-index: 20; box-shadow: 0 10px 34px rgba(0,0,0,.6); }
 #lookPreview { display: block; margin: 4px auto 8px; background: radial-gradient(ellipse at 50% 88%, #4a3220 0%, #1d130b 65%);
   border-radius: 10px; }
 #lookPanel .spRow button { padding: 7px 12px; border-radius: 8px; border: 1px solid #6b4a2a;
@@ -224,8 +246,8 @@ html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; ba
   max-width: min(1060px, 96vw); z-index: 5; }
 #clubTray.hidden { display: none; }
 .traySection { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: center;
-  background: rgba(24,14,10,.93); border: 2px solid #8a5a2b; border-radius: 12px; padding: 7px 10px;
-  box-shadow: 0 8px 24px rgba(0,0,0,.55); color: #ffe9c9; font-size: 13px; }
+  background: rgba(24,14,10,.93); border: 1px solid rgba(138,90,43,.75); border-radius: 12px; padding: 7px 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,233,196,.06); color: #ffe9c9; font-size: 13px; }
 .traySection.hidden { display: none; }
 .traySection button { background: #3a2817; color: #ffe9c9; border: 1.5px solid #8a5a2b; border-radius: 8px;
   padding: 5px 10px; cursor: pointer; font-weight: 700; }
@@ -335,9 +357,10 @@ html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; ba
 @keyframes areaIn { 0% { opacity: 0; transform: translateX(-50%) translateY(8px); }
   12% { opacity: 1; transform: translateX(-50%) translateY(0); }
   80% { opacity: 1; } 100% { opacity: 0; } }
-.sidePanel { position: absolute; top: 56px; right: 10px; width: 300px; max-width: calc(100vw - 20px);
+.sidePanel { position: absolute; top: 56px; right: 10px; width: 308px; max-width: calc(100vw - 20px);
   max-height: calc(100vh - 130px); overflow-y: auto; background: rgba(29,19,11,.94);
-  border: 1px solid #6b4a2a; border-radius: 12px; padding: 12px; z-index: 40; color: #eef; }
+  border: 1px solid rgba(138,106,69,.55); border-radius: var(--r-panel); padding: 14px; z-index: 40; color: #eef;
+  box-shadow: 0 10px 34px rgba(0,0,0,.55); }
 .sidePanel .spTitle { margin-bottom: 8px; }
 .navRow, .friendRow { display: flex; align-items: center; gap: 7px; padding: 6px 7px;
   border-radius: 8px; background: rgba(255,255,255,.05); margin-bottom: 5px; font-size: 13px; }
@@ -354,12 +377,16 @@ html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; ba
 #profileCard button { padding: 6px 10px; border-radius: 7px; border: 1px solid #8a6a45;
   background: #3a2a18; color: #eef; cursor: pointer; font-size: 12px; font-weight: 700; }
 #profileCard button:hover { border-color: #ffd23f; color: #ffd23f; }
+/* UX overhaul: the emote bar used to sit at z-index 60 — ABOVE the
+   Look panel (20) and the side panels (40) — so its buttons painted
+   over the right-hand rails. It now lives at 15: above the world and
+   the trays, below every panel that opens along the right edge. */
 #emoteBar { position: absolute; right: 10px; bottom: 150px; display: flex; flex-direction: column;
-  gap: 5px; z-index: 60; pointer-events: auto; }
+  gap: 5px; z-index: 15; pointer-events: auto; }
 #emoteBar button { width: 42px; height: 42px; border-radius: 50%; border: 1px solid #6b4a2a;
   background: rgba(29,19,11,.9); font-size: 19px; cursor: pointer; pointer-events: auto; }
 #emoteBar button:hover { border-color: #ffd23f; }
-#emoteBar button:active { transform: scale(.9); }
+#emoteBar button:active { transform: scale(.96); }
 #wakeScreen { position: fixed; inset: 0; z-index: 200;
   background: radial-gradient(ellipse at 50% 30%, rgba(255,170,80,.16), rgba(0,0,0,0) 55%), #140d07;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -381,9 +408,12 @@ html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; ba
 /* v1.1: your current vote lights up; counts ride the now-playing bar. */
 #nowPlaying button.mine { background: #ffd23f; border-color: #ffd23f; }
 #nowPlaying button:not(:disabled):hover { border-color: #ffd23f; }
-#nowPlaying button:not(:disabled):active { transform: scale(.9); }
+#nowPlaying button:not(:disabled):active { transform: scale(.96); }
 .npCounts { color: #ffd23f; font-weight: 700; }
-#tipBox { margin-top: 10px; border-top: 1px solid #6b4a2a; padding-top: 8px; }
+/* UX overhaul: the tip box joins the section system (was a
+   border-topped afterthought glued under the CD box). */
+#tipBox { margin-top: 10px; background: rgba(255,255,255,.03); border-radius: var(--r-in);
+  padding: 10px; box-shadow: inset 0 1px 0 rgba(255,233,196,.05); }
 @media (max-width: 640px) {
   .sidePanel { top: 104px; }
   #chatPanel { width: calc(100vw - 150px); }
@@ -455,7 +485,7 @@ html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; ba
   --sb-thumb: #a5763f;
   --sb-thumb-hover: #c08d4e;
 }
-#chatLog, #queueList, #cdBox, #chartBox, #create, #mixerPanel, #mixGrid,
+#chatLog, #queueList, #cdBox, #chartBox, #stagePanel, #create, #mixerPanel, #mixGrid,
 #studioPanel, #lookPanel, .sidePanel, #storeGrid, .scroll-slim {
   scrollbar-gutter: stable;
 }
@@ -467,45 +497,137 @@ html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; ba
    captures). (-moz-appearance in a supports query matches only
    Firefox.) */
 @supports (-moz-appearance: none) {
-  #chatLog, #queueList, #cdBox, #chartBox, #create, #mixerPanel, #mixGrid,
+  #chatLog, #queueList, #cdBox, #chartBox, #stagePanel, #create, #mixerPanel, #mixGrid,
   #studioPanel, #lookPanel, .sidePanel, #storeGrid, .scroll-slim {
     scrollbar-width: thin;
     scrollbar-color: var(--sb-thumb) var(--sb-track);
   }
 }
 #chatLog::-webkit-scrollbar, #queueList::-webkit-scrollbar, #cdBox::-webkit-scrollbar,
-#chartBox::-webkit-scrollbar, #create::-webkit-scrollbar, #mixerPanel::-webkit-scrollbar,
+#chartBox::-webkit-scrollbar, #stagePanel::-webkit-scrollbar, #create::-webkit-scrollbar, #mixerPanel::-webkit-scrollbar,
 #mixGrid::-webkit-scrollbar, #studioPanel::-webkit-scrollbar, #lookPanel::-webkit-scrollbar,
 .sidePanel::-webkit-scrollbar, #storeGrid::-webkit-scrollbar, .scroll-slim::-webkit-scrollbar {
   width: var(--sb-size); height: var(--sb-size);
 }
 #chatLog::-webkit-scrollbar-track, #queueList::-webkit-scrollbar-track, #cdBox::-webkit-scrollbar-track,
-#chartBox::-webkit-scrollbar-track, #create::-webkit-scrollbar-track, #mixerPanel::-webkit-scrollbar-track,
+#chartBox::-webkit-scrollbar-track, #stagePanel::-webkit-scrollbar-track, #create::-webkit-scrollbar-track, #mixerPanel::-webkit-scrollbar-track,
 #mixGrid::-webkit-scrollbar-track, #studioPanel::-webkit-scrollbar-track, #lookPanel::-webkit-scrollbar-track,
 .sidePanel::-webkit-scrollbar-track, #storeGrid::-webkit-scrollbar-track, .scroll-slim::-webkit-scrollbar-track {
   background: var(--sb-track); border-radius: 999px;
 }
 #chatLog::-webkit-scrollbar-thumb, #queueList::-webkit-scrollbar-thumb, #cdBox::-webkit-scrollbar-thumb,
-#chartBox::-webkit-scrollbar-thumb, #create::-webkit-scrollbar-thumb, #mixerPanel::-webkit-scrollbar-thumb,
+#chartBox::-webkit-scrollbar-thumb, #stagePanel::-webkit-scrollbar-thumb, #create::-webkit-scrollbar-thumb, #mixerPanel::-webkit-scrollbar-thumb,
 #mixGrid::-webkit-scrollbar-thumb, #studioPanel::-webkit-scrollbar-thumb, #lookPanel::-webkit-scrollbar-thumb,
 .sidePanel::-webkit-scrollbar-thumb, #storeGrid::-webkit-scrollbar-thumb, .scroll-slim::-webkit-scrollbar-thumb {
   background: var(--sb-thumb); border-radius: 999px;
 }
 #chatLog::-webkit-scrollbar-thumb:hover, #queueList::-webkit-scrollbar-thumb:hover, #cdBox::-webkit-scrollbar-thumb:hover,
-#chartBox::-webkit-scrollbar-thumb:hover, #create::-webkit-scrollbar-thumb:hover, #mixerPanel::-webkit-scrollbar-thumb:hover,
+#chartBox::-webkit-scrollbar-thumb:hover, #stagePanel::-webkit-scrollbar-thumb:hover, #create::-webkit-scrollbar-thumb:hover, #mixerPanel::-webkit-scrollbar-thumb:hover,
 #mixGrid::-webkit-scrollbar-thumb:hover, #studioPanel::-webkit-scrollbar-thumb:hover, #lookPanel::-webkit-scrollbar-thumb:hover,
 .sidePanel::-webkit-scrollbar-thumb:hover, #storeGrid::-webkit-scrollbar-thumb:hover, .scroll-slim::-webkit-scrollbar-thumb:hover {
   background: var(--sb-thumb-hover);
 }
 #chatLog::-webkit-scrollbar-button, #queueList::-webkit-scrollbar-button, #cdBox::-webkit-scrollbar-button,
-#chartBox::-webkit-scrollbar-button, #create::-webkit-scrollbar-button, #mixerPanel::-webkit-scrollbar-button,
+#chartBox::-webkit-scrollbar-button, #stagePanel::-webkit-scrollbar-button, #create::-webkit-scrollbar-button, #mixerPanel::-webkit-scrollbar-button,
 #mixGrid::-webkit-scrollbar-button, #studioPanel::-webkit-scrollbar-button, #lookPanel::-webkit-scrollbar-button,
 .sidePanel::-webkit-scrollbar-button, #storeGrid::-webkit-scrollbar-button, .scroll-slim::-webkit-scrollbar-button {
   display: none; width: 0; height: 0; -webkit-appearance: none; appearance: none; background: transparent;
 }
 #chatLog::-webkit-scrollbar-corner, #queueList::-webkit-scrollbar-corner, #cdBox::-webkit-scrollbar-corner,
-#chartBox::-webkit-scrollbar-corner, #create::-webkit-scrollbar-corner, #mixerPanel::-webkit-scrollbar-corner,
+#chartBox::-webkit-scrollbar-corner, #stagePanel::-webkit-scrollbar-corner, #create::-webkit-scrollbar-corner, #mixerPanel::-webkit-scrollbar-corner,
 #mixGrid::-webkit-scrollbar-corner, #studioPanel::-webkit-scrollbar-corner, #lookPanel::-webkit-scrollbar-corner,
 .sidePanel::-webkit-scrollbar-corner, #storeGrid::-webkit-scrollbar-corner, .scroll-slim::-webkit-scrollbar-corner {
   background: transparent;
 }
+
+/* ------------------------------------------------ UX overhaul (v1.8)
+   Zan's written spec, 2026-10-22. Four systems land here:
+
+   1. GEOMETRY — the nested-radius golden rule as tokens:
+      --r-in = --r-panel − --p-panel (inner radius equals outer
+      radius minus padding), with a 6px legibility floor. Sections
+      and rows inset by a panel's padding use --r-in; a panel's own
+      controls keep their own small radius (--r-ctl) — they are
+      shapes, not corners. Elevation comes from soft shadows; the
+      remaining 1px borders are low-alpha warm tints, not structure.
+   2. MOTION — a budget, not a garnish. Shared duration/easing
+      tokens. Click-opened panels settle in ONCE (small translate +
+      fade, ease-out); exits are softer + shorter. Transitions
+      always name their properties — `transition: all` is banned.
+      High-frequency controls (trays, chat, mixer cells, table
+      actions) get NO custom animation: instant, or a ≤150ms
+      colour/opacity shift. Buttons press at scale(.96) — never
+      below .95 — with .no-press as the opt-out.
+   3. SECTIONS — .spSection gives the stage + studio panels clear
+      semantic chunks with headings and real spacing.
+   4. TOUCH — primary buttons carry ≥40px hit areas; the two tiny
+      ✕ buttons grow invisible hit extensions via ::after. */
+:root {
+  --r-panel: 16px;
+  --p-panel: 12px;
+  --r-in: max(6px, calc(var(--r-panel) - var(--p-panel)));
+  --r-ctl: 8px;
+  --dur-fast: 120ms;
+  --dur-panel: 220ms;
+  --dur-exit: 160ms;
+  --ease-out: cubic-bezier(.22, .8, .36, 1);
+}
+
+/* ---- sections (stage + studio panels) */
+.spHead { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 2px; }
+.spHead .spTitle { margin-bottom: 0; }
+.spHeadSub { color: #cfa879; font-size: 11px; font-style: italic; white-space: nowrap; }
+.spSection { margin-top: 10px; padding: 10px; background: rgba(255,255,255,.03);
+  border-radius: var(--r-in); box-shadow: inset 0 1px 0 rgba(255,233,196,.05); }
+.spSectionTitle { color: #ffd23f; font-size: 11px; font-weight: 800; letter-spacing: 1.5px;
+  text-transform: uppercase; margin-bottom: 8px; }
+.spHint { color: #cfa879; font-size: 11.5px; margin-top: 6px; line-height: 1.4; }
+#stagePanel .spSection .spRow, #studioPanel .spSection .spRow { margin-bottom: 6px; }
+#stagePanel .spSection .spRow:last-child, #studioPanel .spSection .spRow:last-child { margin-bottom: 0; }
+/* the ONE primary action per panel reads at a glance */
+.spPrimary { box-shadow: 0 2px 10px rgba(255,210,63,.35); }
+/* rows/cards nested in panels follow the golden rule */
+.navRow, .friendRow { border-radius: var(--r-in); }
+
+/* ---- panel motion (driven by PanelFx in client.js) */
+.panel-enter { opacity: 0; translate: 0 8px; }
+.panel-enter.panel-in { opacity: 1; translate: 0 0;
+  transition: opacity var(--dur-panel) var(--ease-out), translate var(--dur-panel) var(--ease-out); }
+.panel-leaving { opacity: 0; translate: 0 4px;
+  transition: opacity var(--dur-exit) var(--ease-out), translate var(--dur-exit) var(--ease-out); }
+/* the studio's one staged entrance: sections start softly offset
+   and settle in sequence (delays set by PanelFx, ~100ms apart) */
+#studioPanel .spSection { transition: opacity var(--dur-panel) var(--ease-out), translate var(--dur-panel) var(--ease-out); }
+#studioPanel .spSection.fx-pre { opacity: 0; translate: 0 6px; }
+
+/* ---- dragging */
+.dragHandle { cursor: grab; touch-action: none; }
+.dragHandle:active { cursor: grabbing; }
+#mixerPanel.dragPos, #studioPanel.dragPos { margin: 0; }
+
+/* ---- buttons: colour-only feedback + the .96 press
+   (high-frequency families only — trays, cells and table actions
+   are deliberately NOT in the press list; their colour feedback is
+   the ≤150ms kind the spec allows) */
+#hud button, .spRow button, .mxRow button, .tabs button, .createBtns button,
+.slotBtn, .genreBtn, .loopBtn, .chip, .navRow button, .friendRow button,
+#profileCard button, .offerCard button, .mxHead button, #cdBox button, #chartBtn,
+#studioPanel #storeOpen {
+  transition: background-color var(--dur-fast) ease-out, border-color var(--dur-fast) ease-out,
+    color var(--dur-fast) ease-out, transform 100ms ease-out;
+}
+#hud button:active, .spRow button:active, .mxRow button:active, .tabs button:active,
+.createBtns button:active, .slotBtn:active, .genreBtn:active, .loopBtn:active,
+.chip:active, .navRow button:active, .friendRow button:active,
+#profileCard button:active, .offerCard button:active, .mxHead button:active,
+#cdBox button:active, #chartBtn:active {
+  transform: scale(.96);
+}
+.no-press:active { transform: none !important; }
+/* hit areas: panel + nav buttons stand at least 40px tall */
+.spRow button, .spRow select, .spRow input { min-height: 38px; }
+#hud button { min-height: 40px; }
+.traySection button { min-height: 36px; }
+/* tiny visible controls, extended invisible hit area */
+#slotGuiClose, .mxHead button { position: relative; }
+#slotGuiClose::after, .mxHead button::after { content: ''; position: absolute; inset: -8px; }

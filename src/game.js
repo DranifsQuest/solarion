@@ -12,7 +12,7 @@
  * The daily +100z login bonus is claimed atomically in the DB (see db.js).
  */
 
-const { MAPS, TILE, collides, gatewayAt, doorAt } = require('./maps');
+const { MAPS, TILE, collides, gatewayAt } = require('./maps');
 const { db, q } = require('./db');
 // The screen<->world direction mapping lives in the shared client
 // module (single source for the input + facing rules; it is written
@@ -38,6 +38,26 @@ function studioOf(sceneId) {
 const PLAYER_RADIUS = 12;
 const SPEED = 175;              // px per second
 const RUN_MULT = 1.55;          // Phase 9: run-toggle speed multiplier
+// UX overhaul — door affordance: a door's drawn frame is ~47px tall
+// on screen but its trigger was the single 32px tile beneath it, so
+// walking "through the doorway" often missed. The walk-in trigger
+// grows the tile by this pad on every side, and a player standing
+// within DOOR_CLICK_RANGE of a door's centre may click it to enter
+// ({type:'enter-door'} — the server re-validates the range).
+const DOOR_TRIGGER_PAD = 14;    // px grown around the door tile
+const DOOR_CLICK_RANGE = 190;   // px from door centre for click-to-enter
+
+function pointInPaddedRect(x, y, r, pad) {
+  return x >= r.x - pad && x < r.x + r.w + pad && y >= r.y - pad && y < r.y + r.h + pad;
+}
+
+/** Nearest door whose padded rect holds the point (or null). */
+function doorNear(map, x, y, pad) {
+  for (const d of map.doors || []) {
+    if (pointInPaddedRect(x, y, d, pad)) return d;
+  }
+  return null;
+}
 // Phase 9 — the world clock: a 12-minute day/night cycle, anchored
 // to a fixed epoch so every client (and the server) agrees on the
 // phase from the payload alone. Phase 0.0 = sunrise, 0.5 = sunset.
@@ -623,7 +643,7 @@ class Game {
     // return trip). Studio scenes have no other portals.
     if (map.isStudio) {
       const d = map.studio && map.studio.door;
-      if (d && p.x >= d.x && p.x < d.x + d.w && p.y >= d.y && p.y < d.y + d.h) {
+      if (d && pointInPaddedRect(p.x, p.y, d, DOOR_TRIGGER_PAD)) {
         if (Date.now() - p.lastGatewayAt >= 1500 && this.studioSystem) {
           this.studioSystem.handleLeave(p);
         }
@@ -631,7 +651,11 @@ class Game {
       return;
     }
     const gw = gatewayAt(map, p.x, p.y);
-    const dr = gw ? null : doorAt(map, p.x, p.y);
+    // UX overhaul: doors were a single exact tile — easy to brush
+    // past without triggering. The walk-in check uses the door rect
+    // grown by DOOR_TRIGGER_PAD on every side (map data unchanged;
+    // this runs only after real movement, so nobody idles through).
+    const dr = gw ? null : doorNear(map, p.x, p.y, DOOR_TRIGGER_PAD);
     if (!gw && !dr) return;
     // Debounce so a player standing on a spot can't bounce between maps.
     if (Date.now() - p.lastGatewayAt < 1500) return;
@@ -650,6 +674,15 @@ class Game {
       this.switchScene(p, target, back && back.spawnOut ? { spawn: back.spawnOut } : {});
       return;
     }
+    this.enterDoor(p, dr);
+  }
+
+  /**
+   * Run a door's transfer for a player — shared by the walk-in
+   * trigger (checkPortals) and click-to-enter (handleEnterDoor), so
+   * both paths behave identically (same debounce, same spawns).
+   */
+  enterDoor(p, dr) {
     // Phase 10: the Gateway's "My Home" door — its target is the
     // walker's OWN studio, resolved by the studio system.
     if (dr.target === 'studio:self') {
@@ -659,6 +692,34 @@ class Game {
     const target = MAPS[dr.target];
     if (!target) return;
     this.switchScene(p, target, { spawn: dr.targetSpawn || target.spawn });
+  }
+
+  /**
+   * { type:'enter-door' } — click/tap on a nearby door. The client
+   * hit-tests the DRAWN door (much bigger than its tile); the server
+   * trusts nothing: it finds the nearest door in the player's scene
+   * and only fires when the player stands within DOOR_CLICK_RANGE
+   * of its centre. Same transfer lock + debounce as walking in.
+   */
+  handleEnterDoor(p) {
+    if (p.transferUntil && Date.now() < p.transferUntil) return;
+    if (p.passedOutUntil && Date.now() < p.passedOutUntil) return;
+    if (Date.now() - p.lastGatewayAt < 1500) return;
+    const map = this.sceneFor(p.mapId);
+    if (!map) return;
+    if (map.isStudio) {
+      const d = map.studio && map.studio.door;
+      if (d && Math.hypot(p.x - (d.x + d.w / 2), p.y - (d.y + d.h / 2)) <= DOOR_CLICK_RANGE && this.studioSystem) {
+        this.studioSystem.handleLeave(p);
+      }
+      return;
+    }
+    let best = null, bestD = DOOR_CLICK_RANGE;
+    for (const d of map.doors || []) {
+      const dist = Math.hypot(p.x - (d.x + d.w / 2), p.y - (d.y + d.h / 2));
+      if (dist <= bestD) { bestD = dist; best = d; }
+    }
+    if (best) this.enterDoor(p, best);
   }
 
   // Back-compat alias (older callers/tests used the gateway name).
