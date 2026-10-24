@@ -37,8 +37,12 @@
  *     / AE.playLoop in public/mixer.js). The mixer EDITOR migrates v1
  *     tracks to cells on load by expanding the tiling into bubbles,
  *     which schedules identically.
- *   ≤5 tracks, ≤16 bars, bpm 70–160 → longest possible mix is
- *   16 bars at 70bpm ≈ 54.9s (under the 60s performance cap).
+ *   ≤5 tracks, ≤160 bars, bpm 70–160 → longest possible mix is
+ *   160 bars at 70bpm ≈ 549s (~9.1 min). Long mixes are by design
+ *   (X, 2026-10-23: "we need longer beats" — the old 16-bar cap
+ *   kept every set under a minute); stage SETS still cap at 5:00
+ *   flat (see stage.js PERF_MAX_MS). MAX_MIX_BYTES is sized for a
+ *   fully dense 160-bar mix: 5 lines × 160 cells ≈ 27KB of JSON.
  *
  * Tables (additive, created here — db.js schema is untouched):
  *   mixes          (user_id, slot 1–5, name, data JSON, updated_at)
@@ -50,9 +54,9 @@ const { db } = require('./db');
 const BPM_MIN = 70;
 const BPM_MAX = 160;
 const MAX_TRACKS = 5;
-const MAX_BARS = 16;
+const MAX_BARS = 160;
 const MAX_SLOTS = 5;
-const MAX_MIX_BYTES = 8192;
+const MAX_MIX_BYTES = 32768;
 const MAX_NAME_LEN = 40;
 
 // ---------------------------------------------------------------- loops
@@ -294,7 +298,9 @@ function getMix(userId, mixId) {
   return rowToMix(mq.byId.get(userId, mixId));
 }
 
-/** Mix length in ms: bars * 4 beats at bpm. Always ≤ ~54.9s by validation. */
+/** Mix length in ms: bars * 4 beats at bpm. Mixes may run ≈9.1 min
+ *  (160 bars @70bpm); stage performances cap the SET at 5:00 flat
+ *  (stage.js PERF_MAX_MS) — the mix itself is never truncated. */
 function mixDurationMs(data) {
   return Math.round(data.bars * 4 * (60000 / data.bpm));
 }

@@ -165,6 +165,26 @@ test('validateMix: v2 rejections — duplicate bar, range, unknown loop, line co
   assert.equal(dropped.data.tracks.length, 1);
 });
 
+test('validateMix: 160-bar mixes (X, 2026-10-23 — longer beats)', () => {
+  // the new ceiling validates, one past it does not
+  const atCap = musicMod.validateMix({ name: 'Long', bpm: 70, bars: 160, tracks: [{ cells: [{ loopId: 'pop-drums-1', bar: 159 }] }] });
+  assert.equal(atCap.ok, true, atCap.error || '160 bars should validate');
+  assert.equal(musicMod.mixDurationMs(atCap.data), 548571, '160 bars @70bpm = 548571ms (~9.1 min)');
+  const over = musicMod.validateMix({ name: 'Long', bpm: 70, bars: 161, tracks: [{ cells: [{ loopId: 'pop-drums-1', bar: 0 }] }] });
+  assert.equal(over.ok, false); assert.match(over.error, /1–160 bars/);
+  const cellOut = musicMod.validateMix({ name: 'Long', bpm: 70, bars: 160, tracks: [{ cells: [{ loopId: 'pop-drums-1', bar: 160 }] }] });
+  assert.equal(cellOut.ok, false); assert.match(cellOut.error, /Cell bar is out of range/);
+  // a FULLY DENSE 160-bar mix (5 lines × 160 cells) still fits the byte cap
+  const dense = {
+    name: 'Dense', bpm: 120, bars: 160,
+    tracks: Array.from({ length: 5 }, () => ({
+      cells: Array.from({ length: 160 }, (_, bar) => ({ loopId: 'pop-drums-1', bar })),
+    })),
+  };
+  const dv = musicMod.validateMix(dense);
+  assert.equal(dv.ok, true, dv.error || 'dense 160-bar mix should validate');
+});
+
 test('validateMix: v1 legacy lines still accepted verbatim; formats may mix', () => {
   const v1 = { name: 'Old', bpm: 112, bars: 8, tracks: [{ loopId: 'pop-drums-1', startBar: 0 }, { loopId: 'pop-bass-1', startBar: 2 }] };
   const a = musicMod.validateMix(JSON.parse(JSON.stringify(v1)));
@@ -223,6 +243,35 @@ test('playMix plan: many bubbles per line, one pass each, takeover clips chained
   AE.playLoop = (l, t, bpm, clipEnd) => legacy.push({ id: l.id, t, clipEnd });
   AE.playMix({ name: 'L', bpm: 120, bars: 8, tracks: [{ loopId: 'pop-pad-1', startBar: 2 }] }, T0);
   assert.deepEqual(legacy.map(c => c.t), [T0 + 4, T0 + 12], 'the same content as a v1 line still tiles at bars 2 and 6');
+});
+
+test('playMix plan: the performance cap clips the whole room at one instant', () => {
+  const { AE, Mixer } = loadMixer();
+  AE.ensure();
+  const calls = [];
+  AE.playLoop = (l, t, bpm, clipEnd) => calls.push({ id: l.id, t, clipEnd });
+  // Same plan as the uncapped test (bpm 120 -> bar = 2s), but the
+  // set is capped at 5s: the bar-0 pass is clipped at the cap (not
+  // by the next bubble at T0+6), the pad at bar 2 (T0+4) is clipped
+  // at the cap, and the bubbles at bars 3/4 (T0+6/T0+8) never sound.
+  const mix = {
+    name: 'Plan', bpm: 120, bars: 8,
+    tracks: [
+      { cells: [{ loopId: 'pop-drums-1', bar: 0 }, { loopId: 'pop-drums-1', bar: 3 }, { loopId: 'pop-drums-1', bar: 4 }] },
+      { cells: [{ loopId: 'pop-pad-1', bar: 2 }] },
+    ],
+  };
+  const end = AE.playMix(mix, T0, 5);
+  assert.equal(end, T0 + 5, 'a capped playMix returns the cap end');
+  assert.deepEqual(calls, [
+    { id: 'pop-drums-1', t: T0, clipEnd: T0 + 5 },
+    { id: 'pop-pad-1', t: T0 + 4, clipEnd: T0 + 5 },
+  ], 'bubbles at/past the cap are never scheduled; the last passes clip at the cap');
+  // No cap (audition/radio): the full mix is scheduled, as before.
+  const full = [];
+  AE.playLoop = (l, t, bpm, clipEnd) => full.push({ id: l.id, t, clipEnd });
+  assert.equal(AE.playMix(mix, T0), T0 + 16, 'uncapped playMix still returns the full mix end');
+  assert.equal(full.length, 4, 'uncapped playMix schedules every bubble');
 });
 
 // ------------------------------------------------------------ engine events
