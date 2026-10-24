@@ -930,6 +930,9 @@ wss.on('connection', (ws, req) => {
         game.handleChat(p, msg.text);
         break;
       case 'interact': {
+        // v1.9.1: E near a present visitor (Orenius / Agent Sims)
+        // opens their dialogue instead of sitting/fishing.
+        if (visitors.interact(p)) break;
         // Sitting. Poker/blackjack GAME seats are managed by their
         // systems (the tray's Stand / Cash out) — but v1.1.1: E at
         // a table first sits you down as a spectator and pops the

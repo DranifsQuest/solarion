@@ -1824,6 +1824,8 @@ function setMap(m, you, chat) {
   dancerLive.clear(); // v1.6: no stale followers across a map change
   visitorLive.clear(); // v1.9: ... nor stale visitors / crew / portals
   sceneActors.clear();
+  vignetteLive.clear(); // v1.9.2: ... nor a stale vision
+  vomitFx.clear();
   scenePortalOpen = false;
   closeVisitorPanel();
   hideSceneCaption();
@@ -1922,6 +1924,26 @@ function handle(m) {
       break;
     }
     case 'scene-line': showSceneCaption(m.name, m.text); break;
+    case 'vignette-state': {
+      // v1.9.2: the Elsewhere arrival vision — figures streamed to
+      // the arriving player only. An empty cast ends the vision.
+      const seen = new Set();
+      for (const a of m.actors || []) {
+        seen.add(a.id);
+        const prev = vignetteLive.get(a.id);
+        vignetteLive.set(a.id, {
+          name: a.name, x: a.x, y: a.y, dir: a.dir, look: a.look,
+          rx: prev ? prev.rx : a.x, ry: prev ? prev.ry : a.y,
+          moving: prev ? prev.moving : false,
+        });
+      }
+      for (const id of [...vignetteLive.keys()]) if (!seen.has(id)) vignetteLive.delete(id);
+      break;
+    }
+    case 'vignette-step': {
+      if (m.step === 'vomit') vomitFx.set(m.userId, performance.now());
+      break;
+    }
     case 'dancer-state': {
       // v1.6 (the follow): the server streams the dancers' live
       // positions while any of them is off her stage. A 'stage'
@@ -3185,6 +3207,10 @@ const dancerLive = new Map();
 const visitorLive = new Map();
 const sceneActors = new Map();
 let scenePortalOpen = false;
+// v1.9.2: the Elsewhere vignette's figures (mine alone — a vision)
+// and the throw-up effect clock, keyed by userId.
+const vignetteLive = new Map();
+const vomitFx = new Map();
 
 function drawClubPass(now) {
   const cl = mapDef.club;
@@ -3388,6 +3414,13 @@ function draw() {
   }
   // v1.9: the same easing for the Threshold's crew.
   for (const e of sceneActors.values()) {
+    const dx = e.x - e.rx, dy = e.y - e.ry;
+    e.moving = Math.abs(dx) + Math.abs(dy) > 1.2;
+    e.rx += dx * 0.35;
+    e.ry += dy * 0.35;
+  }
+  // v1.9.2: ... and for the vignette's figures.
+  for (const e of vignetteLive.values()) {
     const dx = e.x - e.rx, dy = e.y - e.ry;
     e.moving = Math.abs(dx) + Math.abs(dy) > 1.2;
     e.rx += dx * 0.35;
@@ -3908,6 +3941,16 @@ function draw() {
       ...e.look,
     });
   }
+  for (const [aId, e] of vignetteLive) {
+    renderPos.set(`vig:${aId}`, { x: e.rx, y: e.ry, moving: e.moving });
+    npcEntities.push({
+      id: `vig:${aId}`, npc: aId, name: e.name,
+      x: e.x, y: e.y, dir: e.dir,
+      seated: false, seatId: null, drinks: 0, puffs: 0, fallen: false,
+      hippy: false, performing: false, emote: null, casting: false, heldFish: null,
+      ...e.look,
+    });
+  }
   const sorted = [...players, ...npcEntities].sort((a, b) => (a.x + a.y) - (b.x + b.y));
   for (const p of sorted) {
     const rp = renderPos.get(p.id);
@@ -4116,6 +4159,32 @@ function draw() {
     // v1.1.1: the catch hold-up — the fish, overhead, for its second.
     if (p.heldFish) {
       drawFishShape(sx, sy - dh - 30 - bob, p.heldFish, 1.05, Math.sin(now / 90 + p.id) * 0.14);
+    }
+
+    // v1.9.2: the Elsewhere sickness — a 🤢 bubble and a green
+    // splash at the feet while the body revolts (2.6s).
+    {
+      const vAt = vomitFx.get(p.id);
+      if (vAt !== undefined) {
+        const age = now - vAt;
+        if (age > 2600) vomitFx.delete(p.id);
+        else {
+          ctx.save();
+          ctx.font = '15px system-ui';
+          ctx.textAlign = 'center';
+          ctx.fillText('🤢', sx, sy - dh - 26 - bob);
+          const splatA = Math.min(1, age / 350) * (age > 2100 ? (2600 - age) / 500 : 1);
+          ctx.globalAlpha = Math.max(0, splatA);
+          ctx.fillStyle = '#39d353';
+          ctx.beginPath(); ctx.ellipse(sx + 4, sy + 3, 11, 4.5, 0, 0, Math.PI * 2); ctx.fill();
+          for (let dI = 0; dI < 5; dI++) {
+            const dx = Math.sin(p.id * 7.3 + dI * 2.4) * (6 + dI * 2.2);
+            const dy = Math.abs(Math.cos(p.id * 3.1 + dI * 1.7)) * 3;
+            ctx.beginPath(); ctx.arc(sx + 4 + dx, sy + 2 + dy, 1.6, 0, Math.PI * 2); ctx.fill();
+          }
+          ctx.restore();
+        }
+      }
     }
 
     // speech bubble (Phase 9: fades out over its last 900ms)

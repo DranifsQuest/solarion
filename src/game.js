@@ -236,6 +236,8 @@ class Game {
       seated: null,       // Phase B: { id, dir, kind } while sitting, else null
       captive: false,     // v1.9: the Threshold's chair — movement locked until the portal opens
       visitorTalk: null,  // v1.9: { id, at } while a visitor dialogue is open
+      vignette: null,     // v1.9.2: { startedAt, fired } during the Elsewhere arrival vignette
+      vignetteFallenUntil: 0, // v1.9.2: the vignette's sleep, drawn with the fallen pose
       vice: { drinks: { count: 0, at: 0 }, puffs: { count: 0, at: 0 } }, // Phase B amendment
       passedOutUntil: 0,  // Phase B amendment: epoch-ms while out cold
       hippyUntil: 0,      // Phase B amendment: epoch-ms while hippified
@@ -348,7 +350,8 @@ class Game {
       // Phase B amendment — vice state, visible to everyone in scene.
       drinks: this.viceCount(p, 'drinks', now),
       puffs: this.viceCount(p, 'puffs', now),
-      fallen: Boolean(p.passedOutUntil && now < p.passedOutUntil),
+      fallen: Boolean((p.passedOutUntil && now < p.passedOutUntil)
+        || (p.vignetteFallenUntil && now < p.vignetteFallenUntil)),
       hippy,
       // v1.1.1 fishing: a line in the water, and the just-caught
       // fish held overhead while its second lasts (room-visible).
@@ -818,6 +821,8 @@ class Game {
     p.seated = null;      // ... or a chair
     p.captive = false;    // ... or the Threshold's hold (v1.9) — the
                           // visitor system re-seats arrivals itself
+    p.vignette = null;    // ... or an Elsewhere vignette (v1.9.2)
+    p.vignetteFallenUntil = 0;
     p.path = null;        // ... or a walking route
     // Phase B: EVERY scene transfer runs the fixed load-screen window.
     // The server places the player immediately and locks movement for
@@ -1134,8 +1139,10 @@ class Game {
   handleInteract(p) {
     if (p.transferUntil && Date.now() < p.transferUntil) return;
     if (p.passedOutUntil && Date.now() < p.passedOutUntil) return; // out cold
-    if (p.captive) { // v1.9: the Threshold's chair does not let go
-      this.send(p, { type: 'notice', text: 'The chair holds you. Whatever they are building, it is not finished.' });
+    if (p.captive) { // v1.9: a hold does not let go
+      this.send(p, { type: 'notice', text: p.mapId === 'elsewhere'
+        ? 'Your body will not obey you.'
+        : 'The chair holds you. Whatever they are building, it is not finished.' });
       return;
     }
     if (p.seated) {

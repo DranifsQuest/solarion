@@ -174,10 +174,25 @@ test('the visitors: summon rights, two fruits, the chair, the portal, the code',
   await sleep(300);
   assert.ok(!lastMap(guest) || lastMap(guest).map.id === 'the-gateway', 'blue fruit: still in the Gateway');
 
+  // (b2) v1.9.1: the E key talks too — same dialogue, no click.
+  const dlgCount = () => guest.client.msgs.filter(m => m.type === 'visitor-dialogue' && m.id === 'orenius').length;
+  const endCount = () => guest.client.msgs.filter(m => m.type === 'visitor-dialogue-end' && m.id === 'orenius').length;
+  const dBefore = dlgCount(); const eBefore = endCount();
+  guest.client.send({ type: 'interact' });
+  const edlg = await waitFor(
+    () => { const l = guest.client.msgs.filter(m => m.type === 'visitor-dialogue' && m.id === 'orenius'); return l.length > dBefore ? l[l.length - 1] : null; },
+    5000, 'E key opens the Orenius dialogue');
+  assert.equal(edlg.mode, 'fruit');
+  guest.client.send({ type: 'visitor-choice', choice: 'blue' });
+  await waitFor(
+    () => endCount() > eBefore,
+    5000, 'blue fruit ends the E talk');
+  await sleep(300);
+
   // (c) the red fruit — the chair, the lock, the show.
   guest.client.send({ type: 'visitor-talk', id: 'orenius' });
   await waitFor(
-    () => guest.client.msgs.filter(m => m.type === 'visitor-dialogue' && m.id === 'orenius').length >= 2,
+    () => guest.client.msgs.filter(m => m.type === 'visitor-dialogue' && m.id === 'orenius').length >= 3,
     5000, 'Orenius dialogue reopens');
   guest.client.send({ type: 'visitor-choice', choice: 'red' });
   const thMap = await waitFor(
@@ -213,6 +228,30 @@ test('the visitors: summon rights, two fruits, the chair, the portal, the code',
   await waitFor(
     () => guest.client.msgs.filter(m => m.type === 'map' && m.map.id === 'elsewhere').pop(),
     8000, 'through the portal: Elsewhere');
+
+  // (d2) v1.9.2: the arrival vignette — two figures waiting, the
+  // bald man's line, the sickness, the sleep, waking alone.
+  const vig = await waitFor(
+    () => guest.client.msgs.filter(m => m.type === 'vignette-state' && (m.actors || []).length === 2).pop(),
+    5000, 'the vignette figures are there');
+  assert.deepEqual(vig.actors.map(a => a.id).sort(), ['orenius', 'trine']);
+  await waitFor(
+    () => guest.client.msgs.filter(m => m.type === 'scene-line' && /going to pop/.test(m.text)).pop(),
+    5000, "the bald man's line");
+  await waitFor(
+    () => guest.client.msgs.filter(m => m.type === 'vignette-step' && m.step === 'vomit' && m.userId === guest.id).pop(),
+    5000, 'the sickness');
+  await waitFor(() => { const s = selfOf(guest); return s && s.fallen ? s : null; },
+    5000, 'asleep on the green floor (fallen in snapshots)');
+  await waitFor(
+    () => guest.client.msgs.filter(m => m.type === 'vignette-state' && (m.actors || []).length === 0).pop(),
+    5000, 'the vision empties');
+  await waitFor(
+    () => guest.client.msgs.filter(m => m.type === 'vignette-step' && m.step === 'wake' && m.userId === guest.id).pop(),
+    5000, 'the wake');
+  await waitFor(() => { const s = selfOf(guest); return s && !s.fallen ? s : null; },
+    5000, 'awake and upright');
+
   guest.client.send({ type: 'navigator' });
   const nav = await waitFor(
     () => guest.client.msgs.filter(m => m.type === 'navigator').pop(),
@@ -227,6 +266,13 @@ test('the visitors: summon rights, two fruits, the chair, the portal, the code',
     5000, 'navigate-home out of Elsewhere is refused');
   await sleep(250);
   assert.equal(lastMap(guest).map.id, 'elsewhere', 'still in Elsewhere after the refused warp');
+
+  // (e0) E with Sims absent opens nothing (falls through to the
+  // ordinary interact path).
+  guest.client.send({ type: 'interact' });
+  await sleep(700);
+  assert.ok(!guest.client.msgs.some(m => m.type === 'visitor-dialogue' && m.id === 'sims'),
+    'E in an empty Elsewhere opens no dialogue');
 
   // (e) Agent Sims and the code.
   owner.client.send({ type: 'visitor-summon', id: 'sims' });

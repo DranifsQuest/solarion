@@ -1260,7 +1260,7 @@ function buildVerdantHollow() {
 // spec 2026-10-23). Not a place you walk to: no doors, no gateways,
 // hidden from the Navigator. A visitor who eats the red fruit wakes
 // here, SEATED in the chair, while the crew (src/visitors.js)
-// spends four minutes building a portal out of the world. The
+// spends two minutes building a portal out of the world. The
 // portal stands at the north wall, in front of the console row.
 // ------------------------------------------------------------------
 function buildThreshold() {
@@ -1301,7 +1301,7 @@ function buildElsewhere() {
   const id = 'elsewhere';
   return {
     id, name: 'Elsewhere', tiles: gridOf(g), tileSize: TILE,
-    floor: '#26262b', floorAlt: '#26262b', wall: '#0c0c0f',
+    floor: '#12271a', floorAlt: '#16301f', wall: '#060d08',
     spawn: { x: cx(13), y: cy(10) },
     gateways: [],
     doors: [],
