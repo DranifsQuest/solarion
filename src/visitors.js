@@ -10,7 +10,7 @@
  *    the owner summons him). Talk to him and he offers two fruits.
  *    The BLUE fruit ends the conversation. The RED fruit takes you
  *    to the Threshold: a small room where you wake SEATED in a
- *    chair while a four-person crew spends four minutes building
+ *    chair while a four-person crew spends two minutes building
  *    a portal out of the world. When it opens you walk through —
  *    to Elsewhere, a blank world with no doors back.
  *
@@ -29,7 +29,7 @@
  * (the top-up owners list does NOT apply here — X said him only).
  *
  * The Threshold scene is data: BEATS fire on a timeline scaled by
- * SCENE_MS (four minutes live; compressed under SOLARION_TEST so
+ * SCENE_MS (two minutes live — X cut it from four on 2026-10-24; compressed under SOLARION_TEST so
  * the gate can watch a whole escape in seconds). Actors are
  * streamed like the visitors (scene-state) and their lines ride
  * scene-line captions. A late arrival joins the running show from
@@ -45,7 +45,7 @@ const VISIT_LEN_MS = 3 * 60 * 1000;         // a three-minute visit
 const RETURN_CODE = '571';
 const SUMMONER = 'zantheon';                // X, and only X
 const TALK_RANGE = 110;                     // px — close enough to speak
-const SCENE_MS = process.env.SOLARION_TEST ? 8000 : 4 * 60 * 1000;
+const SCENE_MS = process.env.SOLARION_TEST ? 8000 : 2 * 60 * 1000;
 const PORTAL_RANGE = 46;                    // px — step in to leave
 
 const ORENIUS_LOOK = {
@@ -255,6 +255,17 @@ class VisitorSystem {
 
   liveTalk(p, id) {
     return p.visitorTalk && p.visitorTalk.id === id && this.nearVisitor(p, id);
+  }
+
+  // v1.9.1: the E key (and the mobile interact buttons) route here
+  // first — standing near a present visitor, E talks instead of
+  // sitting/fishing. A seated player keeps E = stand up.
+  interact(p) {
+    if (p.seated) return false;
+    for (const id of Object.keys(VISITORS)) {
+      if (this.nearVisitor(p, id)) { this.talk(p, id); return true; }
+    }
+    return false;
   }
 
   choice(p, choice) {

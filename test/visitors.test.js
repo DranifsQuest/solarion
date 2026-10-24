@@ -174,10 +174,25 @@ test('the visitors: summon rights, two fruits, the chair, the portal, the code',
   await sleep(300);
   assert.ok(!lastMap(guest) || lastMap(guest).map.id === 'the-gateway', 'blue fruit: still in the Gateway');
 
+  // (b2) v1.9.1: the E key talks too — same dialogue, no click.
+  const dlgCount = () => guest.client.msgs.filter(m => m.type === 'visitor-dialogue' && m.id === 'orenius').length;
+  const endCount = () => guest.client.msgs.filter(m => m.type === 'visitor-dialogue-end' && m.id === 'orenius').length;
+  const dBefore = dlgCount(); const eBefore = endCount();
+  guest.client.send({ type: 'interact' });
+  const edlg = await waitFor(
+    () => { const l = guest.client.msgs.filter(m => m.type === 'visitor-dialogue' && m.id === 'orenius'); return l.length > dBefore ? l[l.length - 1] : null; },
+    5000, 'E key opens the Orenius dialogue');
+  assert.equal(edlg.mode, 'fruit');
+  guest.client.send({ type: 'visitor-choice', choice: 'blue' });
+  await waitFor(
+    () => endCount() > eBefore,
+    5000, 'blue fruit ends the E talk');
+  await sleep(300);
+
   // (c) the red fruit — the chair, the lock, the show.
   guest.client.send({ type: 'visitor-talk', id: 'orenius' });
   await waitFor(
-    () => guest.client.msgs.filter(m => m.type === 'visitor-dialogue' && m.id === 'orenius').length >= 2,
+    () => guest.client.msgs.filter(m => m.type === 'visitor-dialogue' && m.id === 'orenius').length >= 3,
     5000, 'Orenius dialogue reopens');
   guest.client.send({ type: 'visitor-choice', choice: 'red' });
   const thMap = await waitFor(
@@ -227,6 +242,13 @@ test('the visitors: summon rights, two fruits, the chair, the portal, the code',
     5000, 'navigate-home out of Elsewhere is refused');
   await sleep(250);
   assert.equal(lastMap(guest).map.id, 'elsewhere', 'still in Elsewhere after the refused warp');
+
+  // (e0) E with Sims absent opens nothing (falls through to the
+  // ordinary interact path).
+  guest.client.send({ type: 'interact' });
+  await sleep(700);
+  assert.ok(!guest.client.msgs.some(m => m.type === 'visitor-dialogue' && m.id === 'sims'),
+    'E in an empty Elsewhere opens no dialogue');
 
   // (e) Agent Sims and the code.
   owner.client.send({ type: 'visitor-summon', id: 'sims' });
