@@ -354,22 +354,32 @@ const AE = {
    * line over (restart semantics; see playLoop's clipEnd). A pass is
    * NOT clipped at the mix's end: the last bubble rings out its full
    * length, exactly as a v1 track's final tile always did.
+   *
+   * `capSec` (performances only): nothing sounds at or past
+   * t0 + capSec — bubbles starting beyond it are never scheduled
+   * and the last sounding pass is clipped there, so a set cut at
+   * the server's 5:00 performance cap falls silent in the whole
+   * room at the same instant. Audition and home radios pass no
+   * cap and always play the full mix.
    */
-  playMix(mix, t0) {
+  playMix(mix, t0, capSec) {
     const loopsById = Mixer.loopsById;
     const stepDur = (60 / mix.bpm) / 4;
     const barDur = stepDur * 16;
+    const capEnd = (typeof capSec === 'number' && capSec > 0) ? t0 + capSec : Infinity;
     for (const tr of mix.tracks || []) {
       const cells = Mixer.trackCells(tr, mix.bars);
       for (let i = 0; i < cells.length; i++) {
         const loop = loopsById.get(cells[i].loopId);
         if (!loop) continue;
         const start = t0 + cells[i].bar * barDur;
-        const clipEnd = i + 1 < cells.length ? t0 + cells[i + 1].bar * barDur : Infinity;
+        if (start >= capEnd) continue;
+        const nextStart = i + 1 < cells.length ? t0 + cells[i + 1].bar * barDur : Infinity;
+        const clipEnd = Math.min(nextStart, capEnd);
         this.playLoop(loop, start, mix.bpm, clipEnd);
       }
     }
-    return t0 + mix.bars * barDur;
+    return Math.min(t0 + mix.bars * barDur, capEnd);
   },
 
   // ---------------------------------------------------------------
@@ -399,10 +409,12 @@ const AE = {
       this.stop();
       if (elapsed <= 50) {
         // On time: start on the shared grid point, exactly synced.
-        this.playMix(mix, this.ctx.currentTime + Math.max(0.03, (startAt - now) / 1000));
+        // durationMs is the server's (5:00-capped) set length — the
+        // playback clip that ends the set for the whole room at once.
+        this.playMix(mix, this.ctx.currentTime + Math.max(0.03, (startAt - now) / 1000), durationMs / 1000);
       } else {
         // Late wake: play the set from the top, now.
-        this.playMix(mix, this.ctx.currentTime + 0.05);
+        this.playMix(mix, this.ctx.currentTime + 0.05, durationMs / 1000);
       }
       return true;
     };
@@ -451,7 +463,7 @@ const AE = {
 const Mixer = {
   loops: [],
   loopsById: new Map(),
-  limits: { bpmMin: 70, bpmMax: 160, maxBars: 16, maxTracks: 5 },
+  limits: { bpmMin: 70, bpmMax: 160, maxBars: 160, maxTracks: 5 },
   myMixes: [],               // [{id, slot, name, data, updatedAt}]
   editSlot: null,
   // draft tracks are ALWAYS v2 lines while editing: a fixed row per

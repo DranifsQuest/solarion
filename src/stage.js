@@ -39,6 +39,12 @@ const zOf = db.prepare('SELECT zcoins FROM avatars WHERE user_id = ?');
 const START_DELAY_MS = 1200;      // clients get this long to schedule playback
 const GRACE_MS = 10_000;          // voting window after the music stops
 const COOLDOWN_MS = 60_000;       // performer re-queue cooldown
+// X (2026-10-23): a set never runs past 5:00, however long the mix
+// is. Mixes may run to 160 bars (≈9 min at 70bpm) for CDs/radios,
+// but on stage the set is cut at the cap — the broadcast durationMs
+// is the capped length, so every client clips its playback at the
+// same instant and the room falls silent together.
+const PERF_MAX_MS = 300_000;      // 5:00 flat, tempo-independent
 const TICK_MS = 250;
 
 class Stage {
@@ -242,7 +248,7 @@ class Stage {
       return;
     }
     const now = Date.now();
-    const durationMs = music.mixDurationMs(entry.mixData);
+    const durationMs = Math.min(music.mixDurationMs(entry.mixData), PERF_MAX_MS);
     const startAt = now + START_DELAY_MS;
     // Walk the performer up onto the stage (soul doc §9.2 — the
     // procession matters; snapping to centre stage is our version).

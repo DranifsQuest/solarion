@@ -196,8 +196,8 @@ test('mix save/load round-trip and validation rejections', { timeout: 30000 }, a
   // bad bpm rejected
   await saveExpectError(u, 2, { ...SHORT_MIX, bpm: 300 }, /Tempo/);
   await saveExpectError(u, 2, { ...SHORT_MIX, bpm: 40 }, /Tempo/);
-  // oversized payload rejected (>8KB JSON)
-  const big = { ...SHORT_MIX, name: 'Big', junk: 'x'.repeat(9000) };
+  // oversized payload rejected (>32KB JSON)
+  const big = { ...SHORT_MIX, name: 'Big', junk: 'x'.repeat(40000) };
   await saveExpectError(u, 2, big, /too large/);
   // fill remaining slots 2–5, then verify cap: a 5-slot account listing
   for (let s = 2; s <= 5; s++) await saveMix(u, s, { ...SHORT_MIX, name: `Filler ${s}` });
@@ -467,5 +467,31 @@ test('stage lockout (Item A): platform is the performer\'s alone mid-set, open b
   const bUp = await waitFor(() => posOf(b, b.id), 5000, 'B position after release');
   assert.ok(bUp.y < STAGE.y1, `after the set, B steps onto the platform (y=${bUp.y})`);
 
+  a.client.ws.close(); b.client.ws.close();
+});
+
+test('stage: a set never runs past 5:00, however long the mix is (X, 2026-10-23)', { timeout: 90000 }, async () => {
+  const a = await makeUser('marathon_p2');
+  const b = await makeUser('marathonfan_p2');
+  // 160 bars @70bpm = 548571ms of music — a legal mix since the
+  // 160-bar raise, and exactly the case the performance cap exists
+  // for. (Kept LAST in this file: the capped set still occupies the
+  // Bay stage for 5 minutes of server time, and nothing after this
+  // test needs the stage. We assert the start broadcast and leave;
+  // the finalize path is the same one every short set exercises.)
+  const LONG_MIX = {
+    name: 'Marathon', bpm: 70, bars: 160,
+    tracks: [{ loopId: 'pop-drums-1', startBar: 0 }],
+  };
+  const mix = await saveMix(a, 1, LONG_MIX);
+  assert.deepEqual(mix.data, LONG_MIX, 'the 160-bar mix itself saves untruncated');
+  await prepCd(a, mix.id);
+  await toBay(a);
+  await toBay(b);
+  await sleep(300);
+  a.client.send({ type: 'stage-join', mixId: mix.id });
+  const startB = await waitFor(() => b.client.msgs.filter(m => m.type === 'performance-start').pop(), 8000, 'B performance-start (marathon)');
+  assert.deepEqual(startB.mix, LONG_MIX, 'the audience receives the FULL mix — clients clip playback, data is never cut');
+  assert.equal(startB.durationMs, 300000, 'the set length is capped at exactly 5:00 (300000ms), tempo-independent');
   a.client.ws.close(); b.client.ws.close();
 });
