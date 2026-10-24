@@ -151,7 +151,7 @@ async function main() {
     try { const r = await fetch(`${BASE}/health`); if (r.ok) { health = await r.json(); break; } } catch (e) {}
     await sleep(3000);
   }
-  report('health: service answers, phase 10, eleven maps', !!(health && health.ok && health.phase === 10 && Object.keys(health.maps).length === 11),
+  report('health: service answers, phase 10, thirteen maps', !!(health && health.ok && health.phase === 10 && Object.keys(health.maps).length === 13),
     health ? `uptime ${health.uptime_s}s, phase ${health.phase}` : 'no response in 150s');
   if (!health) return finish();
 
