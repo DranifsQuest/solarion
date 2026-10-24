@@ -322,6 +322,99 @@ function tryDoorAt(w) {
   return false;
 }
 
+/** v1.9: a click on a present visitor opens the conversation (the
+ *  server re-validates presence + proximity). A click on a far
+ *  visitor returns false so the tap-to-move walk closes the gap —
+ *  the second click, in range, talks. */
+function tryVisitorAt(w) {
+  const mine = me ? renderPos.get(me.id) : null;
+  if (!mine) return false;
+  for (const [vId, e] of visitorLive) {
+    if (Math.hypot(w.x - e.x, w.y - e.y) > 40) continue;
+    if (Math.hypot(mine.x - e.x, mine.y - e.y) > 190) return false;
+    send({ type: 'visitor-talk', id: vId });
+    return true;
+  }
+  return false;
+}
+
+// ------------------------------------------------------------------
+// v1.9: the visitor dialogue panel + the Threshold's captions.
+// One panel, two modes: fruit (Orenius) and code (Agent Sims).
+// ------------------------------------------------------------------
+let visitorDialogueId = null;
+let captionTimer = null;
+
+function openVisitorPanel(m) {
+  visitorDialogueId = m.id;
+  $('visitorName').textContent = m.name;
+  $('visitorLines').innerHTML = (m.lines || [])
+    .map(l => `<p><b>${esc(l.name)}:</b> ${esc(l.text)}</p>`).join('');
+  $('visitorFruit').classList.toggle('hidden', m.mode !== 'fruit');
+  $('visitorCode').classList.toggle('hidden', m.mode !== 'code');
+  $('visitorPanel').classList.remove('hidden');
+  if (m.mode === 'code') {
+    $('visitorCodeInput').value = '';
+    setTimeout(() => $('visitorCodeInput').focus(), 30);
+  }
+}
+
+function appendVisitorLine(name, text) {
+  if ($('visitorPanel').classList.contains('hidden')) return;
+  $('visitorLines').insertAdjacentHTML('beforeend', `<p><b>${esc(name)}:</b> ${esc(text)}</p>`);
+  $('visitorLines').scrollTop = $('visitorLines').scrollHeight;
+}
+
+function endVisitorDialogue(text) {
+  if (text) appendVisitorLine(visitorDialogueId === 'sims' ? 'Agent Sims' : 'Orenius', text);
+  $('visitorFruit').classList.add('hidden');
+  $('visitorCode').classList.add('hidden');
+}
+
+function closeVisitorPanel() {
+  visitorDialogueId = null;
+  const panel = $('visitorPanel');
+  if (panel) panel.classList.add('hidden');
+}
+
+function showSceneCaption(name, text) {
+  const cap = $('sceneCaption');
+  $('sceneCaptionName').textContent = name ? `${name}:` : '';
+  $('sceneCaptionText').textContent = text;
+  cap.classList.remove('hidden');
+  if (captionTimer) clearTimeout(captionTimer);
+  captionTimer = setTimeout(hideSceneCaption, 7000);
+}
+
+function hideSceneCaption() {
+  const cap = $('sceneCaption');
+  if (cap) cap.classList.add('hidden');
+  if (captionTimer) { clearTimeout(captionTimer); captionTimer = null; }
+}
+
+{
+  const close = $('visitorCloseBtn');
+  if (close) close.onclick = () => closeVisitorPanel();
+  const red = $('redFruitBtn');
+  if (red) red.onclick = () => send({ type: 'visitor-choice', choice: 'red' });
+  const blue = $('blueFruitBtn');
+  if (blue) blue.onclick = () => send({ type: 'visitor-choice', choice: 'blue' });
+  const codeBtn = $('visitorCodeBtn');
+  if (codeBtn) codeBtn.onclick = () => {
+    send({ type: 'visitor-code', code: $('visitorCodeInput').value });
+    $('visitorCodeInput').value = '';
+  };
+  const codeInput = $('visitorCodeInput');
+  if (codeInput) codeInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); codeBtn.onclick(); }
+    e.stopPropagation();
+  });
+  const so = $('summonOreniusBtn');
+  if (so) so.onclick = () => send({ type: 'visitor-summon', id: 'orenius' });
+  const ss = $('summonSimsBtn');
+  if (ss) ss.onclick = () => send({ type: 'visitor-summon', id: 'sims' });
+}
+
 // ------------------------------------------------------------------ warm props (Phase 10)
 function drawHearthAt(x, y, seed) {
   // Hearth v3 (v1.2.3, Item 6 — X: "fireplaces need to be big"):
@@ -549,6 +642,41 @@ function drawSnowmanAt(x, y) {
   ctx.fillRect(x + 2.5, y - 24, 3, 6);
 }
 
+/** v1.9: the portal out of the world — a tall ring of cold light
+ *  with a slow pulse and rising sparks. */
+function drawPortalAt(wx, wy) {
+  const [x, y] = proj(wx, wy);
+  const t = Date.now() / 600;
+  const pulse = 0.75 + 0.25 * Math.sin(t * 2);
+  ctx.save();
+  // the glow on the floor
+  diamond(x, y + 4, 44, 15, `rgba(64,224,208,${0.16 * pulse})`);
+  diamond(x, y + 4, 30, 10, `rgba(180,255,246,${0.14 * pulse})`);
+  // the ring: two arcs (back + front) around a bright core
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = `rgba(140,255,240,${0.9 * pulse})`;
+  ctx.beginPath(); ctx.ellipse(x, y - 30, 15, 32, 0, 0, Math.PI * 2); ctx.stroke();
+  ctx.lineWidth = 1.4;
+  ctx.strokeStyle = `rgba(230,255,252,${0.95 * pulse})`;
+  ctx.beginPath(); ctx.ellipse(x, y - 30, 10.5, 26, 0, 0, Math.PI * 2); ctx.stroke();
+  const grad = ctx.createLinearGradient(x, y - 58, x, y - 2);
+  grad.addColorStop(0, `rgba(64,224,208,${0.05 * pulse})`);
+  grad.addColorStop(0.5, `rgba(150,255,244,${0.30 * pulse})`);
+  grad.addColorStop(1, `rgba(64,224,208,${0.05 * pulse})`);
+  ctx.fillStyle = grad;
+  ctx.beginPath(); ctx.ellipse(x, y - 30, 10.5, 26, 0, 0, Math.PI * 2); ctx.fill();
+  // rising sparks
+  ctx.fillStyle = 'rgba(200,255,248,.9)';
+  for (let i = 0; i < 5; i++) {
+    const ph = ((Date.now() / 1400) + i * 0.23) % 1;
+    const sx = x + Math.sin((ph * 5 + i * 2.4)) * 9;
+    ctx.globalAlpha = 0.85 * (1 - ph);
+    ctx.beginPath(); ctx.arc(sx, y - 4 - ph * 52, 1.6, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+  ctx.globalAlpha = 1;
+}
+
 function drawProp(pr) {
   const [px2, py2] = proj(pr.x, pr.y);
   switch (pr.kind) {
@@ -567,6 +695,20 @@ function drawProp(pr) {
     case 'icesculpt': drawIceSculptAt(px2, py2); break;
     case 'greattree': drawGreatTreeAt(px2, py2); break;
     case 'table': drawTableAt(px2, py2); break;
+    case 'console': {
+      // v1.9 (the Threshold): a machine console — dark slab, one
+      // glowing screen, a slow pulse so the room feels awake.
+      diamond(px2, py2 + 2, 30, 11, '#23242c');
+      diamond(px2, py2, 28, 10, '#30313c');
+      const pulse = 0.65 + 0.35 * Math.sin(Date.now() / 700 + (pr.x % 7));
+      ctx.fillStyle = `rgba(64,224,208,${0.55 * pulse})`;
+      ctx.fillRect(px2 - 8, py2 - 16, 16, 10);
+      ctx.fillStyle = `rgba(10,40,38,${0.8})`;
+      ctx.fillRect(px2 - 8, py2 - 13 + ((Date.now() / 900 + pr.x) % 3), 16, 1.6);
+      ctx.fillStyle = '#12131a';
+      ctx.fillRect(px2 - 1, py2 - 6, 2, 4);
+      break;
+    }
     case 'volleyball': drawVolleyballAt(px2, py2); break;
     case 'umbrella': drawUmbrellaAt(px2, py2); break;
     case 'stall': drawStallAt(px2, py2, (pr.x + pr.y) % 5); break;
@@ -1703,6 +1845,11 @@ function setMap(m, you, chat) {
   if (window.SolarionStudio) window.SolarionStudio.onMapChanged(m);
   renderPos.clear();
   dancerLive.clear(); // v1.6: no stale followers across a map change
+  visitorLive.clear(); // v1.9: ... nor stale visitors / crew / portals
+  sceneActors.clear();
+  scenePortalOpen = false;
+  closeVisitorPanel();
+  hideSceneCaption();
   for (const c of chat || []) chatLine(`<span class="who">${esc(c.from)}:</span> ${esc(c.text)}`);
   if (you) {
     me = { ...me, ...you };
@@ -1723,6 +1870,9 @@ function handle(m) {
   switch (m.type) {
     case 'hello': {
       me = { ...m.you };
+      // v1.9: the summon bar belongs to Zantheon's account alone
+      // (the server stamps canSummon on hello; it also enforces).
+      $('summonBar').classList.toggle('hidden', !m.you.canSummon);
       coins = m.zcoins;
       if (m.dayCycle) dayCycle = m.dayCycle;
       if ('season' in m) season = m.season;
@@ -1764,6 +1914,37 @@ function handle(m) {
       chatLine(`<span class="sys">💃 ${esc(m.from)} tipped ${esc(m.name)} ${esc(String(m.amount))}z!</span>`);
       break;
     }
+    case 'visitor-state': {
+      // v1.9: Orenius / Agent Sims presence, streamed by
+      // src/visitors.js like the dancers' live state.
+      if (!m.present) { visitorLive.delete(m.id); break; }
+      visitorLive.set(m.id, {
+        name: m.name, x: m.x, y: m.y, dir: m.dir, look: m.look,
+        rx: m.x, ry: m.y, moving: false,
+      });
+      break;
+    }
+    case 'visitor-dialogue': openVisitorPanel(m); break;
+    case 'visitor-dialogue-line': appendVisitorLine(m.name, m.text); break;
+    case 'visitor-dialogue-end': endVisitorDialogue(m.text); break;
+    case 'scene-state': {
+      // v1.9: the Threshold's crew + portal, streamed while a
+      // red-fruit show is running (or the door stands open).
+      scenePortalOpen = Boolean(m.portalOpen);
+      const seen = new Set();
+      for (const a of m.actors || []) {
+        seen.add(a.id);
+        const prev = sceneActors.get(a.id);
+        sceneActors.set(a.id, {
+          name: a.name, x: a.x, y: a.y, dir: a.dir, look: a.look,
+          rx: prev ? prev.rx : a.x, ry: prev ? prev.ry : a.y,
+          moving: prev ? prev.moving : false,
+        });
+      }
+      for (const id of [...sceneActors.keys()]) if (!seen.has(id)) sceneActors.delete(id);
+      break;
+    }
+    case 'scene-line': showSceneCaption(m.name, m.text); break;
     case 'dancer-state': {
       // v1.6 (the follow): the server streams the dancers' live
       // positions while any of them is off her stage. A 'stage'
@@ -1977,6 +2158,8 @@ cv.addEventListener('click', (e) => {
   if (!w) return;
   // UX overhaul: a click on a nearby door walks through it.
   if (tryDoorAt(w)) return;
+  // v1.9: a click on a visitor speaks with them.
+  if (tryVisitorAt(w)) return;
   // A click ON a player opens their profile (item 7), not a walk.
   if (window.SolarionSocial && window.SolarionSocial.tryProfileAt(w)) return;
   send({ type: 'move-to', x: Math.round(w.x), y: Math.round(w.y) });
@@ -2994,6 +3177,13 @@ const FLOURISH_MS = 2600;
 // endsAt, moving } — rx/ry are the smoothed render coordinates,
 // eased in the draw loop exactly like player renderPos entries.
 const dancerLive = new Map();
+// v1.9: the visitors (Orenius, Agent Sims) and the Threshold's
+// crew — streamed fixtures, drawn in the entity pass exactly like
+// the dancers. visitorLive is keyed by visitor id; sceneActors by
+// crew id; scenePortalOpen mirrors the scene system's phase.
+const visitorLive = new Map();
+const sceneActors = new Map();
+let scenePortalOpen = false;
 
 function drawClubPass(now) {
   const cl = mapDef.club;
@@ -3190,6 +3380,13 @@ function draw() {
   // entries are re-seeded every frame at the entity pass below —
   // the snapshot pruner doesn't know their npc: ids).
   for (const e of dancerLive.values()) {
+    const dx = e.x - e.rx, dy = e.y - e.ry;
+    e.moving = Math.abs(dx) + Math.abs(dy) > 1.2;
+    e.rx += dx * 0.35;
+    e.ry += dy * 0.35;
+  }
+  // v1.9: the same easing for the Threshold's crew.
+  for (const e of sceneActors.values()) {
     const dx = e.x - e.rx, dy = e.y - e.ry;
     e.moving = Math.abs(dx) + Math.abs(dy) > 1.2;
     e.rx += dx * 0.35;
@@ -3652,6 +3849,11 @@ function draw() {
   // lights and nook rugs baked into the map data.
   for (const pr of mapDef.props || []) drawProp(pr);
 
+  // v1.9: the Threshold's portal — drawn only while the scene
+  // system holds it open. A standing ring of light: walk in to
+  // leave the world.
+  if (mapDef.portal && scenePortalOpen) drawPortalAt(mapDef.portal.x, mapDef.portal.y);
+
   // v1.1.1: pond fish leap now and then — a little arc + splash.
   tickPondLeaps(Date.now());
 
@@ -3682,6 +3884,28 @@ function draw() {
         ...stg.dancer.look,
       });
     }
+  }
+  // v1.9: the visitors and the Threshold's crew ride the same
+  // pipeline — same sprite factory, same scale, same depth sort.
+  for (const [vId, e] of visitorLive) {
+    renderPos.set(`visitor:${vId}`, { x: e.rx, y: e.ry, moving: false });
+    npcEntities.push({
+      id: `visitor:${vId}`, npc: vId, name: vId === 'sims' ? `🕴 ${e.name}` : `🕶 ${e.name}`,
+      x: e.x, y: e.y, dir: e.dir,
+      seated: false, seatId: null, drinks: 0, puffs: 0, fallen: false,
+      hippy: false, performing: false, emote: null, casting: false, heldFish: null,
+      ...e.look,
+    });
+  }
+  for (const [aId, e] of sceneActors) {
+    renderPos.set(`crew:${aId}`, { x: e.rx, y: e.ry, moving: e.moving });
+    npcEntities.push({
+      id: `crew:${aId}`, npc: aId, name: e.name,
+      x: e.x, y: e.y, dir: e.dir,
+      seated: false, seatId: null, drinks: 0, puffs: 0, fallen: false,
+      hippy: false, performing: false, emote: null, casting: false, heldFish: null,
+      ...e.look,
+    });
   }
   const sorted = [...players, ...npcEntities].sort((a, b) => (a.x + a.y) - (b.x + b.y));
   for (const p of sorted) {

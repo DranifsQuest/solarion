@@ -64,12 +64,39 @@
       <button id="chatBtn" title="Jump to chat">💬 Chat</button>
       <button id="navBtn" title="Navigator — everywhere in Solarion, and who's there">🧭 World</button>
       <button id="friendsBtn" title="Friends">👥 Friends</button>
+      <!-- v1.9: the owner's summon buttons (Zantheon's account
+           only — the server enforces it; the bar stays hidden for
+           everyone else) -->
+      <span id="summonBar" class="hidden">
+        <button id="summonOreniusBtn" title="Call Orenius to the Gateway for three minutes">🕶 Orenius</button>
+        <button id="summonSimsBtn" title="Call Agent Sims to Elsewhere for three minutes">🕴 Sims</button>
+      </span>
       <button id="soundBtn" title="Sound settings">🔊</button>
       <div id="mapName"></div>
     </div>
     <!-- fishing proximity prompt (v1.2 Item O): appears only while
          standing at a fishable bank; tappable for touch players -->
     <button id="fishHint" class="hidden">🎣 Press E to fish</button>
+    <!-- v1.9: the visitor dialogue — Orenius and his two fruits,
+         Agent Sims and his code box. One panel, two modes. -->
+    <div id="visitorPanel" class="hidden">
+      <div id="visitorName"></div>
+      <div id="visitorLines"></div>
+      <div id="visitorFruit" class="hidden">
+        <button id="redFruitBtn">🍎 Take the Red Fruit</button>
+        <button id="blueFruitBtn">🫐 Take the Blue Fruit</button>
+      </div>
+      <div id="visitorCode" class="hidden">
+        <input id="visitorCodeInput" type="text" inputmode="numeric" autocomplete="off" placeholder="Access code">
+        <button id="visitorCodeBtn">Speak the code</button>
+      </div>
+      <button id="visitorCloseBtn">Walk away</button>
+    </div>
+    <!-- v1.9: the Threshold's captions — the crew speaks in
+         subtitles while the portal is built. -->
+    <div id="sceneCaption" class="hidden">
+      <span id="sceneCaptionName"></span> <span id="sceneCaptionText"></span>
+    </div>
     <!-- stage panel (shown only in maps with a stage) — UX
          overhaul: clear semantic sections instead of one crammed
          stack. Every element ID is unchanged (mixer.js hooks). -->
