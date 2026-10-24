@@ -1301,7 +1301,7 @@ function buildElsewhere() {
   const id = 'elsewhere';
   return {
     id, name: 'Elsewhere', tiles: gridOf(g), tileSize: TILE,
-    floor: '#26262b', floorAlt: '#26262b', wall: '#0c0c0f',
+    floor: '#12271a', floorAlt: '#16301f', wall: '#060d08',
     spawn: { x: cx(13), y: cy(10) },
     gateways: [],
     doors: [],

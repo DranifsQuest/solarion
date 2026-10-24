@@ -81,6 +81,7 @@ const TEST_FILES = [
   ['test/dressing-validator.test.js', null, 0, 0, 0],   // no server (v1.4.1 seat audit: validator negative tests)
   ['test/db-persistence.test.js', 51100, 20, 1, 0],   // 51100-51101 (persistent DB driver/persistence, v1.7)
   ['test/visitors.test.js',  51300, 20,    0,     0],   // 51300 (the Visitors, v1.9)
+  ['test/visitors-expiry.test.js', 51400, 20, 0,     0],   // 51400 (visitor expiry regression, v1.9.2)
 ].map(([file, base, stride, extra, run]) => ({ file, base, stride, extra, run }));
 
 const ALL_TESTS = TEST_FILES.map(t => t.file);

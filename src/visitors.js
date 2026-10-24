@@ -41,7 +41,9 @@ const { MAPS } = require('./maps');
 
 const TICK_MS = 100;
 const VISIT_START_MIN = 20 * 60;            // 8:00 PM, America/Chicago
-const VISIT_LEN_MS = 3 * 60 * 1000;         // a three-minute visit
+const VISIT_OVERRIDE_MS = Number(process.env.SOLARION_VISIT_MS) > 0
+  ? Number(process.env.SOLARION_VISIT_MS) : 0;
+const VISIT_LEN_MS = VISIT_OVERRIDE_MS || 3 * 60 * 1000; // a three-minute visit
 const RETURN_CODE = '571';
 const SUMMONER = 'zantheon';                // X, and only X
 const TALK_RANGE = 110;                     // px — close enough to speak
@@ -66,6 +68,31 @@ const VISITORS = {
   sims: { id: 'sims', mapId: 'elsewhere', name: 'Agent Sims', look: SIMS_LOOK, mode: 'code' },
 };
 
+// v1.9.2: the Elsewhere arrival vignette (X's staging). Fifteen
+// seconds, personal to the arrival: Orenius and Trine are simply
+// THERE when you land; the bald man delivers his line; your body
+// revolts; you sleep; you wake alone. The figures are a vision —
+// streamed only to the arriving player; the vomit and the sleep
+// are bodily facts, broadcast to the room.
+const TRINE_LOOK = {
+  gender: 'F', face: 'classic', eyes: 'round', eye_color: '#20242c', nose: 'button', lips: 'smirk',
+  skin_tone: '#e8b98f', hair_style: 'bob', hair_color: '#070708', top_style: 'jacket',
+  body_color: '#0b0b10', bottom_style: 'pants', accent_color: '#05050a', shoe_color: '#0a0a0c',
+  accessory: 'sunglasses',
+};
+const VIGNETTE_MS = process.env.SOLARION_TEST ? 3000 : 15 * 1000;
+const VIGNETTE_ACTORS = [
+  { id: 'orenius', name: 'Orenius', x: 432, y: 288, dir: 'down', look: ORENIUS_LOOK },
+  { id: 'trine', name: 'Trine', x: 384, y: 320, dir: 'right', look: TRINE_LOOK },
+];
+const VIGNETTE_STEPS = [
+  { at: 0.17, kind: 'line' },   // ~2.5s live: "He's going to pop."
+  { at: 0.30, kind: 'vomit' },  // ~4.5s
+  { at: 0.53, kind: 'sleep' },  // ~8s — fallen until the wake step
+  { at: 0.80, kind: 'gone' },   // ~12s — the vision empties
+  { at: 1.00, kind: 'wake' },   // 15s — free, and alone
+];
+
 const DIALOGUE = {
   orenius: [
     'You feel it, do you not. The wrongness at the edges of this place.',
@@ -76,8 +103,8 @@ const DIALOGUE = {
   sims: [
     'Well. A refugee from the painting.',
     'I am Sims. I mind the door on this side, and I am very good at my job.',
-    'You want back in. They all want back in. The door opens for a code, and for a code only.',
-    'Speak it. Exactly. I will know if you are guessing.',
+    'We have an agreement then, you give me the code and I put you back.',
+    "Speak the code to the mainframe here and I'll put you back.",
   ],
 };
 
@@ -177,13 +204,14 @@ class VisitorSystem {
   // ---------------------------------------------------------- presence
 
   scheduledNow() {
+    if (VISIT_OVERRIDE_MS) return false; // expiry-test override: no schedule
     const mins = chicagoMinutes();
     return mins >= VISIT_START_MIN && mins < VISIT_START_MIN + VISIT_LEN_MS / 60000;
   }
 
   isPresent(id) {
     const st = this.state[id];
-    return st.present || Date.now() < st.summonedUntil;
+    return this.scheduledNow() || Date.now() < st.summonedUntil;
   }
 
   refreshPresence(id) {
@@ -214,6 +242,40 @@ class VisitorSystem {
       if (v.mapId === p.mapId) this.streamVisitor(v.id, p);
     }
     if (p.mapId === 'the-threshold') this.enterThreshold(p);
+    if (p.mapId === 'elsewhere') this.startVignette(p);
+  }
+
+  // ------------------------------------------------- the vignette
+
+  startVignette(p) {
+    if (p.vignette) return;
+    p.vignette = { startedAt: Date.now(), fired: new Set() };
+    p.captive = true; // the body is not yours for these fifteen seconds
+    this.game.send(p, { type: 'vignette-state', actors: VIGNETTE_ACTORS });
+  }
+
+  vignetteTick(now) {
+    for (const p of this.game.players.values()) {
+      const vg = p.vignette;
+      if (!vg || p.mapId !== 'elsewhere') continue;
+      const elapsed = now - vg.startedAt;
+      for (let i = 0; i < VIGNETTE_STEPS.length; i++) {
+        const step = VIGNETTE_STEPS[i];
+        if (vg.fired.has(i) || step.at * VIGNETTE_MS > elapsed) continue;
+        vg.fired.add(i);
+        if (step.kind === 'line') {
+          this.game.broadcastToMap('elsewhere', {
+            type: 'scene-line', name: 'Orenius', text: "He's going to pop.",
+          });
+        } else if (step.kind === 'vomit' || step.kind === 'sleep' || step.kind === 'wake') {
+          if (step.kind === 'sleep') p.vignetteFallenUntil = vg.startedAt + VIGNETTE_MS;
+          this.game.broadcastToMap('elsewhere', { type: 'vignette-step', step: step.kind, userId: p.userId });
+        } else if (step.kind === 'gone') {
+          this.game.send(p, { type: 'vignette-state', actors: [] });
+        }
+        if (step.kind === 'wake') { p.captive = false; p.vignette = null; }
+      }
+    }
   }
 
   endTalksFor(id) {
@@ -261,7 +323,7 @@ class VisitorSystem {
   // first — standing near a present visitor, E talks instead of
   // sitting/fishing. A seated player keeps E = stand up.
   interact(p) {
-    if (p.seated) return false;
+    if (p.seated || p.captive) return false;
     for (const id of Object.keys(VISITORS)) {
       if (this.nearVisitor(p, id)) { this.talk(p, id); return true; }
     }
@@ -446,11 +508,14 @@ class VisitorSystem {
       const present = this.isPresent(id);
       if (present !== st.present) this.refreshPresence(id);
     }
-    this.sceneTick(Date.now());
+    const now = Date.now();
+    this.sceneTick(now);
+    this.vignetteTick(now);
   }
 }
 
 module.exports = {
   VisitorSystem, VISITORS, DIALOGUE, BEATS, SCENE_MS,
   RETURN_CODE, VISIT_START_MIN, VISIT_LEN_MS, chicagoMinutes,
+  VIGNETTE_MS, VIGNETTE_ACTORS,
 };

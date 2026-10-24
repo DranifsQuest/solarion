@@ -228,6 +228,30 @@ test('the visitors: summon rights, two fruits, the chair, the portal, the code',
   await waitFor(
     () => guest.client.msgs.filter(m => m.type === 'map' && m.map.id === 'elsewhere').pop(),
     8000, 'through the portal: Elsewhere');
+
+  // (d2) v1.9.2: the arrival vignette — two figures waiting, the
+  // bald man's line, the sickness, the sleep, waking alone.
+  const vig = await waitFor(
+    () => guest.client.msgs.filter(m => m.type === 'vignette-state' && (m.actors || []).length === 2).pop(),
+    5000, 'the vignette figures are there');
+  assert.deepEqual(vig.actors.map(a => a.id).sort(), ['orenius', 'trine']);
+  await waitFor(
+    () => guest.client.msgs.filter(m => m.type === 'scene-line' && /going to pop/.test(m.text)).pop(),
+    5000, "the bald man's line");
+  await waitFor(
+    () => guest.client.msgs.filter(m => m.type === 'vignette-step' && m.step === 'vomit' && m.userId === guest.id).pop(),
+    5000, 'the sickness');
+  await waitFor(() => { const s = selfOf(guest); return s && s.fallen ? s : null; },
+    5000, 'asleep on the green floor (fallen in snapshots)');
+  await waitFor(
+    () => guest.client.msgs.filter(m => m.type === 'vignette-state' && (m.actors || []).length === 0).pop(),
+    5000, 'the vision empties');
+  await waitFor(
+    () => guest.client.msgs.filter(m => m.type === 'vignette-step' && m.step === 'wake' && m.userId === guest.id).pop(),
+    5000, 'the wake');
+  await waitFor(() => { const s = selfOf(guest); return s && !s.fallen ? s : null; },
+    5000, 'awake and upright');
+
   guest.client.send({ type: 'navigator' });
   const nav = await waitFor(
     () => guest.client.msgs.filter(m => m.type === 'navigator').pop(),
