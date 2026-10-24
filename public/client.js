@@ -392,29 +392,6 @@ function hideSceneCaption() {
   if (captionTimer) { clearTimeout(captionTimer); captionTimer = null; }
 }
 
-{
-  const close = $('visitorCloseBtn');
-  if (close) close.onclick = () => closeVisitorPanel();
-  const red = $('redFruitBtn');
-  if (red) red.onclick = () => send({ type: 'visitor-choice', choice: 'red' });
-  const blue = $('blueFruitBtn');
-  if (blue) blue.onclick = () => send({ type: 'visitor-choice', choice: 'blue' });
-  const codeBtn = $('visitorCodeBtn');
-  if (codeBtn) codeBtn.onclick = () => {
-    send({ type: 'visitor-code', code: $('visitorCodeInput').value });
-    $('visitorCodeInput').value = '';
-  };
-  const codeInput = $('visitorCodeInput');
-  if (codeInput) codeInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); codeBtn.onclick(); }
-    e.stopPropagation();
-  });
-  const so = $('summonOreniusBtn');
-  if (so) so.onclick = () => send({ type: 'visitor-summon', id: 'orenius' });
-  const ss = $('summonSimsBtn');
-  if (ss) ss.onclick = () => send({ type: 'visitor-summon', id: 'sims' });
-}
-
 // ------------------------------------------------------------------ warm props (Phase 10)
 function drawHearthAt(x, y, seed) {
   // Hearth v3 (v1.2.3, Item 6 — X: "fireplaces need to be big"):
@@ -2129,6 +2106,30 @@ $('fishHint').onclick = () => { if (!transfer) send({ type: 'interact' }); };
   for (const b of document.querySelectorAll('.clubTipBtn')) {
     b.onclick = () => send({ type: 'tip-dancer', amount: Number(b.dataset.amt) });
   }
+}
+// v1.9: visitor panel + summon buttons (wired here, with the other
+// top-level control wiring, because $ is only initialized by now).
+{
+  const close = $('visitorCloseBtn');
+  if (close) close.onclick = () => closeVisitorPanel();
+  const red = $('redFruitBtn');
+  if (red) red.onclick = () => send({ type: 'visitor-choice', choice: 'red' });
+  const blue = $('blueFruitBtn');
+  if (blue) blue.onclick = () => send({ type: 'visitor-choice', choice: 'blue' });
+  const codeBtn = $('visitorCodeBtn');
+  if (codeBtn) codeBtn.onclick = () => {
+    send({ type: 'visitor-code', code: $('visitorCodeInput').value });
+    $('visitorCodeInput').value = '';
+  };
+  const codeInput = $('visitorCodeInput');
+  if (codeInput) codeInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); codeBtn.onclick(); }
+    e.stopPropagation();
+  });
+  const so = $('summonOreniusBtn');
+  if (so) so.onclick = () => send({ type: 'visitor-summon', id: 'orenius' });
+  const ss = $('summonSimsBtn');
+  if (ss) ss.onclick = () => send({ type: 'visitor-summon', id: 'sims' });
 }
 
 // ------------------------------------------------------------------
