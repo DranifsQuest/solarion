@@ -5,7 +5,7 @@
   "private": true,
   "license": "UNLICENSED",
   "main": "src/server.js",
-  "engines": { "node": ">=22.5.0" },
+  "engines": { "node": ">=22.23.4 <23" },
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "express": "^4.21.2",
