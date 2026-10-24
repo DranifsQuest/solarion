@@ -234,6 +234,8 @@ class Game {
       doorPadKey: null,   // door edge-trigger state (see syncDoorPad)
       transferUntil: 0,   // Phase B: movement locked until this epoch-ms (load screen)
       seated: null,       // Phase B: { id, dir, kind } while sitting, else null
+      captive: false,     // v1.9: the Threshold's chair — movement locked until the portal opens
+      visitorTalk: null,  // v1.9: { id, at } while a visitor dialogue is open
       vice: { drinks: { count: 0, at: 0 }, puffs: { count: 0, at: 0 } }, // Phase B amendment
       passedOutUntil: 0,  // Phase B amendment: epoch-ms while out cold
       hippyUntil: 0,      // Phase B amendment: epoch-ms while hippified
@@ -539,6 +541,11 @@ class Game {
           this.send(p, { type: 'notice', text: 'You wander off — the line comes with you. Cast cancelled.' });
         }
       }
+      // v1.9: the Threshold's chair — a captive does not move at
+      // all (keys, routes and taps alike) until the portal opens
+      // and the visitor system lets go. Chat still works; it is
+      // handled outside the tick.
+      if (p.captive) { p.path = null; continue; }
       // v1.2 (Item A): stage lockout — while a set is live, the
       // platform is the performer's alone. Anyone else found ON it
       // (standing there when the set started, teleported, lagged
@@ -809,6 +816,8 @@ class Game {
     p.performing = false; // never carry a performance across scenes
     p.casting = null;     // ... or a fishing line (v1.1.1)
     p.seated = null;      // ... or a chair
+    p.captive = false;    // ... or the Threshold's hold (v1.9) — the
+                          // visitor system re-seats arrivals itself
     p.path = null;        // ... or a walking route
     // Phase B: EVERY scene transfer runs the fixed load-screen window.
     // The server places the player immediately and locks movement for
@@ -1125,6 +1134,10 @@ class Game {
   handleInteract(p) {
     if (p.transferUntil && Date.now() < p.transferUntil) return;
     if (p.passedOutUntil && Date.now() < p.passedOutUntil) return; // out cold
+    if (p.captive) { // v1.9: the Threshold's chair does not let go
+      this.send(p, { type: 'notice', text: 'The chair holds you. Whatever they are building, it is not finished.' });
+      return;
+    }
     if (p.seated) {
       if (p.seated.kind === 'hookah') { this.handlePuff(p); return; }
       if (p.seated.kind === 'poker') {

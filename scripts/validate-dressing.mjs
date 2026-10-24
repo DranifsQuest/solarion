@@ -850,6 +850,7 @@ for (const map of Object.values(MAPS)) {
     'neon-district': new Set([1, 2, 6, 7]),             // street benches + market nook sofas
     'cinder-mesa': new Set([5]),                        // forge nook sofa
     'verdant-hollow': new Set([6, 7]),                 // grove nook sofa + chair
+    'the-threshold': new Set([1]),                     // the captive chair (v1.9)
   };
   const seatArrangement = (s) => {
     const m = /-seat-(\d+)$/.exec(s.id);

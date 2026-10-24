@@ -206,7 +206,7 @@ class SocialSystem {
     }
     const doorTargets = new Set();
     for (const m of Object.values(MAPS)) for (const d of m.doors || []) doorTargets.add(d.target);
-    const places = Object.values(MAPS).map(m => ({
+    const places = Object.values(MAPS).filter(m => !m.hidden).map(m => ({
       id: m.id,
       name: m.name,
       kind: m.casino ? 'casino' : m.id === 'the-gateway' ? 'hub' : doorTargets.has(m.id) ? 'interior' : 'city',
@@ -257,10 +257,22 @@ class SocialSystem {
     return false;
   }
 
+  /**
+   * v1.9: the hidden places (the Threshold, Elsewhere) stand
+   * outside the travel graph entirely — no fast travel in, and no
+   * fast travel OUT. The fiction is the lock: Elsewhere is left
+   * through Agent Sims and the code, or not at all. Owners are NOT
+   * exempt; the summon buttons are their lever, not a warp.
+   */
+  wayShut(p) {
+    this.game.send(p, { type: 'notice', text: 'The way is shut. This place does not answer to travel.' });
+  }
+
   handleNavigate(p, msg) {
     if (!this.ownerGate(p)) return;
     const target = typeof msg.mapId === 'string' ? MAPS[msg.mapId] : null;
     if (!target) { this.game.send(p, { type: 'notice', text: 'No such place.' }); return; }
+    if (target.hidden || (MAPS[p.mapId] || {}).hidden) { this.wayShut(p); return; }
     if (p.mapId === target.id) { this.game.send(p, { type: 'notice', text: 'You are already here.' }); return; }
     this.game.switchScene(p, target);
   }
@@ -268,6 +280,7 @@ class SocialSystem {
   handleNavigateHome(p, msg) {
     const ownerId = Number.isInteger(msg.ownerId) ? msg.ownerId : null;
     if (ownerId === null) return;
+    if ((MAPS[p.mapId] || {}).hidden) { this.wayShut(p); return; }
     // Same gate as walking in: lock rules live in the studio system.
     this.studios.handleEnter(p, { owner: ownerId });
   }
@@ -283,6 +296,10 @@ class SocialSystem {
     const t = this.game.getPlayer(friendId);
     if (!t) { this.game.send(p, { type: 'notice', text: "That friend isn't online right now." }); return; }
     if (t.mapId === p.mapId) { this.game.send(p, { type: 'notice', text: 'Your friend is right here!' }); return; }
+    // v1.9: hidden places refuse join-friend in BOTH directions —
+    // following a friend through the portal would strand the
+    // follower, and joining OUT of Elsewhere would cheat the code.
+    if ((MAPS[t.mapId] || {}).hidden || (MAPS[p.mapId] || {}).hidden) { this.wayShut(p); return; }
     const st = require('./studio');
     const studioOwner = st.parseStudioId(t.mapId);
     if (studioOwner != null) {

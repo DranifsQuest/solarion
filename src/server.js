@@ -121,6 +121,10 @@ casino.blackjackSeated = (userId) => blackjack.isSeated(userId);
 // shared bar/vice path; the club def comes from the map data).
 const club = new ClubSystem(game);
 club.initFromMaps(MAPS);
+// v1.9: the Visitors — Orenius at the Gateway, Agent Sims in
+// Elsewhere, and the Threshold's portal scene (src/visitors.js).
+const { VisitorSystem } = require('./visitors');
+const visitors = new VisitorSystem(game);
 // Phase 4: private studios — instanced scenes (see studio.js). No
 // per-studio registration anywhere: game.js resolves `studio:<id>`
 // scene ids on demand, and this system only handles studio messages.
@@ -148,7 +152,7 @@ game.onStandUp = (p, seat, viaMovement) => {
   }
   return casino.releaseSeatStand(p, seat, viaMovement);
 };
-game.onMapEntered = (p) => { stages.syncPlayer(p); casino.syncPlayer(p); blackjack.syncPlayer(p); club.syncPlayer(p); };
+game.onMapEntered = (p) => { stages.syncPlayer(p); casino.syncPlayer(p); blackjack.syncPlayer(p); club.syncPlayer(p); visitors.syncPlayer(p); };
 
 function sendAvatar(res, result) {
   res.json({
@@ -833,6 +837,11 @@ wss.on('connection', (ws, req) => {
   // gets the owner-only fast-travel controls. (Enforcement is
   // server-side regardless; this only shapes the UI.)
   youPub.isOwner = isOwnerName(session.user.username);
+  // v1.9: the visitor summon buttons belong to Zantheon's account
+  // alone (narrower than the owners set — X's direct order). The
+  // server enforces the same check in visitors.summon; this only
+  // shapes the UI.
+  youPub.canSummon = session.user.username.toLowerCase() === 'zantheon';
   game.send(p, {
     type: 'hello',
     you: youPub,
@@ -880,7 +889,8 @@ wss.on('connection', (ws, req) => {
         break;
       case 'move-to':
         // Phase 9: click/tap-to-move (server-routed). Table seats lock it too.
-        if (!casino.isSeated(p.userId) && !blackjack.isSeated(p.userId)) game.handleMoveTo(p, msg.x, msg.y);
+        // v1.9: so does the Threshold's chair.
+        if (!p.captive && !casino.isSeated(p.userId) && !blackjack.isSeated(p.userId)) game.handleMoveTo(p, msg.x, msg.y);
         break;
       case 'enter-door':
         // UX overhaul: click/tap a nearby door to walk through it.
@@ -1037,6 +1047,24 @@ wss.on('connection', (ws, req) => {
         // v1.4: Club Mirage — tip a dancer (amount presets and the
         // dancer id are validated server-side in club.js).
         club.handle(p, msg);
+        break;
+      case 'visitor-talk':
+        // v1.9: speak with Orenius / Agent Sims (proximity and
+        // presence are validated in visitors.js).
+        visitors.talk(p, msg.id);
+        break;
+      case 'visitor-choice':
+        // v1.9: the red fruit / the blue fruit.
+        visitors.choice(p, msg.choice);
+        break;
+      case 'visitor-code':
+        // v1.9: the access code, typed into the box for Agent Sims.
+        visitors.code(p, msg.code);
+        break;
+      case 'visitor-summon':
+        // v1.9: the owner's call — Zantheon's account only,
+        // enforced in visitors.js.
+        visitors.summon(p, msg.id);
         break;
       case 'stage-join':
         stages.handleJoin(p, msg.mixId);

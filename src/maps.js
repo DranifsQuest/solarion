@@ -236,6 +236,11 @@ function buildGateway() {
     id, name: 'The Gateway', tiles: gridOf(g), tileSize: TILE,
     floor: '#2e3a52', floorAlt: '#33415c', wall: '#10151f',
     spawn: { x: cx(36), y: cy(28) },
+    // v1.9: Orenius's standing spot — west of the fountain's south
+    // face, in plain view of the spawn. The visitor system
+    // (src/visitors.js) owns WHEN he is here; the map only says
+    // where he stands.
+    visitor: { id: 'orenius', x: cx(33), y: cy(24), dir: 'down' },
     gateways: [
       arch(6, 1, 'neon-district', 'Neon District', 'N', 4),
       arch(20, 1, 'cinder-mesa', 'Cinder Mesa', 'N', 4),
@@ -1250,11 +1255,71 @@ function buildVerdantHollow() {
   };
 }
 
+// ------------------------------------------------------------------
+// THE THRESHOLD — the room behind Orenius's red fruit (v1.9, X's
+// spec 2026-10-23). Not a place you walk to: no doors, no gateways,
+// hidden from the Navigator. A visitor who eats the red fruit wakes
+// here, SEATED in the chair, while the crew (src/visitors.js)
+// spends four minutes building a portal out of the world. The
+// portal stands at the north wall, in front of the console row.
+// ------------------------------------------------------------------
+function buildThreshold() {
+  const W = 18, H = 13;
+  const g = makeGrid(W, H, '.');
+  setBorder(g, W, H, '#');
+  setRect(g, 2, 1, 14, 1, 'B');   // the console row (north wall)
+  const id = 'the-threshold';
+  return {
+    id, name: 'The Threshold', tiles: gridOf(g), tileSize: TILE,
+    floor: '#14161d', floorAlt: '#171a21', wall: '#05070a',
+    spawn: { x: cx(9), y: cy(8) },   // the chair itself
+    gateways: [],
+    doors: [],
+    hidden: true,
+    portal: { x: cx(9), y: cy(2) },
+    props: [
+      prop('console', 3, 1), prop('console', 5, 1), prop('console', 7, 1),
+      prop('console', 11, 1), prop('console', 13, 1), prop('console', 15, 1),
+      prop('rug', 9, 8),
+    ],
+    areas: [area('The Threshold', 0, 0, W, H)],
+    seats: [seat(id, 1, 9, 8, 'up', 'chair')],
+  };
+}
+
+// ------------------------------------------------------------------
+// ELSEWHERE — the world on the other side of the portal (v1.9).
+// Blank by X's direct order: an empty grey expanse with no doors,
+// no gateways, no dressing — and no way back except Agent Sims and
+// the code. Hidden from the Navigator; travel in and out is refused
+// by the social layer (the fiction is the lock).
+// ------------------------------------------------------------------
+function buildElsewhere() {
+  const W = 26, H = 20;
+  const g = makeGrid(W, H, '.');
+  setBorder(g, W, H, '#');
+  const id = 'elsewhere';
+  return {
+    id, name: 'Elsewhere', tiles: gridOf(g), tileSize: TILE,
+    floor: '#26262b', floorAlt: '#26262b', wall: '#0c0c0f',
+    spawn: { x: cx(13), y: cy(10) },
+    gateways: [],
+    doors: [],
+    hidden: true,
+    // Agent Sims's standing spot — north of the spawn, facing the
+    // new arrival. Presence is the visitor system's business.
+    visitor: { id: 'sims', x: cx(13), y: cy(7), dir: 'down' },
+    props: [],
+    areas: [area('Elsewhere', 0, 0, W, H)],
+    seats: [],
+  };
+}
+
 const MAPS = {};
 for (const def of [
   buildGateway(), buildCafe(), buildSolsticeBay(), buildCasinoLounge(),
   buildNeonDistrict(), buildNeonCasino(), buildClubMirage(), buildCinderMesa(), buildHookahLounge(),
-  buildFrosthaven(), buildVerdantHollow(),
+  buildFrosthaven(), buildVerdantHollow(), buildThreshold(), buildElsewhere(),
 ]) {
   MAPS[def.id] = def;
 }
@@ -1390,6 +1455,9 @@ function clientMap(map, seasonOverride) {
       bar: map.club.bar || null,
       bartender: map.club.bartender || null,
     } : null,
+    // v1.9: the Threshold's portal spot (drawn by the client when
+    // the scene system says it is open).
+    portal: map.portal || null,
   };
 }
 

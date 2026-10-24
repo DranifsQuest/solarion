@@ -631,3 +631,40 @@ html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; ba
 /* tiny visible controls, extended invisible hit area */
 #slotGuiClose, .mxHead button { position: relative; }
 #slotGuiClose::after, .mxHead button::after { content: ''; position: absolute; inset: -8px; }
+
+/* v1.9: the visitors — dialogue panel, summon bar, scene captions.
+   The panel is a cold dark card (these two do not belong to the
+   warm world); the caption bar is a film subtitle. */
+#visitorPanel { position: absolute; left: 50%; bottom: 86px; transform: translateX(-50%);
+  width: 430px; max-width: calc(100vw - 24px); max-height: 46vh; overflow-y: auto;
+  background: rgba(8,10,14,.92); border: 1px solid rgba(120,220,205,.4); border-radius: var(--r-panel);
+  padding: 14px 16px; z-index: 30; box-shadow: 0 14px 44px rgba(0,0,0,.65); color: #dfe6f5; }
+#visitorName { font-weight: 800; letter-spacing: 3px; font-size: 14px; color: #a8e6dd;
+  text-transform: uppercase; margin-bottom: 8px; }
+#visitorLines { font-size: 14px; line-height: 1.6; max-height: 24vh; overflow-y: auto; }
+#visitorLines p { margin: 0 0 8px; }
+#visitorLines b { color: #a8e6dd; }
+#visitorFruit { display: flex; gap: 8px; margin-top: 10px; }
+#visitorFruit.hidden { display: none; }
+#redFruitBtn { flex: 1; min-height: 44px; padding: 10px; border: none; border-radius: 8px;
+  background: #a02318; color: #fff; font-weight: 700; font-size: 14px; cursor: pointer; }
+#blueFruitBtn { flex: 1; min-height: 44px; padding: 10px; border: none; border-radius: 8px;
+  background: #1d4e89; color: #fff; font-weight: 700; font-size: 14px; cursor: pointer; }
+#redFruitBtn:active, #blueFruitBtn:active { transform: scale(0.96); }
+#visitorCode { display: flex; gap: 8px; margin-top: 10px; }
+#visitorCode.hidden { display: none; }
+#visitorCodeInput { flex: 1; min-width: 0; min-height: 44px; padding: 8px 10px; border-radius: 8px;
+  border: 1px solid rgba(120,220,205,.5); background: #0d1117; color: #e8fffb; font-size: 16px;
+  letter-spacing: 4px; text-align: center; }
+#visitorCodeBtn { min-height: 44px; padding: 8px 14px; border: none; border-radius: 8px;
+  background: #28544d; color: #eafffb; font-weight: 700; font-size: 14px; cursor: pointer; }
+#visitorCodeBtn:active { transform: scale(0.96); }
+#visitorCloseBtn { margin-top: 10px; padding: 8px 12px; min-height: 40px; border-radius: 8px;
+  border: 1px solid rgba(223,230,245,.35); background: transparent; color: #b9c4d8;
+  font-size: 13px; cursor: pointer; }
+#sceneCaption { position: absolute; left: 50%; bottom: 26px; transform: translateX(-50%);
+  max-width: min(680px, calc(100vw - 32px)); text-align: center; z-index: 25;
+  background: rgba(0,0,0,.72); border-radius: 10px; padding: 10px 18px;
+  font-size: 16px; line-height: 1.5; color: #f2f5fa; pointer-events: none; }
+#sceneCaptionName { color: #a8e6dd; font-weight: 700; }
+#summonBar button { margin-left: 4px; }
