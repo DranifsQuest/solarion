@@ -15,7 +15,9 @@
  *    to Elsewhere, a blank world with no doors back.
  *
  *  - AGENT SIMS minds the far side. He appears in Elsewhere on
- *    the same daily window (and on the owner's summon). Talk to
+ *    his own daily window, 8:05–8:08 PM (X's call 2026-10-25:
+ *    offset from Orenius so a red-fruit eater always lands while
+ *    Sims is still there), and on the owner's summon. Talk to
  *    him and he demands an access code, typed into a box. The
  *    right code (571) sends you back to the Gateway. Nothing else
  *    does: the Navigator hides both places and the travel layer
@@ -40,10 +42,17 @@
 const { MAPS } = require('./maps');
 
 const TICK_MS = 100;
-const VISIT_START_MIN = 20 * 60;            // 8:00 PM, America/Chicago
+// Per-visitor daily windows, minutes after midnight America/Chicago.
+// Orenius 8:00–8:03 PM; Sims 8:05–8:08 PM (X's call 2026-10-25 — the
+// offset means a red-fruit eater, scene (2:00) + vignette (15s)
+// included, always lands in Elsewhere while Sims is present).
+const VISITOR_WINDOWS = {
+  orenius: { startMin: 20 * 60, lenMin: 3 },
+  sims: { startMin: 20 * 60 + 5, lenMin: 3 },
+};
 const VISIT_OVERRIDE_MS = Number(process.env.SOLARION_VISIT_MS) > 0
   ? Number(process.env.SOLARION_VISIT_MS) : 0;
-const VISIT_LEN_MS = VISIT_OVERRIDE_MS || 3 * 60 * 1000; // a three-minute visit
+const VISIT_LEN_MS = VISIT_OVERRIDE_MS || 3 * 60 * 1000; // a three-minute summoned visit
 const RETURN_CODE = '571';
 const SUMMONER = 'zantheon';                // X, and only X
 const TALK_RANGE = 110;                     // px — close enough to speak
@@ -203,15 +212,19 @@ class VisitorSystem {
 
   // ---------------------------------------------------------- presence
 
-  scheduledNow() {
+  // The mins param exists for tests: production always passes the
+  // live Chicago clock; tests pass an exact minute to prove the
+  // per-visitor windows without waiting for 8 PM.
+  scheduledNow(id, mins = chicagoMinutes()) {
     if (VISIT_OVERRIDE_MS) return false; // expiry-test override: no schedule
-    const mins = chicagoMinutes();
-    return mins >= VISIT_START_MIN && mins < VISIT_START_MIN + VISIT_LEN_MS / 60000;
+    const w = VISITOR_WINDOWS[id];
+    if (!w) return false;
+    return mins >= w.startMin && mins < w.startMin + w.lenMin;
   }
 
   isPresent(id) {
     const st = this.state[id];
-    return this.scheduledNow() || Date.now() < st.summonedUntil;
+    return this.scheduledNow(id) || Date.now() < st.summonedUntil;
   }
 
   refreshPresence(id) {
@@ -516,6 +529,6 @@ class VisitorSystem {
 
 module.exports = {
   VisitorSystem, VISITORS, DIALOGUE, BEATS, SCENE_MS,
-  RETURN_CODE, VISIT_START_MIN, VISIT_LEN_MS, chicagoMinutes,
+  RETURN_CODE, VISITOR_WINDOWS, VISIT_LEN_MS, chicagoMinutes,
   VIGNETTE_MS, VIGNETTE_ACTORS,
 };
