@@ -125,6 +125,8 @@ club.initFromMaps(MAPS);
 // Elsewhere, and the Threshold's portal scene (src/visitors.js).
 const { VisitorSystem } = require('./visitors');
 const visitors = new VisitorSystem(game);
+const { SkySystem } = require('./sky');
+const sky = new SkySystem(game);
 // Phase 4: private studios — instanced scenes (see studio.js). No
 // per-studio registration anywhere: game.js resolves `studio:<id>`
 // scene ids on demand, and this system only handles studio messages.
@@ -152,7 +154,7 @@ game.onStandUp = (p, seat, viaMovement) => {
   }
   return casino.releaseSeatStand(p, seat, viaMovement);
 };
-game.onMapEntered = (p) => { stages.syncPlayer(p); casino.syncPlayer(p); blackjack.syncPlayer(p); club.syncPlayer(p); visitors.syncPlayer(p); };
+game.onMapEntered = (p) => { stages.syncPlayer(p); casino.syncPlayer(p); blackjack.syncPlayer(p); club.syncPlayer(p); visitors.syncPlayer(p); sky.syncPlayer(p); };
 
 function sendAvatar(res, result) {
   res.json({
@@ -274,6 +276,7 @@ app.get('/health', (req, res) => {
     players_online: total,
     maps: counts,
     tick: game.tickStats,
+    sky: sky.publicSummary(),
   });
 });
 
@@ -763,17 +766,37 @@ if (TEST_MODE) {
         }
       }
     }
+    // Sky override (tooling only): ?sky=day|night|snow|rain|storm
+    // forces that sky so Bake Shop / Playtest captures can show
+    // each condition on demand (forced events sit at 50% progress).
+    // Absent = the real sky, except the legacy ?phase=night knob
+    // still forces night (it used to drive the world clock).
+    const nowMs = Date.now();
+    const skyQ = req.query.sky === 'storm' ? 'thunderstorm' : req.query.sky;
+    let skyPayload = sky.publicState(map.id);
+    if (skyQ === 'day') skyPayload = { isNight: false, active: null, last: null, marks: [] };
+    else if (skyQ === 'night') skyPayload = { isNight: true, active: null, last: null, marks: [] };
+    else if (['snow', 'rain', 'thunderstorm'].includes(skyQ)) {
+      skyPayload = {
+        isNight: false,
+        active: { type: skyQ, startedAt: nowMs - 10 * 60 * 1000, endsAt: nowMs + 10 * 60 * 1000, cycleKey: 'preview' },
+        last: null, marks: [],
+      };
+    } else if (req.query.phase === 'night') {
+      skyPayload = { ...skyPayload, isNight: true };
+    }
     res.json({
       type: 'hello', you, map: clientMap(map, season), players, season,
       chat: [], zcoins: 0, bonusGranted: false, bonusAmount: 0, dayCycle,
-      playtest, tableFx, fx,
+      playtest, tableFx, fx, sky: skyPayload,
     });
   });
   app.get('/preview/:mapId', (req, res) => {
     if (!MAPS[req.params.mapId]) return res.status(404).send('unknown map');
     const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
     const phase = req.query.phase === 'night' ? 'night' : 'day';
-    const inject = `<script>window.__PREVIEW_CFG__ = ${JSON.stringify({ mapId: req.params.mapId, phase })};</script>\n<script src="/preview.js"></script>\n</body>`;
+    const skyQ = ['day', 'night', 'snow', 'rain', 'storm'].includes(req.query.sky) ? req.query.sky : null;
+    const inject = `<script>window.__PREVIEW_CFG__ = ${JSON.stringify({ mapId: req.params.mapId, phase, sky: skyQ })};</script>\n<script src="/preview.js"></script>\n</body>`;
     res.type('html').send(html.replace('</body>', inject));
   });
 }
@@ -853,6 +876,7 @@ wss.on('connection', (ws, req) => {
     bonusGranted,
     bonusAmount,
     dayCycle: DAY_CYCLE,
+    sky: sky.publicState(p.mapId),
   });
   stages.syncPlayer(p);
   casino.syncPlayer(p);
