@@ -1,21 +1,25 @@
 'use strict';
 
 /**
- * Solarion — MIXER REWORK suite (X, 2026-10-21: "click in each
- * bubble where I want the sounds... fill them in 1 at a time").
+ * Solarion — MIXER SPAN suite (X, 2026-10-27: a sound that takes more
+ * than one bar renders as one solid block covering those bars, and
+ * blocks can never overlap on the same line — reverses the 2026-10-21
+ * one-cell-bubble rule).
  *
- * The old mixer held ONE placement per line, drawn stretched across
- * the loop's bars; clicking elsewhere MOVED it. The rework model:
- *   - a line holds MANY one-cell bubbles, placed cell by cell;
- *   - a bubble always renders/sounds as exactly ONE cell/pass, even
- *     for a 2- or 4-bar loop;
- *   - clicking a bubble removes just it;
- *   - playback: a bubble triggers its loop at its bar; if the line's
- *     next bubble arrives first, the new bubble takes the line over
- *     (the old pass is clipped at that bar);
+ * The current model:
+ *   - a placement is ONE solid block covering its loop's bars on the
+ *     line (a 1-bar loop still renders as a single bubble);
+ *   - placing over bars a block already covers is refused;
+ *   - clicking any cell of a block removes the whole block;
+ *   - the bar-number header shares the rows' column template, so the
+ *     numbers align with the columns exactly;
+ *   - playback: a placement triggers its loop at its bar; if the
+ *     line's next placement arrives first, the new placement takes
+ *     the line over (the old pass is clipped at that bar);
  *   - v1 mixes/CDs ({loopId, startBar} tiling lines) keep playing
- *     EXACTLY as before — the engine expands the tiling into bubbles
- *     and lands on the identical event schedule.
+ *     EXACTLY as before — the engine expands the tiling into
+ *     placements and lands on the identical event schedule.
+ * Stored data is unchanged: one {loopId, bar} per placement.
  *
  * Server-free: the real public/mixer.js runs in a vm against a
  * recording fake AudioContext, and src/music.js validateMix is
@@ -335,57 +339,86 @@ test('playMix events: a v1 mix and its migrated v2 form schedule IDENTICALLY', (
 
 // ------------------------------------------------------------ the grid
 
-test('grid: fill cells one at a time, bubbles are one cell, removal is surgical', () => {
-  const { Mixer } = loadMixer();
+test('grid: bar numbers align with columns; placements are solid spans that never overlap on a line', () => {
+  const { Mixer, toasts } = loadMixer();
   Mixer.myMixes = [];
   Mixer.selectSlot(1); // fresh draft: 8 bars, 5 empty rows
   const html = () => Mixer.el.grid.innerHTML;
+  const blockCount = () => (html().match(/filled block/g) || []).length;
   const bubbleCount = () => (html().match(/filled bubble/g) || []).length;
 
+  // Header and rows share one column template, so numbers align.
+  const cols = 'grid-template-columns:repeat(8,minmax(26px,1fr)) 110px';
+  assert.ok(html().includes(`<div class="gridHead" style="${cols}">`), 'header uses the row column template');
+  assert.ok(html().includes(`<div class="gridRow" data-row="0" style="${cols}">`), 'rows use the same template');
+  assert.equal((html().match(/class="gcell head"/g) || []).length, 8, 'eight bar numbers');
+  assert.ok(html().includes('<div class="gcell head">8</div><div></div>'), 'header carries the label-column spacer');
+
+  // A 4-bar loop lands as ONE solid block covering its bars.
   Mixer.selLoopId = 'pop-pad-1'; // a FOUR-bar loop
   Mixer.gridClick(0, 2);
   assert.deepEqual(J(Mixer.draft.tracks[0].cells), [{ loopId: 'pop-pad-1', bar: 2 }]);
-  assert.equal(bubbleCount(), 1, 'one bubble on the grid');
-  assert.ok(!html().includes('gcell span'), 'no span/stretch rendering — a bubble is one cell even for a 4-bar loop');
+  assert.equal(blockCount(), 1, 'one solid block on the grid');
+  assert.equal(bubbleCount(), 0, 'no single-cell bubble for a 4-bar loop');
+  assert.ok(html().includes('grid-column:span 4'), 'the block spans four columns');
+  assert.equal((html().match(/>Warm Chords<\/div>/g) || []).length, 1, 'the loop name appears once for the whole block (the row label is a button, not a cell)');
 
-  Mixer.selLoopId = 'pop-drums-1';
+  // Overlap on the same line is refused; adjacency is fine. (A click
+  // on a covered cell removes the block instead — that path is
+  // tested below — so a refusal clicks an EMPTY cell whose span
+  // would overlap a block.)
+  Mixer.selLoopId = 'pop-drums-1'; // a TWO-bar loop
+  const before = toasts.length;
+  Mixer.gridClick(0, 1);
+  assert.deepEqual(J(Mixer.draft.tracks[0].cells.map(c => c.bar)), [2], 'drums spanning into the pad block refused');
+  assert.ok(toasts.length > before, 'a refusal explains itself');
   Mixer.gridClick(0, 0);
-  Mixer.gridClick(0, 3);
-  Mixer.gridClick(0, 4);
-  assert.deepEqual(J(Mixer.draft.tracks[0].cells.map(c => c.bar)), [0, 2, 3, 4],
-    'the line fills up one cell at a time, in click order, sorted for playback');
-  assert.equal(bubbleCount(), 4);
+  assert.deepEqual(J(Mixer.draft.tracks[0].cells.map(c => c.bar)), [0, 2], 'drums exactly before the block allowed');
+  Mixer.gridClick(0, 6);
+  assert.deepEqual(J(Mixer.draft.tracks[0].cells.map(c => c.bar)), [0, 2, 6], 'drums exactly after the block allowed');
 
-  // Clicking a bubble removes JUST it — selection is irrelevant.
+  // Clicking any cell of a block removes the WHOLE block.
+  Mixer.gridClick(0, 4);
+  assert.deepEqual(J(Mixer.draft.tracks[0].cells.map(c => c.bar)), [0, 6], 'clicking inside the pad block removed all of it');
   Mixer.gridClick(0, 3);
-  assert.deepEqual(J(Mixer.draft.tracks[0].cells.map(c => c.bar)), [0, 2, 4], 'only the bar-3 bubble went away');
-  assert.equal(bubbleCount(), 3);
+  assert.deepEqual(J(Mixer.draft.tracks[0].cells.map(c => c.bar)), [0, 3, 6], 'a 2-bar block lands in the freed space');
+  Mixer.gridClick(0, 4);
+  assert.deepEqual(J(Mixer.draft.tracks[0].cells.map(c => c.bar)), [0, 6], 'clicking inside the 2-bar block removed all of it');
+
+  // A 2-bar loop at the grid end clips its visual span to the bars left.
+  // (Tested on the empty middle row so the main line stays intact.)
+  Mixer.selLoopId = 'pop-drums-1';
+  Mixer.gridClick(1, 7);
+  assert.deepEqual(J(Mixer.draft.tracks[1].cells), [{ loopId: 'pop-drums-1', bar: 7 }], 'clipped placement still lands');
+  assert.deepEqual(J(Mixer.cellSpan({ loopId: 'pop-drums-1', bar: 7 }, 8)), [7, 8], 'span clips at the grid end');
+  Mixer.gridClick(1, 7);
+  assert.equal(Mixer.draft.tracks[1], null, 'clicking the clipped block removes it');
 
   // Nothing selected + empty cell: a hint, no change.
   Mixer.selLoopId = null;
-  Mixer.gridClick(0, 6);
-  assert.deepEqual(J(Mixer.draft.tracks[0].cells.map(c => c.bar)), [0, 2, 4]);
+  Mixer.gridClick(0, 3);
+  assert.deepEqual(J(Mixer.draft.tracks[0].cells.map(c => c.bar)), [0, 6]);
 
   // Another row fills independently; rows never compact mid-edit.
   Mixer.selLoopId = 'pop-bass-1';
   Mixer.gridClick(2, 5);
   assert.deepEqual(J(Mixer.draft.tracks[2].cells), [{ loopId: 'pop-bass-1', bar: 5 }]);
   assert.equal(Mixer.draft.tracks[1], null, 'the middle row stays empty (no compaction)');
-  assert.equal(Mixer.draftCellCount(), 4);
+  assert.equal(Mixer.draftCellCount(), 3);
   assert.deepEqual(J(Mixer.draftWireTracks()), [
-    { cells: [{ loopId: 'pop-drums-1', bar: 0 }, { loopId: 'pop-pad-1', bar: 2 }, { loopId: 'pop-drums-1', bar: 4 }] },
+    { cells: [{ loopId: 'pop-drums-1', bar: 0 }, { loopId: 'pop-drums-1', bar: 6 }] },
     { cells: [{ loopId: 'pop-bass-1', bar: 5 }] },
-  ], 'wire format drops empty lines and keeps the bubbles');
+  ], 'wire format drops empty lines and keeps the placements');
 
-  // Shrinking the length drops out-of-range bubbles per line.
+  // Shrinking the length drops out-of-range placements per line.
   Mixer.el.bars.value = '4';
   Mixer.el.bars.onchange();
-  assert.deepEqual(J(Mixer.draft.tracks[0].cells.map(c => c.bar)), [0, 2], 'bar-4 bubble dropped at 4 bars');
+  assert.deepEqual(J(Mixer.draft.tracks[0].cells.map(c => c.bar)), [0], 'bar-6 placement dropped at 4 bars');
   assert.equal(Mixer.draft.tracks[2], null, 'a line emptied by the shrink returns to an empty row');
 
   // The hint says what the grid actually does now.
-  assert.match(Mixer.el.editTitle.textContent, /click a cell to drop the loop there/);
-  assert.match(Mixer.el.editTitle.textContent, /click a bubble to take it back/);
+  assert.match(Mixer.el.editTitle.textContent, /click a cell to place the loop there/);
+  assert.match(Mixer.el.editTitle.textContent, /click a block to take it back/);
 });
 
 test('grid: opening a v1 mix migrates it to bubbles; saving round-trips through validateMix', () => {

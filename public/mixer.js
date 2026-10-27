@@ -9,9 +9,10 @@
  * this engine renders it live with oscillators + filtered noise.
  *
  * The mixer is a TOY, not a DAW (soul doc §3): 5 song slots → EDIT opens
- * a bar grid of 5 lines → click a cell to drop a one-cell bubble of the
- * selected loop there (a line fills up one bubble at a time, one sound
- * per bar per line; click a bubble to take just it back) → PLAY
+ * a bar grid of 5 lines → click a cell to place the selected loop
+ * there (a placement is one solid block covering the loop's bars; a
+ * line never overlaps blocks on itself; click a block to take just
+ * it back) → PLAY
  * auditions → SAVE persists server-side. All loops live in A minor over
  * the Am–F–C–G family, so random combinations stay listenable.
  *
@@ -539,7 +540,7 @@ const Mixer = {
     $('mixStop').onclick = () => AE.stop();
     $('mixSave').onclick = () => this.saveDraft();
     $('mixDelete').onclick = () => this.deleteSlot();
-    $('mixAddTrackHint').onclick = () => this.hooks.toast('Pick a loop below, then click any cell to drop a bubble there — fill a line one cell at a time; click a bubble to take it back.');
+    $('mixAddTrackHint').onclick = () => this.hooks.toast('Pick a loop below, then click any cell to place it — it covers its bars on that line; click a block to take it back.');
     $('stageJoinBtn').onclick = () => {
       // v1.1: the drop-down lists burned CDs; the selected CD is
       // what Perform plays (its mix goes on the wire, as before).
@@ -589,8 +590,8 @@ const Mixer = {
   mixAtSlot(slot) { return this.myMixes.find(m => m.slot === slot) || null; },
 
   /**
-   * Normalize ANY stored track to its bubble list [{loopId, bar}],
-   * sorted by bar, at most one bubble per bar:
+   * Normalize ANY stored track to its placement list [{loopId, bar}],
+   * sorted by bar, at most one placement per bar:
    *   v2 line {cells}  → its cells, passed through (deduped).
    *   v1 line {loopId, startBar} → the tiling EXPANDED into bubbles
    *     at startBar + k·loop.bars while < mixBars — precisely the
@@ -622,7 +623,40 @@ const Mixer = {
     return [];
   },
 
-  /** Total bubbles across the draft's lines (the "has music" test). */
+  /** Bars a loop occupies when placed: its loop length, default 1. */
+  spanOf(loopId) {
+    const loop = this.loopsById.get(loopId);
+    return loop && Number.isInteger(loop.bars) && loop.bars > 0 ? loop.bars : 1;
+  },
+
+  /** Occupied interval of a stored placement, clipped to the grid: [start, end). */
+  cellSpan(cell, mixBars) {
+    return [cell.bar, Math.min(mixBars, cell.bar + this.spanOf(cell.loopId))];
+  },
+
+  /** Stored placement on this line whose interval covers bar, if any (latest start wins). */
+  coveringCell(line, bar, mixBars) {
+    if (!line) return null;
+    let found = null;
+    for (const c of line.cells) {
+      const [s, e] = this.cellSpan(c, mixBars);
+      if (bar >= s && bar < e && (!found || c.bar > found.bar)) found = c;
+    }
+    return found;
+  },
+
+  /** True when [bar, bar+span), clipped to the grid, hits no existing interval on the line. */
+  canPlace(line, bar, span, mixBars) {
+    const s = bar, e = Math.min(mixBars, bar + span);
+    if (!line) return true;
+    for (const c of line.cells) {
+      const [cs, ce] = this.cellSpan(c, mixBars);
+      if (s < ce && cs < e) return false;
+    }
+    return true;
+  },
+
+  /** Total placements across the draft's lines (the "has music" test). */
   draftCellCount() {
     if (!this.draft) return 0;
     return this.draft.tracks.reduce((n, t) => n + (t ? t.cells.length : 0), 0);
@@ -642,7 +676,7 @@ const Mixer = {
       ? JSON.parse(JSON.stringify(existing.data))
       : { name: '', bpm: 112, bars: 8, tracks: [] };
     // Migrate to v2 lines for editing (see trackCells): every stored
-    // track becomes bubbles on its own fixed grid row.
+    // track becomes placements on its own fixed grid row.
     this._migratedCold = this.loopsById.size === 0 && (this.draft.tracks || []).length > 0;
     const rows = [];
     for (let r = 0; r < this.limits.maxTracks; r++) {
@@ -701,33 +735,49 @@ const Mixer = {
     if (!this.draft) return;
     const esc = this.hooks.esc;
     const bars = this.draft.bars;
-    this.el.editTitle.textContent = `Editing slot ${this.editSlot} — click a cell to drop the loop there; click a bubble to take it back`;
-    let html = '<div class="gridHead">';
+    this.el.editTitle.textContent = `Editing slot ${this.editSlot} — click a cell to place the loop there; click a block to take it back`;
+    // Header and rows share ONE column template (bars cells + the
+    // fixed 110px label column), so the bar numbers align with the
+    // columns exactly. The header carries an empty trailing div for
+    // the label column — without it, flex gave the header cells a
+    // wider share than the row cells and the numbers drifted right.
+    const cols = `grid-template-columns:repeat(${bars},minmax(26px,1fr)) 110px`;
+    let html = `<div class="gridHead" style="${cols}">`;
     for (let b = 0; b < bars; b++) html += `<div class="gcell head">${b + 1}</div>`;
-    html += '</div>';
+    html += '<div></div></div>';
     for (let r = 0; r < this.limits.maxTracks; r++) {
       const line = this.draft.tracks[r];
-      const byBar = new Map(line ? line.cells.map(c => [c.bar, c]) : []);
-      html += `<div class="gridRow" data-row="${r}">`;
+      const starts = new Map();
+      const covered = new Set();
+      if (line) for (const c of line.cells) {
+        starts.set(c.bar, c);
+        const [, e] = this.cellSpan(c, bars);
+        for (let k = c.bar + 1; k < e; k++) covered.add(k);
+      }
+      html += `<div class="gridRow" data-row="${r}" style="${cols}">`;
       for (let b = 0; b < bars; b++) {
-        let cls = 'gcell', label = '';
-        const cell = byBar.get(b);
+        if (covered.has(b)) continue; // inside a block: the block div already spans this column
+        const cell = starts.get(b);
         if (cell) {
-          // Mixer rework (X): a bubble is EXACTLY one cell, always
-          // — even for a 2- or 4-bar loop. No span underline, no
-          // stretched block: one cell, one bubble, one trigger.
+          // Span model (X, 2026-10-27 — reverses the 2026-10-21
+          // one-cell rule): a placement is ONE solid block covering
+          // its loop's bars. A 1-bar loop still renders as a bubble.
           const loop = this.loopsById.get(cell.loopId);
-          cls += ' filled bubble';
-          label = esc(loop ? loop.name : cell.loopId);
+          const [, e] = this.cellSpan(cell, bars);
+          const span = e - b;
+          const cls = span > 1 ? 'gcell filled block' : 'gcell filled bubble';
+          const spanAttr = span > 1 ? ` style="grid-column:span ${span}"` : '';
+          html += `<div class="${cls}" data-bar="${b}"${spanAttr}>${esc(loop ? loop.name : cell.loopId)}</div>`;
+        } else {
+          html += `<div class="gcell" data-bar="${b}"></div>`;
         }
-        html += `<div class="${cls}" data-bar="${b}">${label}</div>`;
       }
       let rowText = '+ track';
       if (line && line.cells.length) {
         const kinds = new Set(line.cells.map(c => c.loopId));
         rowText = kinds.size === 1
           ? ((this.loopsById.get(line.cells[0].loopId) || {}).name || line.cells[0].loopId)
-          : `${line.cells.length} bubbles`;
+          : `${line.cells.length} blocks`;
       }
       html += `<button class="rowLabel" data-row="${r}">${esc(rowText)}</button></div>`;
     }
@@ -743,30 +793,38 @@ const Mixer = {
   },
 
   gridClick(row, bar) {
-    // Mixer rework contract (X, 2026-10-21): the grid is CELLS,
-    // filled one at a time.
-    //  - click an EMPTY cell with a loop selected → a bubble of that
-    //    loop lands in exactly that cell (one cell wide, whatever
-    //    the loop's length); the line keeps every other bubble.
-    //  - click a PLACED bubble → just that bubble is removed.
-    //    Nothing moves, nothing else is touched.
+    // Span contract (X, 2026-10-27 — reverses the 2026-10-21
+    // one-cell rule): a placement is ONE solid block covering its
+    // loop's bars on the line.
+    //  - click a cell covered by a block → the whole block is removed.
+    //    Nothing else moves.
+    //  - click an EMPTY cell with a loop selected → the loop lands
+    //    there covering [bar, bar+loop.bars), clipped at the grid
+    //    end; refused (toast, no change) when it would overlap a
+    //    block already on this line. Other lines are unaffected.
     //  - click an empty cell with nothing selected → a hint toast.
-    // A line holds at most one bubble per bar (structurally: a cell
-    // is either filled or empty), and rows never compact mid-edit —
-    // the line you filled is the line you keep filling.
+    // Stored data is unchanged — one {loopId, bar} per placement —
+    // so playback, the wire format, and v1 migration are untouched,
+    // and rows never compact mid-edit.
     if (!this.draft) return;
     this._migratedCold = false; // the user owns this draft now
-    const at = Math.max(0, Math.min(bar, this.draft.bars - 1));
+    const bars = this.draft.bars;
+    const at = Math.max(0, Math.min(bar, bars - 1));
     let line = this.draft.tracks[row];
-    const idx = line ? line.cells.findIndex(c => c.bar === at) : -1;
-    if (idx >= 0) {
-      line.cells.splice(idx, 1);
+    const covering = this.coveringCell(line, at, bars);
+    if (covering) {
+      line.cells = line.cells.filter(c => c !== covering);
       if (!line.cells.length) this.draft.tracks[row] = null;
       this.renderGrid();
       return;
     }
     if (!this.selLoopId) {
-      this.hooks.toast('Pick a loop from the browser first (click = hear it), then click a cell to drop it there.');
+      this.hooks.toast('Pick a loop from the browser first (click = hear it), then click a cell to place it there.');
+      return;
+    }
+    const span = this.spanOf(this.selLoopId);
+    if (!this.canPlace(line, at, span, bars)) {
+      this.hooks.toast(`That loop needs ${span} bars — bars ${at + 1}–${Math.min(bars, at + span)} on this line are already taken.`);
       return;
     }
     if (!line) { line = { cells: [] }; this.draft.tracks[row] = line; }
