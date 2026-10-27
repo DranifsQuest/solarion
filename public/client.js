@@ -28,34 +28,70 @@ const castFx = new Map();    // v1.2: playerId -> { landX, landY, ice, at } for 
 let keys = { up: false, down: false, left: false, right: false };
 let lastSentKeys = '';
 let coins = 0;
-let dayCycle = null; // Phase 9: { periodMs, anchor } — world clock
 let season = null; // Seasonal themes: 'halloween' | 'christmas' | null, server-owned (src/seasons.js)
-let lastDarkness = -1;
 
-/** Phase within the world clock: 0.0 = sunrise, 0.5 = sunset. */
-function dayPhase() {
-  if (!dayCycle) return 0.25;
-  return (((Date.now() - dayCycle.anchor) % dayCycle.periodMs) + dayCycle.periodMs) % dayCycle.periodMs / dayCycle.periodMs;
+// Day/night + weather (src/sky.js, server-owned): the server sends
+// the real clock state — { isNight, active, last, marks } — in
+// hello, on every map enter, and on every transition. The client
+// never computes day/night or weather from its own clock, and the
+// old 12-minute world clock no longer drives darkness at all.
+let sky = null;
+let skyMarks = [];   // scorch marks on the current map: { x, y, until }
+let skySpots = [];   // deterministic ground spots for this map: { tx, ty, kind, r, dx, dy }
+let flashUntil = 0;  // lightning flash overlay expiry (ms)
+const startleFx = new Map(); // playerId -> { at } for the lightning startle hop
+const SKY_OUTDOOR = new Set(['the-gateway', 'solstice-bay', 'neon-district', 'cinder-mesa', 'frosthaven', 'verdant-hollow']); // mirrors src/sky.js OUTDOOR_MAPS
+const SKY_EVENT_MS = 20 * 60 * 1000; // mirrors src/sky.js EVENT_MS
+const SKY_DECAY_MS = 60 * 60 * 1000; // mirrors src/sky.js DECAY_MS
+const SKY_MARK_FADE_MS = 30 * 1000;  // mirrors src/sky.js MARK_FADE_MS
+
+/** True when the current map gets weather + night (outdoors only). */
+function isOutdoorMap() {
+  return Boolean(mapDef && SKY_OUTDOOR.has(mapDef.id));
 }
 
-/** Phase 9: 0 (full day) → ~0.42 (deep night) from the world clock. */
+/** Night darkness: warm plum 0.42 on outdoor maps at night, else none. */
 function darknessNow() {
-  const ph = dayPhase();
-  if (ph < 0.46 || ph > 0.97) return 0;                    // day (soft edges)
-  if (ph < 0.54) return (ph - 0.46) / 0.08 * 0.42;         // dusk falls
-  if (ph < 0.90) return 0.42;                              // night
-  return Math.max(0, 0.42 * (1 - (ph - 0.90) / 0.07));     // dawn
+  return (sky && sky.isNight && isOutdoorMap()) ? 0.42 : 0;
 }
 
-/**
- * Cozy pass (X's standing aesthetic — warm, golden, welcoming):
- * a golden-hour wash that peaks at sunrise and sunset and fades as
- * full day / full night take over. Pure client-side tint.
- */
-function goldenNow() {
-  const ph = dayPhase();
-  const edge = Math.min(Math.abs(ph - 0.5), Math.min(ph, 1 - ph)); // 0 at rise/set
-  return Math.max(0, 1 - edge / 0.09) * 0.13;
+/** Ground-effect level (0..1) for 'snow' or 'rain' — the server's curve. */
+function skyGroundLevel(want, nowMs) {
+  if (!sky) return 0;
+  if (sky.active && sky.active.type === want) {
+    return Math.max(0, Math.min(1, (nowMs - sky.active.startedAt) / SKY_EVENT_MS));
+  }
+  if (sky.last && sky.last.type === want) {
+    return Math.max(0, Math.min(1, 1 - (nowMs - sky.last.endedAt) / SKY_DECAY_MS));
+  }
+  return 0;
+}
+
+/** Scorch-mark opacity: full until its final 30s, then fades out. */
+function skyMarkAlpha(mark, nowMs) {
+  return Math.max(0, Math.min(1, (mark.until - nowMs) / SKY_MARK_FADE_MS));
+}
+
+/** Deterministic ground spots for the current map (walkable tiles only). */
+function computeSkySpots() {
+  skySpots = [];
+  if (!mapDef || !mapDef.rows) return;
+  const WALK = new Set(['.', 'C', 'b', 's', 'p']); // mirrors src/maps.js WALKABLE
+  let seed = 987654321;
+  const rand = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  const tiles = [];
+  for (let ty = 0; ty < mapDef.h; ty++) {
+    const row = mapDef.rows[ty] || '';
+    for (let tx = 0; tx < mapDef.w; tx++) if (WALK.has(row[tx])) tiles.push([tx, ty]);
+  }
+  for (let i = tiles.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    const tmp = tiles[i]; tiles[i] = tiles[j]; tiles[j] = tmp;
+  }
+  skySpots = tiles.slice(0, 130).map(([tx, ty], i) => ({
+    tx, ty, kind: i < 90 ? 'snow' : 'puddle',
+    r: 10 + rand() * 14, dx: (rand() - 0.5) * 10, dy: (rand() - 0.5) * 6,
+  }));
 }
 let camState = { x: 0, y: 0, init: false, map: null }; // Phase 9 eased camera
 let curArea = null; // Phase 9: named-area nameplate state
@@ -1813,6 +1849,8 @@ function setMap(m, you, chat) {
   mapDef = m;
   curArea = null;
   camState.init = false;
+  startleFx.clear();
+  computeSkySpots();
   if (window.SolarionSfx) window.SolarionSfx.ambience(m.id, Boolean(m.casino));
   if (window.SolarionZoneMusic) window.SolarionZoneMusic.setMap(m.id, Boolean(m.casino));
   $('mapName').textContent = m.name;
@@ -1853,7 +1891,7 @@ function handle(m) {
       // (the server stamps canSummon on hello; it also enforces).
       $('summonBar').classList.toggle('hidden', !m.you.canSummon);
       coins = m.zcoins;
-      if (m.dayCycle) dayCycle = m.dayCycle;
+      if (m.sky) sky = m.sky;
       if ('season' in m) season = m.season;
       $('coins').textContent = coins;
       players = m.players;
@@ -1861,6 +1899,7 @@ function handle(m) {
       sceneDevices = {};
       showGame();
       setMap(m.map, m.you, m.chat);
+      if (m.sky && Array.isArray(m.sky.marks)) skyMarks = m.sky.marks;
       // Playtest Gate (test-mode payloads only): pose a dancer's
       // flourish so the club's ringside capture catches it.
       if (m.playtest && m.playtest.clubFlourish) {
@@ -2020,8 +2059,28 @@ function handle(m) {
       break;
     }
     case 'map': {
-      if (m.dayCycle) dayCycle = m.dayCycle;
       beginTransfer(m);
+      break;
+    }
+    case 'sky': {
+      // Server-owned sky state: transitions + event starts/ends.
+      // Tick broadcasts carry no marks; hello + map-enter syncs do.
+      sky = m;
+      if (Array.isArray(m.marks)) skyMarks = m.marks;
+      break;
+    }
+    case 'lightning': {
+      // Only the struck map sees it. The flash is screen-space,
+      // the mark is ground-space, the reaction is cosmetic only.
+      if (mapDef && m.mapId === mapDef.id) {
+        flashUntil = Date.now() + 400;
+        const nowL = Date.now();
+        skyMarks = [...skyMarks.filter(mk => mk.until > nowL), { x: m.x, y: m.y, until: m.until }];
+        for (const id of m.reacted || []) {
+          startleFx.set(id, { at: nowL });
+          bubbles.set(id, { text: '!', until: nowL + 2000 });
+        }
+      }
       break;
     }
     case 'sit-state': {
@@ -3468,6 +3527,38 @@ function draw() {
     }
   }
 
+  // Day/night + weather ground effects (outdoor maps only): snow
+  // blankets and rain puddles grow with the event and melt /
+  // evaporate after; lightning scorch marks fade over minutes.
+  // Drawn right after the floor tiles, under props and entities.
+  if (isOutdoorMap()) {
+    const nowSky = Date.now();
+    const snowLvl = skyGroundLevel('snow', nowSky);
+    const rainLvl = skyGroundLevel('rain', nowSky);
+    if (snowLvl > 0.01 || rainLvl > 0.01) {
+      for (const s of skySpots) {
+        const lvl = s.kind === 'snow' ? snowLvl : rainLvl;
+        if (lvl <= 0.01) continue;
+        const [sx, sy] = proj((s.tx + 0.5) * TS + s.dx, (s.ty + 0.5) * TS + s.dy);
+        ctx.beginPath();
+        ctx.ellipse(sx, sy, s.r, s.r * 0.55, 0, 0, Math.PI * 2);
+        ctx.fillStyle = s.kind === 'snow'
+          ? `rgba(240,246,255,${(lvl * 0.8).toFixed(3)})`
+          : `rgba(120,150,180,${(lvl * 0.55).toFixed(3)})`;
+        ctx.fill();
+      }
+    }
+    for (const mk of skyMarks) {
+      const a = skyMarkAlpha(mk, nowSky);
+      if (a <= 0) continue;
+      const [sx, sy] = proj(mk.x, mk.y);
+      ctx.beginPath();
+      ctx.ellipse(sx, sy, 16, 8, 0, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(20,12,8,${(a * 0.7).toFixed(3)})`;
+      ctx.fill();
+    }
+  }
+
   // Lane C: building facades — ONE quality building per enterable
   // place (pitched roof, glowing windows, real door in front).
   for (const b of mapDef.buildings || []) drawBuilding(b);
@@ -3970,6 +4061,13 @@ function draw() {
     if (p.npc) bob += Math.abs(Math.sin(now / 165 + idPhase)) * 3.5;
     // Fish emote: a little triumph hop while the catch is held high.
     if (p.emote === 'fish') bob += Math.abs(Math.sin(now / 160 + p.id * 1.7)) * 2.5;
+    // Lightning startle: a quick hop when a strike lands on your tile.
+    const st = startleFx.get(p.id);
+    if (st) {
+      const el = now - st.at;
+      if (el < 600) bob += Math.abs(Math.sin(el / 600 * Math.PI)) * 8;
+      else startleFx.delete(p.id);
+    }
 
     // soft ground shadow (scales with the character footprint)
     ctx.beginPath();
@@ -4223,29 +4321,59 @@ function draw() {
     }
   }
 
-  // Phase 9 — day/night: lay the darkness over the world, then let
+  // Day/night + weather: lay the darkness over the world, then let
   // the lamps punch back through it (arches, doors, stage rig).
-  // Cozy pass: the night tint is warm plum, not cold navy, and
-  // golden hour washes the world amber at sunrise/sunset.
+  // Cozy pass: the night tint is warm plum, not cold navy.
   const dark = darknessNow();
-  const gold = goldenNow();
-  if (dark > 0.01 || gold > 0.005) {
-    if (dark > 0.01) {
-      // Seasonal palettes ride the SAME day/night system (no fork):
-      // Halloween deepens the plum and pushes the dark further;
-      // Christmas warms the plum a touch.
-      if (season === 'halloween') {
-        ctx.fillStyle = `rgba(22,8,34,${Math.min(0.54, dark * 1.24)})`;
-      } else if (season === 'christmas') {
-        ctx.fillStyle = `rgba(34,16,30,${dark})`;
-      } else {
-        ctx.fillStyle = `rgba(32,18,36,${dark})`;
-      }
-      ctx.fillRect(camX, camY, W, H);
+  if (dark > 0.01) {
+    // Seasonal palettes ride the SAME day/night system (no fork):
+    // Halloween deepens the plum and pushes the dark further;
+    // Christmas warms the plum a touch.
+    if (season === 'halloween') {
+      ctx.fillStyle = `rgba(22,8,34,${Math.min(0.54, dark * 1.24)})`;
+    } else if (season === 'christmas') {
+      ctx.fillStyle = `rgba(34,16,30,${dark})`;
+    } else {
+      ctx.fillStyle = `rgba(32,18,36,${dark})`;
     }
-    if (gold > 0.005) {
-      ctx.fillStyle = `rgba(255,146,60,${gold})`;
-      ctx.fillRect(camX, camY, W, H);
+    ctx.fillRect(camX, camY, W, H);
+  }
+  // Lightning flash: a brief white wash over everything.
+  if (flashUntil > now) {
+    ctx.fillStyle = `rgba(255,255,255,${((flashUntil - now) / 400 * 0.5).toFixed(3)})`;
+    ctx.fillRect(camX, camY, W, H);
+  }
+  // Weather particles (outdoor maps only, screen-space, capped):
+  // snowflakes drift down, rain streaks slant down fast. Positions
+  // are pure functions of the clock — no per-frame state, and no
+  // per-client randomness for event state.
+  if (isOutdoorMap() && sky && sky.active) {
+    const nowP = Date.now();
+    const hash = (i, s) => { const v = Math.sin(i * 127.1 + s * 311.7) * 43758.5453; return v - Math.floor(v); };
+    const wrap = (v, m) => (((v % m) + m) % m);
+    if (sky.active.type === 'snow') {
+      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+      for (let i = 0; i < 120; i++) {
+        const fall = 0.02 + hash(i, 1) * 0.04; // px per ms
+        const drift = (hash(i, 2) - 0.5) * 0.02;
+        const x = wrap(hash(i, 3) * (W + 40) + drift * nowP, W + 40) - 20;
+        const y = wrap(hash(i, 4) * (H + 40) + fall * nowP, H + 40) - 20;
+        ctx.beginPath();
+        ctx.arc(camX + x, camY + y, 1.5 + hash(i, 5) * 1.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else if (sky.active.type === 'rain') {
+      ctx.strokeStyle = 'rgba(180,210,235,0.5)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let i = 0; i < 150; i++) {
+        const fall = 0.35 + hash(i, 1) * 0.25;
+        const x = wrap(hash(i, 3) * (W + 40) + nowP * 0.02, W + 40) - 20;
+        const y = wrap(hash(i, 4) * (H + 40) + fall * nowP, H + 40) - 20;
+        ctx.moveTo(camX + x, camY + y);
+        ctx.lineTo(camX + x - 3, camY + y + 12);
+      }
+      ctx.stroke();
     }
   }
   if (dark > 0.01) {

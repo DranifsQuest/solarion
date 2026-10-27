@@ -12,9 +12,9 @@
  * message handler, so the screenshot that tooling takes is the real
  * client render path (public/client.js draw()), not a re-drawing.
  *
- * The payload's dayCycle anchor is pre-shifted server-side, so
- * ?phase=day renders full day and ?phase=night renders deep night
- * with the lamp-glow pass lit.
+ * The payload's sky is forced server-side, so ?phase=day renders
+ * full day and ?phase=night renders deep night with the lamp-glow
+ * pass lit; ?sky=snow|rain|storm forces that weather instead.
  */
 (function () {
   const cfg = window.__PREVIEW_CFG__;
@@ -70,7 +70,8 @@
       const seasonQ = cfg.season ? `&season=${encodeURIComponent(cfg.season)}` : '';
       const sceneQ = cfg.scene ? `&scene=${encodeURIComponent(cfg.scene)}` : '';
       const shotQ = cfg.shot ? `&shot=${encodeURIComponent(cfg.shot)}` : '';
-      const r = await fetch(`${base}/preview-data/${encodeURIComponent(cfg.mapId)}?phase=${encodeURIComponent(cfg.phase)}${seasonQ}${sceneQ}${shotQ}`);
+      const skyQ = cfg.sky ? `&sky=${encodeURIComponent(cfg.sky)}` : '';
+      const r = await fetch(`${base}/preview-data/${encodeURIComponent(cfg.mapId)}?phase=${encodeURIComponent(cfg.phase)}${seasonQ}${sceneQ}${shotQ}${skyQ}`);
       const hello = await r.json();
       // The client's real handlers: hello places us + the map,
       // snapshot registers the sample companions' render positions.

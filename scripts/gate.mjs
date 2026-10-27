@@ -83,6 +83,7 @@ const TEST_FILES = [
   ['test/visitors.test.js',  51300, 20,    0,     0],   // 51300 (the Visitors, v1.9)
   ['test/visitors-expiry.test.js', 51400, 20, 0,     0],   // 51400 (visitor expiry regression, v1.9.2)
   ['test/visitors-schedule.test.js', null, 0,  0,     0],   // no server (per-visitor windows, Sims offset 2026-10-25)
+  ['test/sky.test.js',           null,  0,     0,     0],   // no server (day/night + weather, 2026-10-27)
 ].map(([file, base, stride, extra, run]) => ({ file, base, stride, extra, run }));
 
 const ALL_TESTS = TEST_FILES.map(t => t.file);
@@ -103,6 +104,7 @@ const MAPPING = [
   { match: /^src\/club\.js$/,                     tests: ['test/club.test.js'], why: 'Club Mirage dancer tips (v1.4)' },
   { match: /^src\/studio\.js$/,                   tests: ['test/studios.test.js', 'test/homes.test.js'], why: 'studios/homes engine' },
   { match: /^src\/appearance\.js$/,               tests: ['test/creation.test.js', 'test/sprites.test.js'], why: 'appearance options feed creation + sprite rendering' },
+  { match: /^src\/sky\.js$/,                     tests: ['test/sky.test.js', 'test/test.js'], why: 'day/night + weather engine (hello.sky is asserted in test.js)' },
   { match: /^src\/(game|maps|server|db)\.js$/,    tests: [...CORE_SET, 'test/dressing-validator.test.js', 'test/db-persistence.test.js'], why: 'core engine/map/server — broad protocol set (+ validator negative tests: map data is the validator\'s input; + DB persistence: db.js is its subject)' },
   { match: /^scripts\/validate-dressing\.mjs$/,    tests: ['test/dressing-validator.test.js'], why: 'the dressing validator itself (v1.4.1: its laws are negative-tested)' },
   { match: /^public\/sprites\.js$/,                tests: ['test/sprites.test.js', 'test/creation.test.js'], why: 'sprite renderer' },

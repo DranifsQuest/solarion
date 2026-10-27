@@ -166,6 +166,13 @@ test('two simultaneous clients in the same map see each other', { timeout: 30000
   users.bob_p1.client = b;
   assert.equal(a.hello.map.id, 'the-gateway');
   assert.equal(b.hello.map.id, 'the-gateway');
+  // Day/night + weather: hello carries the server-owned sky state —
+  // a boolean night flag, an event-or-null, and this map's marks.
+  for (const h of [a.hello, b.hello]) {
+    assert.equal(typeof h.sky.isNight, 'boolean', 'hello.sky.isNight is a boolean');
+    assert.ok(h.sky.active === null || ['snow', 'rain', 'thunderstorm'].includes(h.sky.active.type), 'hello.sky.active is null or a known weather type');
+    assert.ok(Array.isArray(h.sky.marks), 'hello.sky.marks is a list');
+  }
   const aId = a.hello.you.id, bId = b.hello.you.id;
   users.alice_p1.id = aId; users.bob_p1.id = bId;
   await waitFor(() => {

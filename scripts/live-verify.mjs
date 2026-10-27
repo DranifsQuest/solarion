@@ -154,6 +154,9 @@ async function main() {
   report('health: service answers, phase 10, thirteen maps', !!(health && health.ok && health.phase === 10 && Object.keys(health.maps).length === 13),
     health ? `uptime ${health.uptime_s}s, phase ${health.phase}` : 'no response in 150s');
   if (!health) return finish();
+  // Day/night + weather: /health carries the server-owned sky summary.
+  report('sky: /health carries isNight + current event', !!(health.sky && typeof health.sky.isNight === 'boolean' && (health.sky.event === null || ['snow', 'rain', 'thunderstorm'].includes(health.sky.event))),
+    health.sky ? `isNight=${health.sky.isNight}, event=${health.sky.event}` : 'no sky field');
 
   const loops = await fetch(`${BASE}/api/music/loops`).then(r => r.json()).catch(() => null);
   report('music catalog: GET /api/music/loops serves 40+ loops', !!(loops && loops.ok && loops.loops.length >= 40),
@@ -223,6 +226,9 @@ async function main() {
       throw new Error(`hello appearance mismatch: ${JSON.stringify({ g: h.you.gender, f: h.you.face, hair: h.you.hair_style, b: h.you.bottom_style })}`);
     }
     report('ws connect A: hello in The Gateway, +5,000z welcome bonus granted', true, `zcoins=${h.zcoins}, appearance F/heart/ponytail/skirt in hello`);
+    // Day/night + weather: hello carries the server-owned sky state.
+    report('sky: hello carries isNight + event + marks', !!(h.sky && typeof h.sky.isNight === 'boolean' && (h.sky.active === null || ['snow', 'rain', 'thunderstorm'].includes(h.sky.active.type)) && Array.isArray(h.sky.marks)),
+      h.sky ? `isNight=${h.sky.isNight}, event=${h.sky.active ? h.sky.active.type : 'clear'}, marks=${h.sky.marks.length}` : 'no sky field');
   } catch (e) { report('ws connect A: hello in The Gateway, +5,000z welcome bonus granted', false, e.message); return finish(); }
 
   try {
